@@ -1,0 +1,737 @@
+/*
+ * Component styles.
+ *
+ * Same discipline as the Flutter app: one card treatment, one primary button
+ * treatment, one page-header treatment. A screen picks a class from here; it
+ * does not invent a surface.
+ */
+
+/* --------------------------------------------------------------- surfaces */
+
+.card {
+  background: var(--bg-surface);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--hairline);
+}
+
+.card-pad {
+  padding: var(--sp-5);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--divider);
+}
+
+.card-head h3 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.section-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.section-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: 38px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-button);
+  border: 1px solid transparent;
+  background: transparent;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The single primary treatment: solid brand, never a gradient. */
+.btn-primary {
+  background: var(--brand-primary);
+  color: var(--on-brand);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--brand-deep);
+}
+
+.btn-subtle {
+  background: var(--bg-subtle);
+  color: var(--brand-deep);
+}
+.btn-subtle:hover:not(:disabled) {
+  background: var(--brand-soft);
+}
+
+.btn-ghost {
+  color: var(--text-secondary);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--brand-deep);
+}
+
+.btn-outline {
+  border-color: var(--hairline);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.btn-outline:hover:not(:disabled) {
+  border-color: var(--brand-soft);
+  background: var(--bg-subtle);
+}
+
+/* Destructive is text/outline only — never a filled red block. */
+.btn-danger {
+  color: var(--danger);
+  border-color: var(--danger-tint);
+  background: var(--danger-tint);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--on-brand);
+  border-color: var(--danger);
+}
+
+.btn-sm {
+  height: 30px;
+  padding: 0 var(--sp-3);
+  font-size: 12px;
+  border-radius: var(--r-chip);
+}
+
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--r-chip);
+}
+
+/* ----------------------------------------------------------- badges/pills */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pill-neutral { background: var(--bg-tint); color: var(--brand-deep); }
+.pill-success { background: var(--success-tint); color: var(--success); }
+.pill-warning { background: var(--warning-tint); color: var(--warning); }
+.pill-danger  { background: var(--danger-tint);  color: var(--danger); }
+.pill-live    { background: var(--live-tint);    color: var(--live); }
+.pill-gold    { background: var(--gold-tint);    color: var(--gold); }
+.pill-muted   { background: var(--divider);      color: var(--text-secondary); }
+
+.pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* A live badge gets the one pulse animation in the console. */
+.pill-live .pill-dot {
+  animation: livePulse 1.4s var(--ease) infinite;
+}
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* ----------------------------------------------------------- icon chips */
+
+/* One treatment for every feature chip: tinted background, brand glyph. */
+.chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-chip);
+  background: var(--bg-tint);
+  color: var(--brand-primary);
+  flex: none;
+}
+
+.chip-icon-lg {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-card);
+}
+
+/* Semantic variants exist for STATE only, never for category identity. */
+.chip-success { background: var(--success-tint); color: var(--success); }
+.chip-warning { background: var(--warning-tint); color: var(--warning); }
+.chip-danger  { background: var(--danger-tint);  color: var(--danger); }
+.chip-gold    { background: var(--gold-tint);    color: var(--gold); }
+
+/* ------------------------------------------------------------- form fields */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.field-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.field-error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: var(--r-button);
+  border: 1px solid var(--hairline);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px var(--bg-tint);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.select {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-tertiary) 50%),
+    linear-gradient(135deg, var(--text-tertiary) 50%, transparent 50%);
+  background-position: 14px calc(50% + 1px), 19px calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-left: 32px;
+}
+
+.input-search {
+  padding-right: 34px;
+}
+
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-wrap > svg {
+  position: absolute;
+  right: 11px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+/* Switch — the control that opens a match for predictions, among others. */
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-track {
+  width: 40px;
+  height: 23px;
+  border-radius: var(--r-pill);
+  background: var(--shimmer-base);
+  transition: background var(--dur) var(--ease);
+  flex: none;
+  padding: 3px;
+  display: flex;
+}
+
+.switch-thumb {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  box-shadow: 0 1px 3px rgba(20, 48, 77, 0.25);
+  transition: transform var(--dur) var(--ease);
+}
+
+.switch input:checked + .switch-track {
+  background: var(--brand-primary);
+}
+
+/* RTL: the thumb travels to the left when on. */
+.switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(-17px);
+}
+
+.switch input:disabled + .switch-track {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.switch-label {
+  font-size: 13px;
+}
+
+/* Checkbox — used for table multi-select. */
+.checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 1.5px solid var(--brand-soft);
+  accent-color: var(--brand-primary);
+  cursor: pointer;
+  flex: none;
+}
+
+/* ----------------------------------------------------------------- tables */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table thead th {
+  text-align: right;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 10px var(--sp-4);
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.table th.sortable:hover {
+  color: var(--brand-primary);
+}
+
+.table tbody td {
+  padding: 11px var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr.clickable {
+  cursor: pointer;
+}
+
+.table tbody tr.clickable:hover {
+  background: var(--bg-app);
+}
+
+.table tbody tr.selected {
+  background: var(--bg-subtle);
+}
+
+.table-num {
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  text-align: right;
+  unicode-bidi: embed;
+}
+
+/* --------------------------------------------------------------- skeleton */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--shimmer-base) 25%,
+    var(--shimmer-highlight) 50%,
+    var(--shimmer-base) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.3s linear infinite;
+  border-radius: 8px;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ------------------------------------------------------------ empty/error */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-10) var(--sp-5);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.empty-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-hero);
+  background: var(--bg-tint);
+  color: var(--brand-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-card);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.notice-info { background: var(--bg-tint); color: var(--brand-deep); }
+.notice-success { background: var(--success-tint); color: var(--success); }
+.notice-warning { background: var(--warning-tint); color: var(--warning); }
+.notice-danger { background: var(--danger-tint); color: var(--danger); }
+
+/* ----------------------------------------------------------------- modal */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 48, 77, 0.32);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+  z-index: 60;
+  animation: fadeIn var(--dur) var(--ease);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal {
+  background: var(--bg-surface);
+  border-radius: var(--r-hero);
+  box-shadow: var(--shadow-pop);
+  width: min(560px, 100%);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  animation: popIn var(--dur) var(--ease);
+}
+
+.modal-lg { width: min(860px, 100%); }
+.modal-xl { width: min(1100px, 100%); }
+
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--divider);
+}
+
+.modal-head h3 {
+  font-size: 16px;
+}
+
+.modal-body {
+  padding: var(--sp-5);
+  overflow-y: auto;
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--divider);
+}
+
+/* ------------------------------------------------------------------ tabs */
+
+.tabs {
+  display: flex;
+  gap: var(--sp-1);
+  background: var(--bg-subtle);
+  padding: 4px;
+  border-radius: var(--r-pill);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.tab {
+  padding: 7px 16px;
+  border-radius: var(--r-pill);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.tab:hover { color: var(--brand-deep); }
+
+.tab.active {
+  background: var(--brand-primary);
+  color: var(--on-brand);
+}
+
+/* Segmented filter chips, used above tables. */
+.chips {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.chip {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--hairline);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.chip:hover { border-color: var(--brand-soft); }
+
+.chip.active {
+  background: var(--bg-subtle);
+  border-color: var(--brand-soft);
+  color: var(--brand-deep);
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------ pagination */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--divider);
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.page-btns {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.page-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--r-chip);
+  border: 1px solid var(--hairline);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.page-btn:hover:not(:disabled) { border-color: var(--brand-soft); color: var(--brand-deep); }
+.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.page-btn.active {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: var(--on-brand);
+}
+
+/* ---------------------------------------------------------------- toasts */
+
+.toast-stack {
+  position: fixed;
+  bottom: var(--sp-5);
+  left: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  z-index: 90;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 11px var(--sp-4);
+  border-radius: var(--r-card);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-raised);
+  font-size: 13px;
+  border: 1px solid var(--hairline);
+  animation: toastIn var(--dur) var(--ease);
+  max-width: 380px;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.toast-success { color: var(--success); border-color: var(--success-tint); }
+.toast-error { color: var(--danger); border-color: var(--danger-tint); }
+.toast-info { color: var(--brand-deep); border-color: var(--brand-soft); }
+
+/* ------------------------------------------------------------ team crest */
+
+/* Letter crest, mirroring the app's TeamLogo — no uploaded club logos. */
+.crest {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  flex: none;
+  box-shadow: inset 0 -2px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* ---------------------------------------------------------------- charts */
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* Progress/meter bar shared by subscription health and sentiment splits. */
+.meter {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--divider);
+  overflow: hidden;
+  display: flex;
+}
+
+.meter-fill {
+  height: 100%;
+  transition: width var(--dur) var(--ease);
+}
+
+/* -------------------------------------------------------------- key-value */
+
+.kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--sp-2) var(--sp-4);
+  font-size: 13px;
+}
+
+.kv dt {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.kv dd {
+  margin: 0;
+  color: var(--text-primary);
+}

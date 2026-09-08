@@ -1,0 +1,92 @@
+/*
+ * Design tokens — the single source of color, spacing and radius.
+ *
+ * These values mirror the Flutter app's `lib/core/theme/app_colors.dart` and
+ * `app_spacing.dart` one-for-one, so the console and the customer app stay one
+ * visual system. The rules carried over from the app:
+ *
+ *  - Backgrounds are light. There is no dark surface anywhere.
+ *  - Brand blue means action / active state / key number. Nothing decorative.
+ *  - Text never goes pure black; use the three-step ramp.
+ *  - Each semantic color has exactly one meaning: success = confirmed/active,
+ *    warning = expiring soon, danger = expired/destructive, live = live badge
+ *    only, gold = award accent only.
+ *  - No component file may declare a raw hex color. Add a token here instead.
+ */
+
+:root {
+  /* Backgrounds */
+  --bg-app: #f7fafd;
+  --bg-surface: #ffffff;
+  --bg-subtle: #eef5fc;
+  --bg-tint: #e8f2fc;
+
+  /* Brand */
+  --brand-primary: #5b97d5;
+  --brand-deep: #2e6ba8;
+  --brand-soft: #c3ddf5;
+  --on-brand: #ffffff;
+
+  /* Text ramp */
+  --text-primary: #14304d;
+  --text-secondary: #5a7391;
+  --text-tertiary: #8fa5bc;
+  --text-disabled: #b6c4d4;
+
+  /* Semantic — one meaning each */
+  --success: #2fa97c;
+  --success-tint: #e6f5ef;
+  --success-light: #4fc098;
+  --warning: #e5943a;
+  --warning-tint: #fdf1e3;
+  --warning-light: #f0ac63;
+  --danger: #e05b5b;
+  --danger-tint: #fcecec;
+  --live: #e23b3b;
+  --live-tint: #fdebeb;
+  --gold: #d9a441;
+  --gold-tint: #fbf2df;
+
+  /* Hairlines */
+  --hairline: #e4ecf4;
+  --divider: #eef3f8;
+
+  /* Skeleton shimmer */
+  --shimmer-base: #e7ebf3;
+  --shimmer-highlight: #f6f8fc;
+
+  /* Spacing scale — 4 / 8 / 12 / 16 / 20 / 24 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* Radius set — matches AppSpacing */
+  --r-chip: 12px;
+  --r-button: 14px;
+  --r-card: 16px;
+  --r-hero: 22px;
+  --r-pill: 999px;
+
+  /* Elevation — soft, blue-tinted, never a hard grey drop shadow */
+  --shadow-card: 0 1px 2px rgba(20, 48, 77, 0.04), 0 6px 20px rgba(20, 48, 77, 0.06);
+  --shadow-raised: 0 2px 6px rgba(20, 48, 77, 0.06), 0 14px 36px rgba(20, 48, 77, 0.1);
+  --shadow-pop: 0 18px 50px rgba(20, 48, 77, 0.18);
+
+  /* The one header gradient the app allows (bgTint -> bgApp) */
+  --header-wash: linear-gradient(180deg, var(--bg-tint) 0%, var(--bg-app) 100%);
+
+  /* Layout metrics */
+  --sidebar-w: 254px;
+  --sidebar-w-collapsed: 72px;
+  --topbar-h: 62px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+}
