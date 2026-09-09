@@ -8,7 +8,6 @@
  */
 
 import type {
-  AdminRoleKey,
   AppUserStatus,
   CampaignState,
   DeviceStatus,
@@ -108,14 +107,6 @@ export const POINTS_KIND: Record<PointsEntryKind, { label: string; tone: Tone }>
   penalty: { label: 'خصم', tone: 'danger' },
   season_reset: { label: 'تصفير موسم', tone: 'muted' },
   redeem: { label: 'استبدال', tone: 'gold' },
-};
-
-export const ADMIN_ROLE: Record<AdminRoleKey, string> = {
-  owner: 'مالك النظام',
-  operations: 'العمليات',
-  content: 'المحتوى',
-  support: 'الدعم',
-  viewer: 'مشاهدة فقط',
 };
 
 export const AUDIT_ACTION: Record<string, { label: string; tone: Tone }> = {

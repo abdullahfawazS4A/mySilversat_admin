@@ -26,7 +26,6 @@ import {
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { useAuth } from '@/app/AuthContext';
 import { PageHeader, DataTable, Toolbar, BulkBar, type Column } from '@/components/page';
 import {
   AsyncBlock,
@@ -52,8 +51,6 @@ type PredictFilter = 'all' | 'open' | 'closed';
 export function MatchesPage() {
   const repos = useRepos();
   const { toast } = useToast();
-  const { can } = useAuth();
-  const canEdit = can('matches.edit');
 
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
@@ -202,7 +199,7 @@ export function MatchesPage() {
           <div className="col" style={{ gap: 3 }}>
             <Switch
               checked={match.openForPredict}
-              disabled={!canEdit || (!match.openForPredict && match.state !== 'scheduled')}
+              disabled={!match.openForPredict && match.state !== 'scheduled'}
               onChange={(next) => void toggleOpen(match, next)}
               title={
                 match.state !== 'scheduled' && !match.openForPredict
@@ -252,7 +249,6 @@ export function MatchesPage() {
               variant="subtle"
               size="sm"
               icon={<CheckCircle2 size={13} />}
-              disabled={!canEdit}
               onClick={() => setSettling(match)}
             >
               احتساب
@@ -267,36 +263,32 @@ export function MatchesPage() {
         width: 130,
         render: (match) => (
           <div className="row row-gap-1">
-            {canEdit ? (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={<Radio size={14} />}
-                  title="النتيجة المباشرة / إنهاء المباراة"
-                  onClick={() => setScoring(match)}
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={<Pencil size={14} />}
-                  title="تعديل"
-                  onClick={() => setEditing(match)}
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={<Trash2 size={14} />}
-                  title="حذف"
-                  onClick={() => setDeleting(match)}
-                />
-              </>
-            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Radio size={14} />}
+              title="النتيجة المباشرة / إنهاء المباراة"
+              onClick={() => setScoring(match)}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Pencil size={14} />}
+              title="تعديل"
+              onClick={() => setEditing(match)}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Trash2 size={14} />}
+              title="حذف"
+              onClick={() => setDeleting(match)}
+            />
           </div>
         ),
       },
     ],
-    [canEdit],
+    [],
   );
 
   const openCount = matches.data?.items.filter((m) => m.openForPredict).length ?? 0;
@@ -307,11 +299,9 @@ export function MatchesPage() {
         title="المباريات"
         subtitle="كل المباريات المتوفرة — وهنا تختار أي مباراة تنفتح للتوقع داخل التطبيق"
         actions={
-          canEdit ? (
-            <Button variant="primary" icon={<CalendarPlus size={16} />} onClick={() => setEditing('new')}>
-              إضافة مباراة
-            </Button>
-          ) : null
+          <Button variant="primary" icon={<CalendarPlus size={16} />} onClick={() => setEditing('new')}>
+            إضافة مباراة
+          </Button>
         }
       />
 
@@ -364,7 +354,7 @@ export function MatchesPage() {
             />
           </Toolbar>
 
-          {selected.size > 0 && canEdit ? (
+          {selected.size > 0 ? (
             <BulkBar count={selected.size}>
               <Button
                 variant="primary"
@@ -396,7 +386,7 @@ export function MatchesPage() {
                 columns={columns}
                 rows={data.items}
                 rowKey={(match) => match.id}
-                selectedIds={canEdit ? selected : undefined}
+                selectedIds={selected}
                 onToggleSelect={(id) =>
                   setSelected((current) => {
                     const next = new Set(current);

@@ -23,7 +23,6 @@ import {
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync, useAction } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { useAuth } from '@/app/AuthContext';
 import { PageHeader } from '@/components/page';
 import {
   AsyncBlock,
@@ -68,7 +67,6 @@ export function UserDetailPage() {
   const repos = useRepos();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { can } = useAuth();
 
   const [tab, setTab] = useState<Tab>('devices');
   const [editing, setEditing] = useState(false);
@@ -123,26 +121,22 @@ export function UserDetailPage() {
                   <Button variant="ghost" icon={<ArrowRight size={16} />} onClick={() => navigate('/users')}>
                     رجوع
                   </Button>
-                  {can('users.edit') ? (
-                    <Button variant="outline" icon={<Pencil size={15} />} onClick={() => setEditing(true)}>
-                      تعديل البيانات
+                  <Button variant="outline" icon={<Pencil size={15} />} onClick={() => setEditing(true)}>
+                    تعديل البيانات
+                  </Button>
+                  {user.status === 'blocked' ? (
+                    <Button
+                      variant="primary"
+                      icon={<BadgeCheck size={15} />}
+                      onClick={() => void setStatus('active')}
+                    >
+                      رفع الحظر
                     </Button>
-                  ) : null}
-                  {can('users.block') ? (
-                    user.status === 'blocked' ? (
-                      <Button
-                        variant="primary"
-                        icon={<BadgeCheck size={15} />}
-                        onClick={() => void setStatus('active')}
-                      >
-                        رفع الحظر
-                      </Button>
-                    ) : (
-                      <Button variant="danger" icon={<Ban size={15} />} onClick={() => setBlocking(true)}>
-                        حظر المشترك
-                      </Button>
-                    )
-                  ) : null}
+                  ) : (
+                    <Button variant="danger" icon={<Ban size={15} />} onClick={() => setBlocking(true)}>
+                      حظر المشترك
+                    </Button>
+                  )}
                 </>
               }
             />
@@ -237,16 +231,14 @@ export function UserDetailPage() {
                                 <span className="fs-11 dim num">{device.number}</span>
                               </div>
                               <Pill tone={meta.tone}>{meta.label}</Pill>
-                              {can('renewals.create') ? (
-                                <Button
-                                  variant="subtle"
-                                  size="sm"
-                                  icon={<CalendarPlus size={13} />}
-                                  onClick={() => setRenewingDeviceId(device.id)}
-                                >
-                                  تجديد
-                                </Button>
-                              ) : null}
+                              <Button
+                                variant="subtle"
+                                size="sm"
+                                icon={<CalendarPlus size={13} />}
+                                onClick={() => setRenewingDeviceId(device.id)}
+                              >
+                                تجديد
+                              </Button>
                             </div>
                             <HealthMeter
                               ratio={Math.max(0, Math.min(1, left / total))}

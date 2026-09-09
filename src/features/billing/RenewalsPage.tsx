@@ -12,7 +12,6 @@ import { Download, Undo2 } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { useAuth } from '@/app/AuthContext';
 import { PageHeader, DataTable, Toolbar, type Column } from '@/components/page';
 import {
   AsyncBlock,
@@ -37,7 +36,6 @@ export function RenewalsPage() {
   const repos = useRepos();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { can } = useAuth();
   const [params] = useSearchParams();
 
   const [search, setSearch] = useState('');
@@ -185,7 +183,7 @@ export function RenewalsPage() {
       header: '',
       width: 60,
       render: (row) =>
-        can('renewals.create') && row.status === 'completed' ? (
+        row.status === 'completed' ? (
           <Button
             variant="ghost"
             size="sm"

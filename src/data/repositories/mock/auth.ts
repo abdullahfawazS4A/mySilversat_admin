@@ -10,15 +10,12 @@
 import type { AdminSession } from '@/types';
 import type { AuthRepository } from '../types';
 import { mockDb } from '@/data/mockDb';
-import { ADMIN_ROLES } from '@/data/seed';
 
 const STORAGE_KEY = 'silversat.admin.session';
 
 function sessionFor(username: string): AdminSession | null {
   const admin = mockDb.tables.admins.find((a) => a.username === username);
-  if (!admin) return null;
-  const role = ADMIN_ROLES.find((r) => r.key === admin.role);
-  return { admin, permissions: role?.permissions ?? [] };
+  return admin ? { admin } : null;
 }
 
 export class MockAuthRepository implements AuthRepository {
@@ -44,7 +41,7 @@ export class MockAuthRepository implements AuthRepository {
     await mockDb.latency();
     const session = sessionFor(username.trim());
     if (!session) throw new Error('اسم المستخدم غير موجود');
-    if (!session.admin.active) throw new Error('هذا الحساب موقوف — راجع مالك النظام');
+    if (!session.admin.active) throw new Error('هذا الحساب موقوف');
     if (password.trim().length < 4) throw new Error('كلمة المرور قصيرة جداً');
 
     session.admin.lastLoginAt = new Date().toISOString();

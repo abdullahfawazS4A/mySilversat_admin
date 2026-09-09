@@ -17,7 +17,7 @@ import { useAsync, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
 import { DataTable, PageHeader, Toolbar, type Column } from '@/components/page';
 import { AsyncBlock, Button, EmptyState, Pill, SearchInput, Select } from '@/components/ui';
-import type { AuditEntry, Id } from '@/types';
+import type { AuditEntry } from '@/types';
 import { AUDIT_ACTION } from '@/lib/labels';
 import { formatDateTimeAr, relativeAr } from '@/lib/format';
 import { downloadCsv } from '@/lib/utils';
@@ -59,21 +59,18 @@ export function AuditPage() {
 
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
-  const [adminId, setAdminId] = useState<Id | 'all'>('all');
   const [entityType, setEntityType] = useState<string>('all');
   const [page, setPage] = useState(1);
 
-  const admins = useAsync(() => repos.admin.admins(), []);
   const entries = useAsync(
     () =>
       repos.admin.audit({
         search: debounced,
-        adminId: adminId === 'all' ? undefined : adminId,
         entityType: entityType === 'all' ? undefined : entityType,
         page,
         pageSize: 30,
       }),
-    [debounced, adminId, entityType, page],
+    [debounced, entityType, page],
   );
 
   // The entity filter offers only kinds that actually appear in the log.
@@ -85,7 +82,6 @@ export function AuditPage() {
   const exportCsv = async () => {
     const all = await repos.admin.audit({
       search: debounced,
-      adminId: adminId === 'all' ? undefined : adminId,
       entityType: entityType === 'all' ? undefined : entityType,
       pageSize: 100000,
     });
@@ -170,17 +166,6 @@ export function AuditPage() {
                 setPage(1);
               }}
               placeholder="بحث بالتفاصيل أو باسم المستخدم…"
-            />
-            <Select
-              value={adminId}
-              onChange={(next) => {
-                setAdminId(next);
-                setPage(1);
-              }}
-              options={[
-                { value: 'all', label: 'كل المستخدمين' },
-                ...(admins.data ?? []).map((a) => ({ value: a.id, label: a.fullName })),
-              ]}
             />
             <Select
               value={entityType}

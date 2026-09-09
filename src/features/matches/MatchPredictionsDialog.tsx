@@ -11,7 +11,6 @@ import { Download, Trash2 } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { useAuth } from '@/app/AuthContext';
 import { AsyncBlock, Button, Modal, Pill, SearchInput } from '@/components/ui';
 import { DataTable, type Column } from '@/components/page';
 import { SentimentMeter } from '@/components/charts';
@@ -29,7 +28,6 @@ export function MatchPredictionsDialog({
 }) {
   const repos = useRepos();
   const { toast } = useToast();
-  const { can } = useAuth();
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
   const [page, setPage] = useState(1);
@@ -110,16 +108,15 @@ export function MatchPredictionsDialog({
       key: 'actions',
       header: '',
       width: 50,
-      render: (row) =>
-        can('predictions.settle') ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Trash2 size={14} />}
-            title="حذف التوقع"
-            onClick={() => void removePick(row)}
-          />
-        ) : null,
+      render: (row) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<Trash2 size={14} />}
+          title="حذف التوقع"
+          onClick={() => void removePick(row)}
+        />
+        ),
     },
   ];
 

@@ -1,13 +1,12 @@
 /**
- * Admin session + permission gate.
+ * Admin session.
  *
  * Mirrors the app's AuthController: status walks
  * `unknown -> unauthenticated | authenticated`, and the router redirects on
  * that status rather than on the presence of a user object.
  *
- * `can()` hides controls the signed-in role may not use. It is a usability
- * feature, not a security boundary — a real backend must enforce the same
- * permission set server-side.
+ * The console has a single admin account, so there is nothing to gate on — a
+ * real backend still has to authenticate every request server-side.
  */
 
 import {
@@ -19,7 +18,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { AdminSession, Permission } from '@/types';
+import type { AdminSession } from '@/types';
 import { useRepos } from './RepositoryContext';
 
 export type AuthStatus = 'unknown' | 'unauthenticated' | 'authenticated';
@@ -29,7 +28,6 @@ interface AuthContextValue {
   session: AdminSession | null;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  can: (permission: Permission) => boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -71,14 +69,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('unauthenticated');
   }, [repos]);
 
-  const can = useCallback(
-    (permission: Permission) => session?.permissions.includes(permission) ?? false,
-    [session],
-  );
-
   const value = useMemo<AuthContextValue>(
-    () => ({ status, session, signIn, signOut, can }),
-    [status, session, signIn, signOut, can],
+    () => ({ status, session, signIn, signOut }),
+    [status, session, signIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -9,13 +9,12 @@ import { LogOut, Menu, RefreshCw, Satellite, User } from 'lucide-react';
 import { useAuth } from '@/app/AuthContext';
 import { useRepos } from '@/app/RepositoryContext';
 import { useToast } from '@/app/ToastContext';
-import { ADMIN_ROLES } from '@/data/seed';
 import { NAV_GROUPS, titleForPath } from './navigation';
 import { Button, ConfirmDialog, Skeleton } from '@/components/ui';
 import { cx } from '@/lib/utils';
 
 export function AdminShell() {
-  const { status, session, signOut, can } = useAuth();
+  const { status, session, signOut } = useAuth();
   const location = useLocation();
   const repos = useRepos();
   const { toast } = useToast();
@@ -38,8 +37,6 @@ export function AdminShell() {
   if (status === 'unauthenticated' || !session) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-
-  const roleName = ADMIN_ROLES.find((role) => role.key === session.admin.role)?.nameAr ?? '';
 
   const runReset = async () => {
     setResetting(true);
@@ -70,27 +67,23 @@ export function AdminShell() {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV_GROUPS.map((group) => {
-            const visible = group.items.filter((item) => can(item.permission));
-            if (visible.length === 0) return null;
-            return (
-              <div key={group.title}>
-                <div className="nav-group-title">{group.title}</div>
-                {visible.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    end={item.path === '/'}
-                    title={item.label}
-                    className={({ isActive }) => cx('nav-link', isActive && 'active')}
-                  >
-                    <item.icon size={17} />
-                    <span>{item.label}</span>
-                  </NavLink>
-                ))}
-              </div>
-            );
-          })}
+          {NAV_GROUPS.map((group) => (
+            <div key={group.title}>
+              <div className="nav-group-title">{group.title}</div>
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.path === '/'}
+                  title={item.label}
+                  className={({ isActive }) => cx('nav-link', isActive && 'active')}
+                >
+                  <item.icon size={17} />
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+            </div>
+          ))}
         </nav>
 
         <div className="sidebar-foot">
@@ -126,7 +119,7 @@ export function AdminShell() {
             </span>
             <div className="col" style={{ lineHeight: 1.3 }}>
               <span className="fs-12 strong">{session.admin.fullName}</span>
-              <span className="fs-11 dim">{roleName}</span>
+              <span className="fs-11 dim">{session.admin.username}</span>
             </div>
           </div>
         </header>

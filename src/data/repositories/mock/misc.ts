@@ -7,7 +7,6 @@
 
 import type {
   Agent,
-  AdminUser,
   AppSettings,
   AuditEntry,
   DashboardSummary,
@@ -171,42 +170,9 @@ export class MockAgentsRepository implements AgentsRepository {
   }
 }
 
-// ----------------------------------------- admins, audit, settings, stats ----
+// ------------------------------------------- audit, settings and stats ------
 
 export class MockAdminRepository implements AdminRepository {
-  admins(): Promise<AdminUser[]> {
-    return mockDb.read(() => [...mockDb.tables.admins]);
-  }
-
-  async saveAdmin(
-    admin: Omit<AdminUser, 'id' | 'createdAt' | 'lastLoginAt'> & { id?: Id },
-  ): Promise<AdminUser> {
-    await mockDb.latency();
-    const clash = mockDb.tables.admins.find(
-      (a) => a.username === admin.username && a.id !== admin.id,
-    );
-    if (clash) throw new Error('اسم المستخدم محجوز');
-
-    const saved = upsert(mockDb.tables.admins, admin, 'adm', {
-      ...admin,
-      createdAt: new Date().toISOString(),
-      lastLoginAt: null,
-    } as Omit<AdminUser, 'id'>);
-    mockDb.audit(admin.id ? 'update' : 'create', 'admin', saved.id, `مستخدم إداري: ${saved.fullName}`);
-    return saved;
-  }
-
-  async removeAdmin(id: Id): Promise<void> {
-    await mockDb.latency();
-    const admin = requireById(mockDb.tables.admins, id, 'المستخدم الإداري');
-    if (admin.id === mockDb.currentAdmin?.id) throw new Error('لا يمكنك حذف حسابك الحالي');
-    if (admin.role === 'owner' && mockDb.tables.admins.filter((a) => a.role === 'owner').length === 1) {
-      throw new Error('لا يمكن حذف آخر مالك للنظام');
-    }
-    removeById(mockDb.tables.admins, id);
-    mockDb.audit('delete', 'admin', id, `حذف مستخدم إداري: ${admin.fullName}`);
-  }
-
   async audit(query: ListQuery & { adminId?: Id; entityType?: string }): Promise<Page<AuditEntry>> {
     await mockDb.latency();
     let rows = [...mockDb.tables.audit];

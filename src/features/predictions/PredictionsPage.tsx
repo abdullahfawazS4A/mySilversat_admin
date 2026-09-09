@@ -16,7 +16,6 @@ import { AlertTriangle, CheckCircle2, Clock, Target, Users } from 'lucide-react'
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { useAuth } from '@/app/AuthContext';
 import { PageHeader } from '@/components/page';
 import {
   AsyncBlock,
@@ -70,8 +69,6 @@ function MatchRow({
 export function PredictionsPage() {
   const repos = useRepos();
   const { toast } = useToast();
-  const { can } = useAuth();
-  const canSettle = can('predictions.settle');
 
   const [viewing, setViewing] = useState<MatchView | null>(null);
   const [settling, setSettling] = useState<MatchView | null>(null);
@@ -155,11 +152,9 @@ export function PredictionsPage() {
               title="تنتظر احتساب النقاط"
               subtitle="مباريات انتهت وتوقعاتها ما انحسبت بعد — المشترك ما راح يشوف نقاطه حتى تحتسبها"
               actions={
-                canSettle ? (
-                  <Button variant="primary" disabled={busy} onClick={() => void settleAll()}>
-                    {busy ? 'جاري الاحتساب…' : `احتساب الكل (${awaiting.length})`}
-                  </Button>
-                ) : null
+                <Button variant="primary" disabled={busy} onClick={() => void settleAll()}>
+                  {busy ? 'جاري الاحتساب…' : `احتساب الكل (${awaiting.length})`}
+                </Button>
               }
             />
             {awaiting.map((match) => (
@@ -172,16 +167,14 @@ export function PredictionsPage() {
                     <span className="fs-13 strong num">
                       {match.homeScore} – {match.awayScore}
                     </span>
-                    {canSettle ? (
-                      <Button
-                        variant="subtle"
-                        size="sm"
-                        icon={<CheckCircle2 size={13} />}
-                        onClick={() => setSettling(match)}
-                      >
-                        احتساب
-                      </Button>
-                    ) : null}
+                    <Button
+                      variant="subtle"
+                      size="sm"
+                      icon={<CheckCircle2 size={13} />}
+                      onClick={() => setSettling(match)}
+                    >
+                      احتساب
+                    </Button>
                   </div>
                 }
               />

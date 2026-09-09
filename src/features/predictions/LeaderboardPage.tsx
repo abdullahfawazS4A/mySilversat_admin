@@ -12,7 +12,6 @@ import { Award, Download, Minus, Plus, RotateCcw, Trophy } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync, useAction, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { useAuth } from '@/app/AuthContext';
 import { PageHeader, DataTable, Toolbar, type Column } from '@/components/page';
 import {
   AsyncBlock,
@@ -35,8 +34,6 @@ import { downloadCsv } from '@/lib/utils';
 export function LeaderboardPage() {
   const repos = useRepos();
   const { toast } = useToast();
-  const { can } = useAuth();
-  const canAdjust = can('points.adjust');
 
   const [seasonId, setSeasonId] = useState<Id | ''>('');
   const [governorateId, setGovernorateId] = useState<Id | 'all'>('all');
@@ -168,7 +165,7 @@ export function LeaderboardPage() {
       header: '',
       width: 100,
       render: (row) =>
-        canAdjust && isActiveSeason ? (
+        isActiveSeason ? (
           <Button variant="ghost" size="sm" onClick={() => setAdjusting(row)}>
             تعديل النقاط
           </Button>
@@ -186,7 +183,7 @@ export function LeaderboardPage() {
             <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportCsv()}>
               تصدير
             </Button>
-            {canAdjust && isActiveSeason ? (
+            {isActiveSeason ? (
               <>
                 <Button variant="outline" icon={<RotateCcw size={15} />} onClick={() => setConfirmReset(true)}>
                   تصفير النقاط

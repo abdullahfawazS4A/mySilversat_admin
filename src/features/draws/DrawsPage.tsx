@@ -23,7 +23,6 @@ import {
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync, useAction } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { useAuth } from '@/app/AuthContext';
 import { PageHeader } from '@/components/page';
 import {
   AsyncBlock,
@@ -48,8 +47,6 @@ import { formatDateAr, formatNumber } from '@/lib/format';
 export function DrawsPage() {
   const repos = useRepos();
   const { toast } = useToast();
-  const { can } = useAuth();
-  const canRun = can('draws.run');
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingDraw, setEditingDraw] = useState<Draw | 'new' | null>(null);
@@ -130,11 +127,9 @@ export function DrawsPage() {
         title="السحوبات والجوائز"
         subtitle="تعريف الجوائز، إجراء السحب على الكوبونات المؤهلة، ونشر أسماء الفائزين"
         actions={
-          canRun ? (
-            <Button variant="primary" icon={<Plus size={16} />} onClick={() => setEditingDraw('new')}>
-              سحب جديد
-            </Button>
-          ) : null
+          <Button variant="primary" icon={<Plus size={16} />} onClick={() => setEditingDraw('new')}>
+            سحب جديد
+          </Button>
         }
       />
 
@@ -184,28 +179,26 @@ export function DrawsPage() {
                   />
                 </div>
 
-                {canRun ? (
-                  <div className="row row-gap-3 wrap">
-                    {draw.state === 'open' || draw.state === 'draft' ? (
-                      <Button
-                        variant="primary"
-                        icon={<Dices size={16} />}
-                        onClick={() => setConfirmRun(true)}
-                        disabled={(prizes.data?.length ?? 0) === 0}
-                      >
-                        إجراء السحب الآن
-                      </Button>
-                    ) : null}
-                    {draw.state === 'drawn' ? (
-                      <Button variant="primary" icon={<Megaphone size={16} />} onClick={() => setConfirmPublish(true)}>
-                        نشر النتائج في التطبيق
-                      </Button>
-                    ) : null}
-                    <Button variant="outline" icon={<Pencil size={15} />} onClick={() => setEditingDraw(draw)}>
-                      تعديل بيانات السحب
+                <div className="row row-gap-3 wrap">
+                  {draw.state === 'open' || draw.state === 'draft' ? (
+                    <Button
+                      variant="primary"
+                      icon={<Dices size={16} />}
+                      onClick={() => setConfirmRun(true)}
+                      disabled={(prizes.data?.length ?? 0) === 0}
+                    >
+                      إجراء السحب الآن
                     </Button>
-                  </div>
-                ) : null}
+                  ) : null}
+                  {draw.state === 'drawn' ? (
+                    <Button variant="primary" icon={<Megaphone size={16} />} onClick={() => setConfirmPublish(true)}>
+                      نشر النتائج في التطبيق
+                    </Button>
+                  ) : null}
+                  <Button variant="outline" icon={<Pencil size={15} />} onClick={() => setEditingDraw(draw)}>
+                    تعديل بيانات السحب
+                  </Button>
+                </div>
 
                 {draw.state === 'published' ? (
                   <Notice tone="success">
@@ -220,7 +213,7 @@ export function DrawsPage() {
                       title="الجوائز"
                       subtitle="كل مستوى جائزة يسحب العدد المحدد من الكوبونات"
                       actions={
-                        canRun && draw.state !== 'published' ? (
+                        draw.state !== 'published' ? (
                           <Button variant="subtle" size="sm" icon={<Plus size={13} />} onClick={() => setEditingPrize('new')}>
                             إضافة جائزة
                           </Button>
@@ -257,7 +250,7 @@ export function DrawsPage() {
                               </Pill>
                             ) : null}
                             <span className="fs-13 num strong">{prize.winnersCount}</span>
-                            {canRun && draw.state !== 'published' ? (
+                            {draw.state !== 'published' ? (
                               <div className="row row-gap-1">
                                 <Button variant="ghost" size="sm" icon={<Pencil size={13} />} onClick={() => setEditingPrize(prize)} />
                                 <Button variant="ghost" size="sm" icon={<Trash2 size={13} />} onClick={() => setDeletingPrize(prize)} />
@@ -289,7 +282,6 @@ export function DrawsPage() {
                                 checked={winner.claimed}
                                 onChange={(next) => void toggleClaimed(winner.id, next)}
                                 label={winner.claimed ? 'مستلمة' : 'ما استلمها'}
-                                disabled={!canRun}
                               />
                             </div>
                             <span className="fs-12 muted">{winner.prizeTitle}</span>

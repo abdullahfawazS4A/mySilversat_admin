@@ -1,9 +1,8 @@
 /**
  * Admin sign-in.
  *
- * The demo accounts are listed on the card on purpose: this is a UI prototype
- * with no real authentication, and hiding the credentials would only make it
- * harder to show the role-based permission behaviour to the client.
+ * The console has one account and no roles. The credentials stay on the card
+ * on purpose: this is a UI prototype with no real authentication behind it.
  */
 
 import { useState, type FormEvent } from 'react';
@@ -11,14 +10,6 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { LogIn, Satellite } from 'lucide-react';
 import { useAuth } from '@/app/AuthContext';
 import { Button, Card, Field, Notice, TextInput } from '@/components/ui';
-import { ADMIN_ROLES } from '@/data/seed';
-
-const DEMO_ACCOUNTS = [
-  { username: 'admin', role: 'owner' },
-  { username: 'ops.mustafa', role: 'operations' },
-  { username: 'content.noor', role: 'content' },
-  { username: 'support.hasan', role: 'support' },
-] as const;
 
 export function LoginPage() {
   const { status, signIn } = useAuth();
@@ -76,24 +67,7 @@ export function LoginPage() {
             {pending ? 'جاري الدخول…' : 'دخول'}
           </Button>
 
-          <div className="col" style={{ gap: 6 }}>
-            <span className="fs-11 dim">حسابات تجريبية — كل واحد بصلاحيات مختلفة:</span>
-            <div className="row wrap row-gap-2">
-              {DEMO_ACCOUNTS.map((account) => (
-                <button
-                  key={account.username}
-                  type="button"
-                  className="chip"
-                  onClick={() => setUsername(account.username)}
-                >
-                  {account.username}
-                  <span className="dim">
-                    {ADMIN_ROLES.find((role) => role.key === account.role)?.nameAr}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <span className="fs-11 dim">الحساب التجريبي: admin</span>
         </form>
       </Card>
     </div>

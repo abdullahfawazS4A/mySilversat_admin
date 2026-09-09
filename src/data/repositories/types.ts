@@ -17,7 +17,6 @@
 import type {
   Agent,
   AdminSession,
-  AdminUser,
   AppSettings,
   AppUser,
   AuditEntry,
@@ -314,13 +313,9 @@ export interface AgentsRepository {
   adjustBalance(id: Id, delta: number, reasonAr: string): Promise<Agent>;
 }
 
-// ------------------------------------------------ admins, audit, settings ---
+// -------------------------------------------------- audit, settings ---------
 
 export interface AdminRepository {
-  admins(): Promise<AdminUser[]>;
-  saveAdmin(admin: Omit<AdminUser, 'id' | 'createdAt' | 'lastLoginAt'> & { id?: Id }): Promise<AdminUser>;
-  removeAdmin(id: Id): Promise<void>;
-
   audit(query: ListQuery & { adminId?: Id; entityType?: string }): Promise<Page<AuditEntry>>;
 
   settings(): Promise<AppSettings>;

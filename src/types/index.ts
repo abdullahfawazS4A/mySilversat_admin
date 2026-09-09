@@ -73,61 +73,19 @@ export interface Governorate {
 
 // ------------------------------------------------------------ admin users ---
 
-/**
- * What an admin is allowed to do. Checked in the UI to hide controls; a real
- * backend must re-check server-side — the console never treats this as
- * security on its own.
- */
-export type Permission =
-  | 'dashboard.view'
-  | 'users.view'
-  | 'users.edit'
-  | 'users.block'
-  | 'devices.view'
-  | 'devices.edit'
-  | 'renewals.view'
-  | 'renewals.create'
-  | 'packages.edit'
-  | 'matches.view'
-  | 'matches.edit'
-  | 'predictions.view'
-  | 'predictions.settle'
-  | 'points.adjust'
-  | 'draws.view'
-  | 'draws.run'
-  | 'content.edit'
-  | 'notifications.send'
-  | 'agents.edit'
-  | 'settings.edit'
-  | 'admins.edit'
-  | 'audit.view';
-
-export type AdminRoleKey = 'owner' | 'operations' | 'content' | 'support' | 'viewer';
-
-export interface AdminRole {
-  key: AdminRoleKey;
-  nameAr: string;
-  descriptionAr: string;
-  permissions: Permission[];
-}
-
 export interface AdminUser {
   id: Id;
   fullName: string;
   username: string;
   phone: string;
-  role: AdminRoleKey;
   active: boolean;
   createdAt: IsoDate;
   lastLoginAt: IsoDate | null;
-  /** Governorates this admin is scoped to. Empty means nationwide. */
-  governorateIds: Id[];
 }
 
-/** The signed-in admin plus the resolved permission set for fast checks. */
+/** The signed-in admin. The console has one account and no roles. */
 export interface AdminSession {
   admin: AdminUser;
-  permissions: Permission[];
 }
 
 // ------------------------------------------------------------- app users ----

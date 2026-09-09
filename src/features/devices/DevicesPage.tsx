@@ -20,7 +20,6 @@ import {
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync, useAction, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { useAuth } from '@/app/AuthContext';
 import { PageHeader, DataTable, Toolbar, type Column } from '@/components/page';
 import {
   AsyncBlock,
@@ -47,8 +46,6 @@ export function DevicesPage() {
   const repos = useRepos();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { can } = useAuth();
-  const canEdit = can('devices.edit');
   const [params] = useSearchParams();
 
   const [search, setSearch] = useState('');
@@ -180,41 +177,40 @@ export function DevicesPage() {
       key: 'actions',
       header: '',
       width: 160,
-      render: (device) =>
-        canEdit ? (
-          <div className="row row-gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<CalendarPlus size={14} />}
-              title="تسجيل تجديد"
-              onClick={() => setRenewing(device)}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Gift size={14} />}
-              title="منح أشهر مجانية"
-              onClick={() => setGranting(device)}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<ArrowLeftRight size={14} />}
-              title="نقل لمشترك آخر"
-              onClick={() => setTransferring(device)}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={device.status === 'suspended' ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
-              title={device.status === 'suspended' ? 'إعادة تفعيل' : 'تعليق'}
-              onClick={() =>
-                device.status === 'suspended' ? void toggleSuspend(device) : setSuspending(device)
-              }
-            />
-          </div>
-        ) : null,
+      render: (device) => (
+        <div className="row row-gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<CalendarPlus size={14} />}
+            title="تسجيل تجديد"
+            onClick={() => setRenewing(device)}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Gift size={14} />}
+            title="منح أشهر مجانية"
+            onClick={() => setGranting(device)}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<ArrowLeftRight size={14} />}
+            title="نقل لمشترك آخر"
+            onClick={() => setTransferring(device)}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={device.status === 'suspended' ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
+            title={device.status === 'suspended' ? 'إعادة تفعيل' : 'تعليق'}
+            onClick={() =>
+              device.status === 'suspended' ? void toggleSuspend(device) : setSuspending(device)
+            }
+          />
+        </div>
+        ),
     },
   ];
 
