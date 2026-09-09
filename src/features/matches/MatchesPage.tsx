@@ -216,10 +216,19 @@ export function MatchesPage() {
                   : undefined
               }
             />
+            {/*
+              countdownAr returns "مغلق" once the close time has passed, which
+              read as "يقفل بعد مغلق" on every finished fixture. Past and future
+              are now two different sentences.
+            */}
             {match.openForPredict && match.predictionCloseAt ? (
-              <span className="fs-11 dim">
-                يقفل بعد <span className="num">{countdownAr(match.predictionCloseAt)}</span>
-              </span>
+              new Date(match.predictionCloseAt).getTime() > Date.now() ? (
+                <span className="fs-11 dim">
+                  يقفل بعد <span className="num">{countdownAr(match.predictionCloseAt)}</span>
+                </span>
+              ) : (
+                <span className="fs-11 dim">انقفل التوقع</span>
+              )
             ) : null}
           </div>
         ),

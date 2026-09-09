@@ -61,7 +61,7 @@ export function GovernoratesPage() {
       <PageHeader title="المحافظات" subtitle="تغطية الخدمة وتوزيع المشتركين" />
 
       <div className="page col" style={{ gap: 'var(--sp-4)' }}>
-        <div className="grid grid-kpi">
+        <div className="grid grid-kpi-3">
           <StatTile
             label="محافظات مفعّلة"
             value={`${formatNumber(activeCount)} / ${formatNumber(governorates.data?.length ?? 0)}`}

@@ -136,6 +136,22 @@ export function countdownAr(iso: IsoDate | null): string {
   return days === 1 ? 'يوم' : days === 2 ? 'يومين' : `${days} أيام`;
 }
 
+/**
+ * Arabic month counts: "شهر" / "شهرين" / "3 أشهر" / "12 شهر".
+ *
+ * Arabic does not pluralise the way a template literal assumes. Writing
+ * `${n} أشهر` produces "1 أشهر" and "12 أشهر", both wrong: one takes the
+ * singular, two takes the dual, 3–10 take the broken plural, and 11 and up go
+ * back to the singular. Every screen that prints a subscription length reads
+ * this so the console does not have to be wrong in nine places.
+ */
+export function monthsAr(count: number): string {
+  if (count === 1) return 'شهر';
+  if (count === 2) return 'شهرين';
+  if (count >= 3 && count <= 10) return `${count} أشهر`;
+  return `${count} شهر`;
+}
+
 /** 0.62 -> "62%". */
 export function formatPercent(ratio: number, digits = 0): string {
   return `${(ratio * 100).toFixed(digits)}%`;

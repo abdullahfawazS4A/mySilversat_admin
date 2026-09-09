@@ -20,7 +20,7 @@ import { Button, Field, Modal, Notice, Select, TextArea } from '@/components/ui'
 import type { Id, PaymentMethod } from '@/types';
 import { PAYMENT_METHOD } from '@/lib/labels';
 import { addMonths } from '@/lib/utils';
-import { daysUntil, formatDateAr, formatIqd } from '@/lib/format';
+import { daysUntil, formatDateAr, formatIqd, monthsAr } from '@/lib/format';
 
 export function RenewDialog({
   deviceId,
@@ -136,7 +136,7 @@ export function RenewDialog({
               { value: '', label: 'اختر الباقة' },
               ...activePackages.map((pkg) => ({
                 value: pkg.id,
-                label: `${pkg.months} أشهر — ${formatIqd(pkg.price)}${pkg.bonus ? ' + شهر مجاني' : ''}`,
+                label: `${monthsAr(pkg.months)} — ${formatIqd(pkg.price)}${pkg.bonus ? ' + شهر مجاني' : ''}`,
               })),
             ]}
           />
@@ -176,7 +176,7 @@ export function RenewDialog({
         {chosen && needsCard ? (
           cardMissing ? (
             <Notice tone="danger" icon={<CreditCard size={16} />}>
-              ما بقى كارت <span className="num strong">{chosen.months}</span> أشهر في مخزن{' '}
+              ما بقى كارت <span className="strong">{monthsAr(chosen.months)}</span> في مخزن{' '}
               <span className="strong">{governorateName}</span>. عبّي المخزن أو اختر باقة بمدة ثانية —
               التجديد ما ينسجّل بدون كارت.
             </Notice>
@@ -184,7 +184,7 @@ export function RenewDialog({
             <Notice tone="info" icon={<CreditCard size={16} />}>
               راح ينسحب الكارت <span className="num strong">{nextCard.data.code}</span> من مخزن{' '}
               <span className="strong">{governorateName}</span> — أقدم كارت{' '}
-              <span className="num">{chosen.months}</span> أشهر بالمخزن.
+              <span className="strong">{monthsAr(chosen.months)}</span> بالمخزن.
             </Notice>
           ) : null
         ) : null}

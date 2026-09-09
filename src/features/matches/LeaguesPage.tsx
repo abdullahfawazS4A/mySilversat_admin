@@ -115,7 +115,7 @@ export function LeaguesPage() {
 
         {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
 
-        <div className="split">
+        <div className="split split-rail">
           <Card>
             <CardHead title="الدوريات" subtitle={`${formatNumber(leagues.data?.length ?? 0)} دوري`} />
             <AsyncBlock

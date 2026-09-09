@@ -413,6 +413,20 @@ export function TableSkeleton({ rows = 6, cols = 5 }: { rows?: number; cols?: nu
 }
 
 /** Renders one of loading / error / empty / content, like the app's `.when()`. */
+/**
+ * Whether a settled value is "nothing yet" — an empty array, or a paged
+ * envelope with no items. Used only to decide between a skeleton and a stale
+ * render during a refetch, so a wrong guess costs a skeleton, never data.
+ */
+function isEmptyPage(data: unknown): boolean {
+  if (Array.isArray(data)) return data.length === 0;
+  if (data && typeof data === 'object' && 'items' in data) {
+    const items = (data as { items: unknown }).items;
+    return Array.isArray(items) && items.length === 0;
+  }
+  return false;
+}
+
 export function AsyncBlock<T>({
   state,
   children,
@@ -426,7 +440,14 @@ export function AsyncBlock<T>({
   emptyWhen?: (data: T) => boolean;
   empty?: ReactNode;
 }) {
-  if (state.loading && state.data === undefined) return <>{skeleton ?? <TableSkeleton />}</>;
+  // Show the skeleton on any load that has nothing settled yet, and on a
+  // refetch whose previous answer was empty. Without the second case a screen
+  // whose first query resolved to an empty page — a filter that had not been
+  // resolved yet, say — flashed "no data" over a query that was still running.
+  const emptyNow = state.data !== undefined && (emptyWhen?.(state.data) ?? isEmptyPage(state.data));
+  if (state.loading && (state.data === undefined || emptyNow)) {
+    return <>{skeleton ?? <TableSkeleton />}</>;
+  }
   if (state.error) {
     return (
       <div className="empty">

@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Banknote,
   BellRing,
+  Boxes,
   CalendarClock,
   CircleDot,
   Radio,
@@ -35,7 +36,21 @@ export function DashboardPage() {
   const repos = useRepos();
   const summary = useAsync(() => repos.admin.dashboard(), []);
   const audit = useAsync(() => repos.admin.audit({ pageSize: 8 }), []);
+  const levels = useAsync(() => repos.stock.levels(), []);
+  const governorates = useAsync(() => repos.catalog.governorates(), []);
   const [trendMode, setTrendMode] = useState<TrendMode>('revenue');
+
+  // Governorates that can still sell but have run out of at least one card
+  // length. Named rather than counted, because the first question is "which".
+  const soldOut = [
+    ...new Set(
+      (levels.data ?? [])
+        .filter((level) => level.available === 0)
+        .map((level) => governorates.data?.find((g) => g.id === level.governorateId))
+        .filter((governorate) => governorate?.active)
+        .map((governorate) => governorate!.nameAr),
+    ),
+  ];
 
   return (
     <>
@@ -63,8 +78,36 @@ export function DashboardPage() {
           {(data) => (
             <>
               {/* Anything needing action today comes before the numbers. */}
-              {data.expiringDevices > 0 || data.liveMatches > 0 ? (
+              {data.expiringDevices > 0 || data.liveMatches > 0 || soldOut.length > 0 ? (
                 <div className="row wrap row-gap-3">
+                  {/*
+                    Stock leads the strip when a governorate has run dry: an
+                    expiring device is a lost opportunity, but an empty stock
+                    means renewals are failing at the counter right now.
+                  */}
+                  {soldOut.length > 0 ? (
+                    <Card pad className="row row-gap-3 grow">
+                      <span className="chip-icon chip-danger">
+                        <Boxes size={17} />
+                      </span>
+                      <div className="col grow">
+                        <span className="fs-13 strong">
+                          خلصت كارتات <span className="num">{soldOut.length}</span> محافظة
+                        </span>
+                        <span className="fs-12 muted truncate">
+                          {soldOut.slice(0, 3).join('، ')}
+                          {soldOut.length > 3 ? ` و${soldOut.length - 3} غيرها` : ''} — التجديد بيها
+                          ينرفض
+                        </span>
+                      </div>
+                      <Link to="/stock">
+                        <Button variant="subtle" size="sm" icon={<Boxes size={14} />}>
+                          عبّي المخزن
+                        </Button>
+                      </Link>
+                    </Card>
+                  ) : null}
+
                   {data.expiringDevices > 0 ? (
                     <Card pad className="row row-gap-3 grow">
                       <span className="chip-icon chip-warning">

@@ -188,16 +188,67 @@
   gap: var(--sp-4);
 }
 
+/*
+ * KPI rows use a FIXED column count, not auto-fill.
+ *
+ * auto-fill reserves empty tracks, so a screen with four tiles on a wide
+ * monitor left a third of the row blank; auto-fit fixes that but then stretches
+ * a lone leftover tile across the full width. A fixed count avoids both: tile
+ * counts are chosen per screen to divide evenly into these numbers.
+ */
 .grid-kpi {
-  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+/** For the screens that show exactly three headline numbers. */
+.grid-kpi-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 1180px) {
+  .grid-kpi {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .grid-kpi,
+  .grid-kpi-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .grid-kpi,
+  .grid-kpi-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/*
+ * Card grids are also fixed rather than auto-fit: a single tower or a single
+ * offer used to stretch edge to edge, which read as a different component than
+ * the same card sitting in a full row.
+ */
 .grid-2 {
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .grid-3 {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .grid-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .grid-2,
+  .grid-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .grid-form {
@@ -209,6 +260,14 @@
   grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
   gap: var(--sp-4);
   align-items: start;
+}
+
+/**
+ * Same split, narrow side first — for screens whose left-hand pane is a picker
+ * rail and whose content lives in the second child.
+ */
+.split-rail {
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2.2fr);
 }
 
 /* --------------------------------------------------------------- toolbars */

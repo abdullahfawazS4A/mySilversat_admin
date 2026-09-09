@@ -26,7 +26,7 @@ import {
   TextInput,
 } from '@/components/ui';
 import type { SubscriptionPackage } from '@/types';
-import { formatIqd, formatNumber } from '@/lib/format';
+import { formatIqd, formatNumber, monthsAr } from '@/lib/format';
 
 export function PackagesPage() {
   const repos = useRepos();
@@ -88,7 +88,7 @@ export function PackagesPage() {
                   </div>
 
                   <div className="col">
-                    <span className="fs-20 strong num">{pkg.months} أشهر</span>
+                    <span className="fs-20 strong">{monthsAr(pkg.months)}</span>
                     <span className="fs-17 strong num" style={{ color: 'var(--brand-primary)' }}>
                       {formatIqd(pkg.price)}
                     </span>
@@ -145,7 +145,7 @@ export function PackagesPage() {
       {deleting ? (
         <ConfirmDialog
           title="حذف الباقة"
-          message={`راح تنحذف باقة ${deleting.months} أشهر نهائياً.`}
+          message={`راح تنحذف باقة ${monthsAr(deleting.months)} نهائياً.`}
           confirmLabel="حذف"
           danger
           pending={busy}

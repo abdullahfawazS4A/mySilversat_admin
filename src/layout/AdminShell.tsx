@@ -3,13 +3,14 @@
  * into. Also the auth gate — an unauthenticated visitor never reaches a screen.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { LogOut, Menu, RefreshCw, Satellite, User } from 'lucide-react';
+import { LogOut, Menu, RefreshCw, Satellite, Search, User } from 'lucide-react';
 import { useAuth } from '@/app/AuthContext';
 import { useRepos } from '@/app/RepositoryContext';
 import { useToast } from '@/app/ToastContext';
 import { NAV_GROUPS, titleForPath } from './navigation';
+import { CommandPalette } from './CommandPalette';
 import { Button, ConfirmDialog, Skeleton } from '@/components/ui';
 import { cx } from '@/lib/utils';
 
@@ -21,6 +22,20 @@ export function AdminShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Ctrl/⌘+K from anywhere, including from inside a text field — the shortcut
+  // is worth nothing if it only works when focus happens to be on the page.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Mirrors the app's router gate: unknown waits, unauthenticated redirects.
   if (status === 'unknown') {
@@ -103,7 +118,19 @@ export function AdminShell() {
             title="طي القائمة"
             onClick={() => setCollapsed((c) => !c)}
           />
-          <h1 className="grow truncate">{titleForPath(location.pathname)}</h1>
+          <h1 className="truncate">{titleForPath(location.pathname)}</h1>
+
+          {/*
+            The palette trigger sits in the header rather than only on the
+            keyboard: an operator who never learns the shortcut still gets the
+            fast path, and the visible shortcut teaches it.
+          */}
+          <button className="palette-trigger grow" onClick={() => setPaletteOpen(true)}>
+            <Search size={14} />
+            <span className="grow truncate">روح لأي شاشة…</span>
+            <kbd className="kbd">Ctrl</kbd>
+            <kbd className="kbd">K</kbd>
+          </button>
 
           <Button
             variant="ghost"
@@ -126,6 +153,8 @@ export function AdminShell() {
 
         <Outlet />
       </div>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
       {confirmReset ? (
         <ConfirmDialog

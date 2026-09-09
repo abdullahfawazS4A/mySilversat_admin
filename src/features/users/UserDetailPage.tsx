@@ -56,6 +56,7 @@ import {
   formatIqd,
   formatNumber,
   formatPhone,
+  monthsAr,
   relativeAr,
 } from '@/lib/format';
 import { RenewDialog } from '../devices/RenewDialog';
@@ -148,7 +149,7 @@ export function UserDetailPage() {
                 </Notice>
               ) : null}
 
-              <div className="grid grid-kpi">
+              <div className="grid grid-kpi-3">
                 <StatTile
                   label="الحالة"
                   value={<Pill tone={statusMeta.tone}>{statusMeta.label}</Pill>}
@@ -271,7 +272,7 @@ export function UserDetailPage() {
                           >
                             <div className="col grow" style={{ lineHeight: 1.35 }}>
                               <span className="fs-13">
-                                تجديد <span className="num">{renewal.months}</span> أشهر
+                                تجديد {monthsAr(renewal.months)}
                               </span>
                               <span className="fs-11 dim">
                                 {PAYMENT_METHOD[renewal.method]} · {formatDateAr(renewal.createdAt)}

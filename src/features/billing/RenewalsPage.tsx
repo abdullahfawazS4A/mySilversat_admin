@@ -29,7 +29,14 @@ import { StatTile } from '@/components/charts';
 import type { Id, PaymentMethod, RenewalStatus } from '@/types';
 import type { RenewalRow } from '@/data/repositories/types';
 import { PAYMENT_METHOD, RENEWAL_STATUS } from '@/lib/labels';
-import { formatDateAr, formatIqd, formatIqdCompact, formatNumber, formatPhone } from '@/lib/format';
+import {
+  formatDateAr,
+  formatIqd,
+  formatIqdCompact,
+  formatNumber,
+  formatPhone,
+  monthsAr,
+} from '@/lib/format';
 import { downloadCsv, sumBy } from '@/lib/utils';
 
 export function RenewalsPage() {
@@ -147,11 +154,7 @@ export function RenewalsPage() {
       header: 'المدة',
       numeric: true,
       width: 74,
-      render: (row) => (
-        <span className="num">
-          {row.months} <span className="dim">شهر</span>
-        </span>
-      ),
+      render: (row) => <span className="fs-13">{monthsAr(row.months)}</span>,
     },
     {
       key: 'price',

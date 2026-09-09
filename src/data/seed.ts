@@ -59,6 +59,17 @@ function at(dayOffset: number, hour = 12, minute = 0): string {
   return d.toISOString();
 }
 
+/**
+ * A moment `minutes` ago, measured from the real clock rather than midnight.
+ *
+ * `at()` is anchored to midnight, so `at(0, 8)` is in the *future* for anyone
+ * opening the console before 8am — which made "last sync" and "last login"
+ * render as "in 7 hours". Anything that already happened has to use this.
+ */
+function ago(minutes: number): string {
+  return new Date(NOW.getTime() - minutes * 60_000).toISOString();
+}
+
 function pick<T>(list: readonly T[]): T {
   return list[Math.floor(rng() * list.length)];
 }
@@ -123,7 +134,7 @@ export const ADMIN_USERS: AdminUser[] = [
     phone: '07700000001',
     active: true,
     createdAt: at(-420, 9),
-    lastLoginAt: at(0, 8, 12),
+    lastLoginAt: ago(35),
   },
 ];
 
@@ -264,14 +275,26 @@ function deviceNumber(index: number): string {
 
 export const DEVICES: Device[] = [];
 
+/**
+ * The length of each device's current paid period.
+ *
+ * The renewal history is walked backwards from the current expiry, so the most
+ * recent renewal has to be the one that bought *this* period — otherwise the
+ * walk lands on a purchase date in the future, and the transactions table shows
+ * renewals dated next year.
+ */
+const DEVICE_PERIOD_MONTHS = new Map<string, number>();
+
 APP_USERS.forEach((user, userIndex) => {
   const count = rng() < 0.5 ? 1 : rng() < 0.85 ? 2 : 3;
   for (let d = 0; d < count; d += 1) {
     const [iconKey, name] = DEVICE_LABELS[d];
     const months = pick([3, 6, 12]);
-    // Spread expiry across a window centred a little in the future, so the
-    // dataset always contains active, expiring-soon and expired devices.
-    const expiryOffset = int(-120, 300);
+    // Spread expiry across a window that always contains active, expiring-soon
+    // and expired devices. The upper bound is the period length: a subscription
+    // cannot have more time left than the package that bought it, and going
+    // past that would date its purchase in the future.
+    const expiryOffset = int(-120, months * 30);
     const expiryAt = at(expiryOffset, 12);
     const periodStartAt = addMonths(expiryAt, -months);
     const suspended = rng() < 0.03;
@@ -283,6 +306,7 @@ APP_USERS.forEach((user, userIndex) => {
         : daysLeft <= 7
           ? 'expiring'
           : 'active';
+    DEVICE_PERIOD_MONTHS.set(`dev_${DEVICES.length + 1}`, months);
     DEVICES.push({
       id: `dev_${DEVICES.length + 1}`,
       userId: user.id,
@@ -335,7 +359,13 @@ DEVICES.forEach((device) => {
   const historyCount = int(1, 4);
   let expiryCursor = device.expiryAt;
   for (let h = 0; h < historyCount; h += 1) {
-    const pkg = pick(PACKAGES.filter((p) => p.active));
+    // The newest renewal is pinned to the package that bought the period the
+    // device is sitting in; older ones are free to be anything.
+    const currentMonths = DEVICE_PERIOD_MONTHS.get(device.id);
+    const pkg =
+      h === 0 && currentMonths
+        ? (PACKAGES.find((p) => p.months === currentMonths) ?? pick(PACKAGES.filter((p) => p.active)))
+        : pick(PACKAGES.filter((p) => p.active));
     const before = addMonths(expiryCursor, -pkg.months);
     const method = pick(METHODS);
     const createdAt = addDays(before, -int(0, 3));
@@ -488,7 +518,7 @@ export const API_CONNECTIONS: ApiConnection[] = [
     active: true,
     governorateIds: ['gov_bgd'],
     createdAt: at(-380, 10),
-    lastCheckAt: at(0, 8, 5),
+    lastCheckAt: ago(48),
     lastCheckOk: true,
     lastCheckMessageAr: 'الاتصال ناجح — 142ms',
   },
@@ -502,7 +532,7 @@ export const API_CONNECTIONS: ApiConnection[] = [
     active: true,
     governorateIds: ['gov_nnw', 'gov_erb', 'gov_slm', 'gov_dhk', 'gov_krk'],
     createdAt: at(-370, 11),
-    lastCheckAt: at(0, 8, 6),
+    lastCheckAt: ago(51),
     lastCheckOk: true,
     lastCheckMessageAr: 'الاتصال ناجح — 218ms',
   },
@@ -516,7 +546,7 @@ export const API_CONNECTIONS: ApiConnection[] = [
     active: true,
     governorateIds: ['gov_bsr', 'gov_njf', 'gov_krb', 'gov_dqr', 'gov_msn', 'gov_qds', 'gov_mth'],
     createdAt: at(-365, 9),
-    lastCheckAt: at(-2, 14),
+    lastCheckAt: ago(60 * 26),
     lastCheckOk: false,
     lastCheckMessageAr: 'انتهت مهلة الاتصال — تأكد من الدومين',
   },
@@ -572,7 +602,7 @@ export const MATCHES: Match[] = MATCH_ROWS.map(([leagueId, homeTeamId, awayTeamI
   return {
     id,
     externalId: `SD-F${(1740000 + i * 37).toString()}`,
-    syncedAt: at(0, 7, 30),
+    syncedAt: ago(12),
     leagueId,
     homeTeamId,
     awayTeamId,
@@ -674,7 +704,7 @@ for (const user of sampleDistinct(APP_USERS, 8, rng)) {
     delta: bonus ? int(10, 50) : -int(5, 25),
     kind: bonus ? 'bonus' : 'penalty',
     reasonAr: bonus ? 'مكافأة حملة ترويجية' : 'تصحيح إداري بعد شكوى',
-    adminId: 'adm_2',
+    adminId: 'adm_1',
     createdAt: at(-int(1, 20), int(9, 18)),
   });
 }
@@ -818,22 +848,22 @@ export const FAQ_ITEMS: FaqItem[] = [
 ];
 
 export const CAMPAIGNS: NotificationCampaign[] = [
-  { id: 'cmp_1', titleAr: 'اشتراكك قرب ينتهي', bodyAr: 'باقي أقل من 7 أيام على انتهاء اشتراكك — جدد الآن من التطبيق.', audience: 'expiring_soon', targetIds: [], routeTarget: 'renew', state: 'sent', scheduledAt: null, sentAt: at(-3, 10), audienceSize: 412, deliveredCount: 388, openedCount: 191, createdBy: 'adm_3', createdAt: at(-3, 9) },
-  { id: 'cmp_2', titleAr: 'مباريات اليوم مفتوحة للتوقع', bodyAr: 'ريال مدريد ضد أتلتيكو — توقع النتيجة قبل صافرة البداية.', audience: 'predictors', targetIds: [], routeTarget: 'predict', state: 'sent', sentAt: at(0, 14), scheduledAt: null, audienceSize: 1860, deliveredCount: 1802, openedCount: 964, createdBy: 'adm_2', createdAt: at(0, 13) },
-  { id: 'cmp_3', titleAr: 'خصم نينوى 10%', bodyAr: 'خصم خاص لمشتركي نينوى عند التجديد من التطبيق.', audience: 'governorate', targetIds: ['gov_nnw'], routeTarget: 'offers', state: 'scheduled', scheduledAt: at(2, 11), sentAt: null, audienceSize: 0, deliveredCount: 0, openedCount: 0, createdBy: 'adm_3', createdAt: at(-1, 16) },
+  { id: 'cmp_1', titleAr: 'اشتراكك قرب ينتهي', bodyAr: 'باقي أقل من 7 أيام على انتهاء اشتراكك — جدد الآن من التطبيق.', audience: 'expiring_soon', targetIds: [], routeTarget: 'renew', state: 'sent', scheduledAt: null, sentAt: at(-3, 10), audienceSize: 412, deliveredCount: 388, openedCount: 191, createdBy: 'adm_1', createdAt: at(-3, 9) },
+  { id: 'cmp_2', titleAr: 'مباريات اليوم مفتوحة للتوقع', bodyAr: 'ريال مدريد ضد أتلتيكو — توقع النتيجة قبل صافرة البداية.', audience: 'predictors', targetIds: [], routeTarget: 'predict', state: 'sent', sentAt: ago(60 * 5), scheduledAt: null, audienceSize: 1860, deliveredCount: 1802, openedCount: 964, createdBy: 'adm_1', createdAt: at(0, 13) },
+  { id: 'cmp_3', titleAr: 'خصم نينوى 10%', bodyAr: 'خصم خاص لمشتركي نينوى عند التجديد من التطبيق.', audience: 'governorate', targetIds: ['gov_nnw'], routeTarget: 'offers', state: 'scheduled', scheduledAt: at(2, 11), sentAt: null, audienceSize: 0, deliveredCount: 0, openedCount: 0, createdBy: 'adm_1', createdAt: at(-1, 16) },
   { id: 'cmp_4', titleAr: 'نتائج السحب السنوي', bodyAr: 'أسماء الفائزين بسحب 2025 منشورة الآن داخل التطبيق.', audience: 'all', targetIds: [], routeTarget: 'draws', state: 'draft', scheduledAt: null, sentAt: null, audienceSize: 0, deliveredCount: 0, openedCount: 0, createdBy: 'adm_1', createdAt: at(-6, 12) },
 ];
 
 // ------------------------------------------------------------- audit log ----
 
 export const AUDIT_ENTRIES: AuditEntry[] = [
-  { id: 'aud_1', adminId: 'adm_2', adminName: 'مصطفى الجبوري', action: 'update', entityType: 'match', entityId: 'mch_9', summaryAr: 'فتح التوقع على مباراة ريال مدريد ضد أتلتيكو', at: at(-1, 11, 20) },
-  { id: 'aud_2', adminId: 'adm_2', adminName: 'مصطفى الجبوري', action: 'run', entityType: 'match', entityId: 'mch_1', summaryAr: 'احتساب نقاط مباراة بايرن ميونخ ضد دورتموند', at: at(-1, 23, 10) },
-  { id: 'aud_3', adminId: 'adm_3', adminName: 'نور الهدى كريم', action: 'create', entityType: 'offer', entityId: 'ofr_5', summaryAr: 'إضافة عرض خصم نينوى 10%', at: at(-8, 10, 5) },
-  { id: 'aud_4', adminId: 'adm_4', adminName: 'حسن الطائي', action: 'update', entityType: 'device', entityId: 'dev_12', summaryAr: 'إعادة تفعيل جهاز بعد شكوى مشترك', at: at(-2, 14, 44) },
-  { id: 'aud_5', adminId: 'adm_1', adminName: 'عبدالله فواز', action: 'login', entityType: 'admin', entityId: 'adm_1', summaryAr: 'تسجيل دخول إلى لوحة التحكم', at: at(0, 8, 12) },
-  { id: 'aud_6', adminId: 'adm_2', adminName: 'مصطفى الجبوري', action: 'update', entityType: 'points', entityId: 'usr_0021', summaryAr: 'إضافة 25 نقطة يدوياً — مكافأة حملة ترويجية', at: at(-4, 12, 30) },
-  { id: 'aud_7', adminId: 'adm_3', adminName: 'نور الهدى كريم', action: 'send', entityType: 'campaign', entityId: 'cmp_1', summaryAr: 'إرسال إشعار تذكير بانتهاء الاشتراك', at: at(-3, 10, 2) },
+  { id: 'aud_1', adminId: 'adm_1', adminName: 'عبدالله فواز', action: 'update', entityType: 'match', entityId: 'mch_9', summaryAr: 'فتح التوقع على مباراة ريال مدريد ضد أتلتيكو', at: at(-1, 11, 20) },
+  { id: 'aud_2', adminId: 'adm_1', adminName: 'عبدالله فواز', action: 'run', entityType: 'match', entityId: 'mch_1', summaryAr: 'احتساب نقاط مباراة بايرن ميونخ ضد دورتموند', at: at(-1, 23, 10) },
+  { id: 'aud_3', adminId: 'adm_1', adminName: 'عبدالله فواز', action: 'create', entityType: 'offer', entityId: 'ofr_5', summaryAr: 'إضافة عرض خصم نينوى 10%', at: at(-8, 10, 5) },
+  { id: 'aud_4', adminId: 'adm_1', adminName: 'عبدالله فواز', action: 'update', entityType: 'device', entityId: 'dev_12', summaryAr: 'إعادة تفعيل جهاز بعد شكوى مشترك', at: at(-2, 14, 44) },
+  { id: 'aud_5', adminId: 'adm_1', adminName: 'عبدالله فواز', action: 'login', entityType: 'admin', entityId: 'adm_1', summaryAr: 'تسجيل دخول إلى لوحة التحكم', at: ago(35) },
+  { id: 'aud_6', adminId: 'adm_1', adminName: 'عبدالله فواز', action: 'update', entityType: 'points', entityId: 'usr_0021', summaryAr: 'إضافة 25 نقطة يدوياً — مكافأة حملة ترويجية', at: at(-4, 12, 30) },
+  { id: 'aud_7', adminId: 'adm_1', adminName: 'عبدالله فواز', action: 'send', entityType: 'campaign', entityId: 'cmp_1', summaryAr: 'إرسال إشعار تذكير بانتهاء الاشتراك', at: at(-3, 10, 2) },
 ];
 
 // ---------------------------------------------------------------- settings --
@@ -853,7 +883,7 @@ export const SETTINGS: AppSettings = {
     baseUrl: 'https://api.sportsdata.io/v3/soccer',
     apiKey: 'sd_live_9f2c41ab7e05',
     syncIntervalMinutes: 15,
-    lastSyncAt: at(0, 7, 30),
+    lastSyncAt: ago(12),
     lastSyncOk: true,
     lastSyncMessageAr: 'آخر مزامنة نجحت — 24 مباراة',
   },

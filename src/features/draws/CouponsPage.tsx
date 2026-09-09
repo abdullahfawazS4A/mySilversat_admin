@@ -152,9 +152,9 @@ export function CouponsPage() {
       />
 
       <div className="page">
-        <AsyncBlock state={stats} skeleton={<div className="grid grid-kpi" />}>
+        <AsyncBlock state={stats} skeleton={<div className="grid grid-kpi-3" />}>
           {(data) => (
-            <div className="grid grid-kpi">
+            <div className="grid grid-kpi-3">
               <StatTile label="إجمالي الكوبونات" value={formatNumber(data.total)} icon={<Ticket size={15} />} />
               <StatTile label="سارية (تدخل السحب)" value={formatNumber(data.active)} tone="success" />
               <StatTile label="كوبونات رابحة" value={formatNumber(data.winners)} tone="gold" />

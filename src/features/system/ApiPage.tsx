@@ -107,7 +107,7 @@ export function ApiPage() {
       />
 
       <div className="page col" style={{ gap: 'var(--sp-4)' }}>
-        <div className="grid grid-kpi">
+        <div className="grid grid-kpi-3">
           <StatTile
             label="اتصالات"
             value={formatNumber(connections.data?.length ?? 0)}

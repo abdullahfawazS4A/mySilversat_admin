@@ -135,6 +135,18 @@ export function FaqPage() {
                         </div>
                       </div>
 
+                      {/*
+                        Collapsed rows showed the question and nothing else, so
+                        a list of six questions was six near-empty cards. One
+                        line of the answer makes the list scannable without
+                        opening anything.
+                      */}
+                      {!open ? (
+                        <span className="fs-12 dim truncate" style={{ lineHeight: 1.6 }}>
+                          {item.answerAr}
+                        </span>
+                      ) : null}
+
                       {open ? (
                         <div className="col" style={{ gap: 'var(--sp-2)' }}>
                           <span className="fs-12" style={{ lineHeight: 1.7 }}>

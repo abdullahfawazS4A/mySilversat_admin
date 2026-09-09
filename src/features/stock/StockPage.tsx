@@ -46,7 +46,7 @@ import { StatTile } from '@/components/charts';
 import type { CardStatus, Governorate, Id } from '@/types';
 import type { StockCardRow } from '@/data/repositories/types';
 import { CARD_STATUS } from '@/lib/labels';
-import { formatDateAr, formatNumber, relativeAr } from '@/lib/format';
+import { formatDateAr, formatNumber, monthsAr, relativeAr } from '@/lib/format';
 import { cx } from '@/lib/utils';
 
 export function StockPage() {
@@ -165,7 +165,7 @@ export function StockPage() {
         width: 96,
         render: (card) => (
           <span className="fs-13">
-            <span className="num">{card.months}</span> أشهر
+            {monthsAr(card.months)}
           </span>
         ),
       },
@@ -293,7 +293,7 @@ export function StockPage() {
             <span className="strong">
               {soldOut
                 .slice(0, 4)
-                .map((l) => `${governorateById.get(l.governorateId)?.nameAr} (${l.months} أشهر)`)
+                .map((l) => `${governorateById.get(l.governorateId)?.nameAr} (${monthsAr(l.months)})`)
                 .join('، ')}
             </span>
             {soldOut.length > 4 ? ` و${soldOut.length - 4} غيرها` : ''} — أي تجديد بهذه المدة راح
@@ -315,7 +315,7 @@ export function StockPage() {
                       <th>المحافظة</th>
                       {lengths.map((months) => (
                         <th key={months} style={{ width: 110 }}>
-                          <span className="num">{months}</span> أشهر
+                          {monthsAr(months)}
                         </th>
                       ))}
                       <th style={{ width: 110 }}>المجموع</th>
@@ -396,7 +396,7 @@ export function StockPage() {
               }}
               options={[
                 { value: 'all', label: 'كل المدد' },
-                ...lengths.map((m) => ({ value: String(m), label: `${m} أشهر` })),
+                ...lengths.map((m) => ({ value: String(m), label: monthsAr(m) })),
               ]}
             />
 
@@ -662,7 +662,7 @@ function AddBatchDialog({
             <Select
               value={months}
               onChange={setMonths}
-              options={lengths.map((m) => ({ value: String(m), label: `${m} أشهر` }))}
+              options={lengths.map((m) => ({ value: String(m), label: monthsAr(m) }))}
             />
           </Field>
         </div>
@@ -717,7 +717,7 @@ function AddBatchDialog({
         {codes.length > 0 ? (
           <Notice tone="success">
             راح ينضاف <span className="num strong">{formatNumber(codes.length)}</span> كارت{' '}
-            <span className="num">{months}</span> أشهر لمخزن{' '}
+            <span className="strong">{monthsAr(Number(months))}</span> لمخزن{' '}
             <span className="strong">{governorate?.nameAr}</span> — يعني{' '}
             <span className="num strong">{formatNumber(codes.length)}</span> تجديد إضافي ممكن هناك.
             <div className="fs-11 dim num" style={{ marginTop: 4 }}>
