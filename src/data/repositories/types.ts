@@ -17,9 +17,12 @@
 import type {
   Agent,
   AdminSession,
+  ApiCheckResult,
+  ApiConnection,
   AppSettings,
   AppUser,
   AuditEntry,
+  CardStatus,
   Coupon,
   DashboardSummary,
   Device,
@@ -32,6 +35,8 @@ import type {
   ListQuery,
   Match,
   MatchPredictionStats,
+  MatchState,
+  MatchSyncResult,
   MatchView,
   NotificationCampaign,
   Offer,
@@ -42,6 +47,8 @@ import type {
   Renewal,
   Season,
   Slide,
+  StockCard,
+  StockLevel,
   SubscriptionPackage,
   Team,
   Tower,
@@ -66,17 +73,85 @@ export interface CatalogRepository {
   governorates(): Promise<Governorate[]>;
   saveGovernorate(governorate: Governorate): Promise<Governorate>;
 
+  /**
+   * Leagues and teams are mirrored from the fixtures feed, so there is no
+   * save or delete here — `MatchesRepository.sync()` is the only writer.
+   * The one local decision is whether a league is shown in the app at all.
+   */
   leagues(): Promise<League[]>;
-  saveLeague(league: Omit<League, 'id'> & { id?: Id }): Promise<League>;
-  deleteLeague(id: Id): Promise<void>;
+  setLeagueActive(id: Id, active: boolean): Promise<League>;
 
   teams(): Promise<Team[]>;
-  saveTeam(team: Omit<Team, 'id'> & { id?: Id }): Promise<Team>;
-  deleteTeam(id: Id): Promise<void>;
 
   packages(): Promise<SubscriptionPackage[]>;
   savePackage(pkg: Omit<SubscriptionPackage, 'id'> & { id?: Id }): Promise<SubscriptionPackage>;
   deletePackage(id: Id): Promise<void>;
+}
+
+// ------------------------------------------------------------- card stock ---
+
+export interface StockCardListQuery extends ListQuery {
+  governorateId?: Id;
+  months?: number;
+  status?: CardStatus | 'all';
+  batchRef?: string;
+}
+
+/** A card joined with the names the stock table shows. */
+export interface StockCardRow extends StockCard {
+  governorateName: string;
+  /** Device the card was burnt on, when it has been used. */
+  deviceNumber?: string;
+}
+
+export interface StockRepository {
+  /** Availability per governorate per card length, for the stock grid. */
+  levels(): Promise<StockLevel[]>;
+  cards(query: StockCardListQuery): Promise<Page<StockCardRow>>;
+
+  /**
+   * Files a shipment of cards into one governorate's stock. Codes already in
+   * the system are reported back rather than silently duplicated.
+   */
+  addBatch(input: {
+    governorateId: Id;
+    months: number;
+    codes: string[];
+    batchRef: string;
+  }): Promise<{ added: number; duplicates: string[] }>;
+
+  /**
+   * The card a renewal would burn next, FIFO by arrival — null when that
+   * governorate has run out of that length. Read by the renew dialog so the
+   * operator sees the code before committing.
+   */
+  nextAvailable(governorateId: Id, months: number): Promise<StockCard | null>;
+
+  /** Takes a card out of circulation without using it (damaged, leaked). */
+  voidCard(id: Id, reasonAr: string): Promise<StockCard>;
+  /** Moves unused cards to another governorate's stock. */
+  transfer(ids: Id[], toGovernorateId: Id): Promise<number>;
+  /** Deletes a card filed by mistake. Refused once it has been used. */
+  remove(id: Id): Promise<void>;
+}
+
+// -------------------------------------------------------- governorate APIs --
+
+export interface ApiRepository {
+  list(): Promise<ApiConnection[]>;
+  save(
+    connection: Omit<ApiConnection, 'id' | 'createdAt' | 'lastCheckAt' | 'lastCheckOk'> & {
+      id?: Id;
+    },
+  ): Promise<ApiConnection>;
+  remove(id: Id): Promise<void>;
+  /**
+   * Points these governorates at this connection. A governorate answers to one
+   * connection at a time, so any previous link is dropped.
+   */
+  setGovernorates(id: Id, governorateIds: Id[]): Promise<ApiConnection>;
+  /** Pings the connection and records the outcome on it. */
+  test(id: Id): Promise<ApiCheckResult>;
 }
 
 // ------------------------------------------------------------------ users ---
@@ -156,11 +231,21 @@ export interface RenewalRow extends Renewal {
   deviceNumber: string;
   governorateId: Id;
   agentName?: string;
+  /** Code of the card this renewal burnt, when it consumed one. */
+  cardCode?: string;
 }
 
 export interface RenewalsRepository {
   list(query: RenewalListQuery): Promise<Page<RenewalRow>>;
-  /** Records a renewal, extends the device expiry and issues a coupon. */
+  /**
+   * Records a renewal: burns a stock card, extends the device expiry and
+   * issues a coupon.
+   *
+   * The card comes from the subscriber's **own governorate**, FIFO by arrival,
+   * and must match the package length — an empty stock refuses the renewal
+   * rather than extending a subscription nothing paid for. A free grant is the
+   * one method that skips the stock entirely.
+   */
   create(input: {
     deviceId: Id;
     packageId: Id;
@@ -185,8 +270,16 @@ export interface MatchListQuery extends ListQuery {
 export interface MatchesRepository {
   list(query: MatchListQuery): Promise<Page<MatchView>>;
   get(id: Id): Promise<MatchView>;
-  save(input: Omit<Match, 'id' | 'predictionCount' | 'settledAt'> & { id?: Id }): Promise<Match>;
-  remove(id: Id): Promise<void>;
+
+  /**
+   * Pulls leagues, teams and fixtures from the upstream feed.
+   *
+   * This is the **only** way a fixture enters the console — there is no
+   * create and no delete. Rows are matched on the provider's `externalId`, so
+   * a second sync updates rather than duplicates, and the console's own
+   * prediction fields survive untouched.
+   */
+  sync(): Promise<MatchSyncResult>;
 
   /**
    * The core operator action: choose which fixtures accept predictions.
@@ -197,10 +290,20 @@ export interface MatchesRepository {
   bulkSetOpenForPredict(ids: Id[], open: boolean): Promise<void>;
   setFeatured(id: Id, featured: boolean): Promise<Match>;
 
-  /** Pushes a live score. Also flips the match into the live state. */
-  updateLiveScore(id: Id, homeScore: number, awayScore: number, minute: string): Promise<Match>;
-  /** Ends the match at the given final score, without settling points yet. */
-  finish(id: Id, homeScore: number, awayScore: number): Promise<Match>;
+  /**
+   * Corrects a score by hand when the feed is wrong or lagging. Settlement
+   * pays out on this number, so the override is deliberate: the fixture is
+   * flagged and later syncs stop overwriting its score.
+   */
+  overrideScore(
+    id: Id,
+    homeScore: number,
+    awayScore: number,
+    state: Extract<MatchState, 'live' | 'finished'>,
+    minute?: string,
+  ): Promise<Match>;
+  /** Drops a manual correction and lets the feed own the score again. */
+  clearScoreOverride(id: Id): Promise<Match>;
 
   /**
    * Awards points for every prediction on a finished match, using the current
@@ -336,6 +439,8 @@ export interface Repositories {
   devices: DevicesRepository;
   renewals: RenewalsRepository;
   matches: MatchesRepository;
+  stock: StockRepository;
+  api: ApiRepository;
   leaderboard: LeaderboardRepository;
   draws: DrawsRepository;
   content: ContentRepository;

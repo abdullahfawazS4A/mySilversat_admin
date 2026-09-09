@@ -71,6 +71,85 @@ export interface Governorate {
   subscriberCount: number;
 }
 
+// -------------------------------------------------------- governorate APIs --
+
+/**
+ * One governorate's upstream system.
+ *
+ * Every governorate runs the same software behind a different domain, so the
+ * request shape is identical everywhere and only these four credentials
+ * change. A connection is what actually burns a card and extends a
+ * subscription upstream; the console's own tables are the local mirror.
+ */
+export interface ApiConnection {
+  id: Id;
+  /** Operator-facing label, e.g. "سيرفر بغداد". */
+  nameAr: string;
+  /** Domain or full base URL, e.g. https://bgd.silversat.iq */
+  baseUrl: string;
+  /** The `X-Auth-Key` header every request carries. */
+  authKey: string;
+  username: string;
+  /**
+   * Kept here because the mock has nowhere else to put it. A real backend
+   * stores this server-side and never returns it to the console — the edit
+   * form would send a new value or leave it untouched.
+   */
+  password: string;
+  active: boolean;
+  /** Governorates served by this connection. A governorate belongs to one. */
+  governorateIds: Id[];
+  createdAt: IsoDate;
+  lastCheckAt: IsoDate | null;
+  /** Null until the connection has been tested at least once. */
+  lastCheckOk: boolean | null;
+  lastCheckMessageAr?: string;
+}
+
+/** Outcome of pinging a connection. */
+export interface ApiCheckResult {
+  ok: boolean;
+  messageAr: string;
+  latencyMs: number;
+}
+
+// ------------------------------------------------------------- card stock ---
+
+export type CardStatus = 'available' | 'used' | 'void';
+
+/**
+ * One prepaid subscription card sitting in a governorate's stock.
+ *
+ * A renewal consumes exactly one card of the matching length from the
+ * subscriber's own governorate — that is the whole reason stock is tracked
+ * per governorate rather than centrally.
+ */
+export interface StockCard {
+  id: Id;
+  /** Printed on the card. Unique across the whole stock. */
+  code: string;
+  governorateId: Id;
+  /** Subscription length the card is worth, matched against the package. */
+  months: number;
+  status: CardStatus;
+  /** The shipment it arrived in, so a bad batch can be traced and voided. */
+  batchRef: string;
+  addedAt: IsoDate;
+  usedAt: IsoDate | null;
+  usedByRenewalId?: Id;
+  usedByDeviceId?: Id;
+  voidReasonAr?: string;
+}
+
+/** How many cards of one length one governorate holds, by status. */
+export interface StockLevel {
+  governorateId: Id;
+  months: number;
+  available: number;
+  used: number;
+  voided: number;
+}
+
 // ------------------------------------------------------------ admin users ---
 
 export interface AdminUser {
@@ -177,6 +256,11 @@ export interface Renewal {
   status: RenewalStatus;
   /** The draw coupon this renewal generated, when the package qualifies. */
   couponId?: Id;
+  /**
+   * The stock card burnt to pay for this renewal. Absent only on a free grant,
+   * which extends a subscription without consuming stock.
+   */
+  cardId?: Id;
   createdAt: IsoDate;
   /** Expiry before and after, so support can audit a disputed renewal. */
   expiryBefore: IsoDate;
@@ -186,8 +270,20 @@ export interface Renewal {
 
 // ------------------------------------------------- leagues, teams, matches --
 
+/**
+ * Leagues, teams and fixtures are **not authored here**. They arrive from the
+ * upstream fixtures feed and the console only mirrors them, which is why each
+ * one carries the provider's own id: a sync matches on `externalId`, never on
+ * a name, so a renamed team updates instead of duplicating.
+ *
+ * What the console does own on top of the feed is the prediction decision —
+ * `openForPredict`, `predictionCloseAt`, `featured` and settlement. Those are
+ * ours and a sync never touches them.
+ */
 export interface League {
   id: Id;
+  /** The provider's id for this league. Stable across syncs. */
+  externalId: string;
   /** Stable key the app uses for grouping, e.g. iraqi, spanish. */
   key: string;
   nameAr: string;
@@ -198,6 +294,8 @@ export interface League {
 
 export interface Team {
   id: Id;
+  /** The provider's id for this team. Stable across syncs. */
+  externalId: string;
   nameAr: string;
   shortNameAr: string;
   leagueId: Id;
@@ -211,11 +309,23 @@ export interface Team {
 export type MatchState = 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled';
 
 /**
- * A fixture. The console owns the whole lifecycle: create -> open for
- * predictions -> lock -> live score -> finish -> settle points.
+ * A fixture, mirrored from the feed.
+ *
+ * The feed owns the teams, the kickoff, the state and the score. The console
+ * owns the prediction lifecycle on top of it: open for predictions -> lock ->
+ * settle points.
  */
 export interface Match {
   id: Id;
+  /** The provider's fixture id. A sync updates the row that matches this. */
+  externalId: string;
+  /** When this fixture was last refreshed from the feed. */
+  syncedAt: IsoDate;
+  /**
+   * Set when an operator corrected the score by hand because the feed was
+   * wrong. A sync leaves a corrected score alone rather than overwriting it.
+   */
+  scoreOverridden?: boolean;
   leagueId: Id;
   homeTeamId: Id;
   awayTeamId: Id;
@@ -585,9 +695,41 @@ export interface AuditEntry {
 
 // ---------------------------------------------------------------- settings --
 
+/**
+ * The upstream fixtures feed. Matches, leagues and teams are pulled from here
+ * and never entered by hand, so this is the only place their source is
+ * configured.
+ */
+export interface MatchFeedSettings {
+  providerName: string;
+  baseUrl: string;
+  apiKey: string;
+  /** Minutes between automatic pulls. 0 means manual sync only. */
+  syncIntervalMinutes: number;
+  lastSyncAt: IsoDate | null;
+  /** Null until the feed has been pulled at least once. */
+  lastSyncOk: boolean | null;
+  lastSyncMessageAr?: string;
+}
+
+/** What one sync pulled in. Shown as a toast and kept on the feed card. */
+export interface MatchSyncResult {
+  leaguesAdded: number;
+  teamsAdded: number;
+  matchesAdded: number;
+  matchesUpdated: number;
+  /** Fixtures skipped because an operator had corrected their score by hand. */
+  matchesSkipped: number;
+  at: IsoDate;
+}
+
 /** Global switches. Everything here is read by the app at startup. */
 export interface AppSettings {
   scoring: ScoringRules;
+  /** Where leagues, teams and fixtures come from. */
+  matchFeed: MatchFeedSettings;
+  /** Available cards at or below this count raise a low-stock warning. */
+  lowStockThreshold: number;
   /** Close the season and zero the leaderboard on the 1st of each month. */
   monthlyLeaderboardReset: boolean;
   /** Blocks the app with a maintenance notice. */

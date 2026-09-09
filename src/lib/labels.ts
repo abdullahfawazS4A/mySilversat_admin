@@ -10,6 +10,7 @@
 import type {
   AppUserStatus,
   CampaignState,
+  CardStatus,
   DeviceStatus,
   DrawState,
   MatchState,
@@ -50,6 +51,12 @@ export const PREDICTION_OUTCOME: Record<PredictionOutcome, { label: string; tone
   goaldiff: { label: 'فرق أهداف صحيح', tone: 'success' },
   result: { label: 'نتيجة صحيحة', tone: 'success' },
   wrong: { label: 'توقع خاطئ', tone: 'danger' },
+};
+
+export const CARD_STATUS: Record<CardStatus, { label: string; tone: Tone }> = {
+  available: { label: 'متاح', tone: 'success' },
+  used: { label: 'مستهلك', tone: 'muted' },
+  void: { label: 'ملغى', tone: 'danger' },
 };
 
 export const PAYMENT_METHOD: Record<PaymentMethod, string> = {

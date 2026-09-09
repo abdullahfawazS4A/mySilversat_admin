@@ -21,6 +21,7 @@ import { DevicesPage } from '@/features/devices/DevicesPage';
 import { RenewalsPage } from '@/features/billing/RenewalsPage';
 import { PackagesPage } from '@/features/billing/PackagesPage';
 import { AgentsPage } from '@/features/billing/AgentsPage';
+import { StockPage } from '@/features/stock/StockPage';
 import { DrawsPage } from '@/features/draws/DrawsPage';
 import { CouponsPage } from '@/features/draws/CouponsPage';
 import { OffersPage } from '@/features/content/OffersPage';
@@ -30,6 +31,7 @@ import { FaqPage } from '@/features/content/FaqPage';
 import { TowersPage } from '@/features/content/TowersPage';
 import { NotificationsPage } from '@/features/notifications/NotificationsPage';
 import { GovernoratesPage } from '@/features/system/GovernoratesPage';
+import { ApiPage } from '@/features/system/ApiPage';
 import { AuditPage } from '@/features/system/AuditPage';
 import { SettingsPage } from '@/features/system/SettingsPage';
 
@@ -55,6 +57,7 @@ export function AppRouter() {
           <Route path="renewals" element={<RenewalsPage />} />
           <Route path="packages" element={<PackagesPage />} />
           <Route path="agents" element={<AgentsPage />} />
+          <Route path="stock" element={<StockPage />} />
 
           <Route path="draws" element={<DrawsPage />} />
           <Route path="coupons" element={<CouponsPage />} />
@@ -68,6 +71,7 @@ export function AppRouter() {
           <Route path="notifications" element={<NotificationsPage />} />
 
           <Route path="governorates" element={<GovernoratesPage />} />
+          <Route path="api" element={<ApiPage />} />
           <Route path="audit" element={<AuditPage />} />
           <Route path="settings" element={<SettingsPage />} />
 

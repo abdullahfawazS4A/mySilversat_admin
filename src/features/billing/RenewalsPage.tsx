@@ -171,6 +171,19 @@ export function RenewalsPage() {
       ),
     },
     {
+      key: 'cardCode',
+      header: 'الكارت',
+      width: 168,
+      render: (row) =>
+        row.cardCode ? (
+          <span className="fs-12 num dim truncate" title="الكارت اللي انسحب من المخزن">
+            {row.cardCode}
+          </span>
+        ) : (
+          <span className="fs-11 dim">بدون كارت</span>
+        ),
+    },
+    {
       key: 'status',
       header: 'الحالة',
       render: (row) => {

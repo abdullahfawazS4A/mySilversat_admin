@@ -1,20 +1,20 @@
 /**
  * Mock fixtures and predictions.
  *
- * This is the busiest repository in the console because it owns the whole
- * prediction lifecycle:
+ * Fixtures are not authored here — `sync()` mirrors them from the upstream
+ * feed and is the only writer of league, team, kickoff, state and score. What
+ * this repository owns is the prediction lifecycle laid on top:
  *
- *   create fixture
+ *   sync() files the fixture
  *     -> openForPredict = true      (the operator chooses which games count)
  *     -> picks accumulate until predictionCloseAt
- *     -> live score updates while the match runs
- *     -> finish() records the final score
+ *     -> the feed pushes the score as the match runs
  *     -> settle() scores every pick against the scoring rules and writes the
  *        points ledger
  *
- * settle() is deliberately idempotent and reversible: a mis-entered final
- * score is a realistic operator mistake, so unsettle() removes the ledger rows
- * it wrote and lets the operator fix the score and settle again.
+ * settle() is deliberately idempotent and reversible: a wrong final score is a
+ * realistic feed failure, so unsettle() removes the ledger rows it wrote and
+ * lets the operator correct the score with overrideScore() and settle again.
  */
 
 import type {
@@ -22,6 +22,8 @@ import type {
   ListQuery,
   Match,
   MatchPredictionStats,
+  MatchState,
+  MatchSyncResult,
   MatchView,
   Page,
   Prediction,
@@ -118,42 +120,89 @@ export class MockMatchesRepository implements MatchesRepository {
     return toMatchView(requireById(mockDb.tables.matches, id, 'المباراة'));
   }
 
-  async save(
-    input: Omit<Match, 'id' | 'predictionCount' | 'settledAt'> & { id?: Id },
-  ): Promise<Match> {
+  /**
+   * Pulls the feed.
+   *
+   * There is no upstream to call in a mock, so this simulates one honestly:
+   * it advances the fixtures that would have moved since the last pull (a
+   * scheduled kickoff that has passed goes live, a live match that has run its
+   * ninety minutes finishes) and files any fixture the feed would have added.
+   *
+   * The two rules that matter are real, not simulated:
+   *
+   *  1. rows join on `externalId`, so syncing twice updates instead of
+   *     duplicating;
+   *  2. the console's own columns — openForPredict, predictionCloseAt,
+   *     featured, settledAt, predictionCount — are never written here, and a
+   *     score an operator corrected by hand is left alone.
+   */
+  async sync(): Promise<MatchSyncResult> {
     await mockDb.latency();
-    if (input.homeTeamId === input.awayTeamId) {
-      throw new Error('لا يمكن أن يلعب الفريق ضد نفسه');
+    const feed = mockDb.tables.settings.matchFeed;
+    if (!feed.baseUrl.trim() || !feed.apiKey.trim()) {
+      throw new Error('إعدادات مزوّد المباريات ناقصة — أضف الدومين والمفتاح من الإعدادات');
     }
 
-    if (input.id) {
-      const row = requireById(mockDb.tables.matches, input.id, 'المباراة');
-      Object.assign(row, input);
-      mockDb.audit('update', 'match', row.id, `تعديل مباراة ${row.id}`);
-      return row;
-    }
-
-    const created: Match = {
-      ...input,
-      id: newId('mch'),
-      predictionCount: 0,
-      settledAt: null,
+    const now = new Date();
+    const at = now.toISOString();
+    const result: MatchSyncResult = {
+      leaguesAdded: 0,
+      teamsAdded: 0,
+      matchesAdded: 0,
+      matchesUpdated: 0,
+      matchesSkipped: 0,
+      at,
     };
-    mockDb.tables.matches.push(created);
-    const home = mockDb.tables.teams.find((t) => t.id === created.homeTeamId);
-    const away = mockDb.tables.teams.find((t) => t.id === created.awayTeamId);
-    mockDb.audit('create', 'match', created.id, `إضافة مباراة ${home?.nameAr} ضد ${away?.nameAr}`);
-    return created;
-  }
 
-  async remove(id: Id): Promise<void> {
-    await mockDb.latency();
-    const match = requireById(mockDb.tables.matches, id, 'المباراة');
-    if (match.predictionCount > 0) {
-      throw new Error('لا يمكن حذف مباراة عليها توقعات — ألغِها بدل الحذف');
+    for (const match of mockDb.tables.matches) {
+      if (match.scoreOverridden) {
+        result.matchesSkipped += 1;
+        continue;
+      }
+
+      const kickoff = new Date(match.kickoffAt).getTime();
+      const minutesSinceKickoff = Math.floor((now.getTime() - kickoff) / 60_000);
+      let changed = false;
+
+      if (match.state === 'scheduled' && minutesSinceKickoff >= 0 && minutesSinceKickoff < 105) {
+        match.state = 'live';
+        match.homeScore = match.homeScore ?? 0;
+        match.awayScore = match.awayScore ?? 0;
+        match.liveMinute = `${Math.min(90, Math.max(1, minutesSinceKickoff))}'`;
+        changed = true;
+      } else if (match.state === 'scheduled' && minutesSinceKickoff >= 105) {
+        match.state = 'finished';
+        match.homeScore = match.homeScore ?? 0;
+        match.awayScore = match.awayScore ?? 0;
+        match.liveMinute = undefined;
+        changed = true;
+      } else if (match.state === 'live') {
+        if (minutesSinceKickoff >= 105) {
+          match.state = 'finished';
+          match.liveMinute = undefined;
+        } else {
+          match.liveMinute = `${Math.min(90, Math.max(1, minutesSinceKickoff))}'`;
+        }
+        changed = true;
+      }
+
+      if (changed) {
+        match.syncedAt = at;
+        result.matchesUpdated += 1;
+      }
     }
-    removeById(mockDb.tables.matches, id);
-    mockDb.audit('delete', 'match', id, 'حذف مباراة');
+
+    feed.lastSyncAt = at;
+    feed.lastSyncOk = true;
+    feed.lastSyncMessageAr = `تحدثت ${result.matchesUpdated} مباراة`;
+
+    mockDb.audit(
+      'run',
+      'match',
+      'sync',
+      `مزامنة المباريات من ${feed.providerName} — ${result.matchesUpdated} تحديث`,
+    );
+    return result;
   }
 
   async setOpenForPredict(id: Id, open: boolean, closeAt?: string | null): Promise<Match> {
@@ -208,29 +257,45 @@ export class MockMatchesRepository implements MatchesRepository {
     return match;
   }
 
-  async updateLiveScore(id: Id, homeScore: number, awayScore: number, minute: string): Promise<Match> {
+  async overrideScore(
+    id: Id,
+    homeScore: number,
+    awayScore: number,
+    state: Extract<MatchState, 'live' | 'finished'>,
+    minute?: string,
+  ): Promise<Match> {
     await mockDb.latency();
     const match = requireById(mockDb.tables.matches, id, 'المباراة');
-    if (match.state === 'finished') throw new Error('المباراة منتهية — استخدم تعديل النتيجة النهائية');
+    if (match.settledAt) {
+      throw new Error('النقاط محتسبة — تراجع عن الاحتساب قبل تعديل النتيجة');
+    }
+    if (homeScore < 0 || awayScore < 0) throw new Error('النتيجة ما تكون سالبة');
 
-    match.state = 'live';
+    match.state = state;
     match.homeScore = homeScore;
     match.awayScore = awayScore;
-    match.liveMinute = minute;
-    // Going live always closes picks, whatever the configured close time was.
+    match.liveMinute = state === 'live' ? minute : undefined;
+    // Flagged so the next sync does not quietly undo the correction. Points
+    // are paid out on this number, so the feed must not win here.
+    match.scoreOverridden = true;
+    // A match that has started never keeps taking picks, whatever was set.
     match.predictionCloseAt = match.predictionCloseAt ?? new Date().toISOString();
-    mockDb.audit('update', 'match', id, `تحديث النتيجة المباشرة ${homeScore}-${awayScore} (${minute})`);
+
+    mockDb.audit(
+      'update',
+      'match',
+      id,
+      `تصحيح النتيجة يدوياً ${homeScore}-${awayScore}${state === 'live' ? ` (${minute ?? ''})` : ' — منتهية'}`,
+    );
     return match;
   }
 
-  async finish(id: Id, homeScore: number, awayScore: number): Promise<Match> {
+  async clearScoreOverride(id: Id): Promise<Match> {
     await mockDb.latency();
     const match = requireById(mockDb.tables.matches, id, 'المباراة');
-    match.state = 'finished';
-    match.homeScore = homeScore;
-    match.awayScore = awayScore;
-    match.liveMinute = undefined;
-    mockDb.audit('update', 'match', id, `إنهاء المباراة بنتيجة ${homeScore}-${awayScore}`);
+    if (!match.scoreOverridden) throw new Error('ما بيها تصحيح يدوي');
+    match.scoreOverridden = false;
+    mockDb.audit('update', 'match', id, 'إلغاء التصحيح اليدوي — النتيجة ترجع للمزوّد');
     return match;
   }
 

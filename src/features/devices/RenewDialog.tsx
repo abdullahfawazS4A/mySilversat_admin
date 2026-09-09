@@ -1,13 +1,18 @@
 /**
  * Record a renewal.
  *
- * The dialog shows the resulting expiry date before the operator commits,
- * because "when does it expire now?" is the first thing the customer on the
- * phone asks, and a wrong package choice is expensive to unwind.
+ * The dialog shows two things before the operator commits, because both are
+ * questions asked on the phone and both are expensive to get wrong:
+ *
+ *  - the resulting expiry date ("when does it expire now?");
+ *  - **which card is about to be burnt** out of this subscriber's governorate,
+ *    and whether one exists at all. A renewal with no card behind it is
+ *    refused by the repository, so finding that out at the moment of saving —
+ *    with the customer waiting — is exactly what this preview prevents.
  */
 
 import { useMemo, useState } from 'react';
-import { CalendarCheck } from 'lucide-react';
+import { CalendarCheck, CreditCard } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync, useAction } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
@@ -41,6 +46,22 @@ export function RenewDialog({
 
   const activePackages = (packages.data ?? []).filter((pkg) => pkg.active);
   const chosen = activePackages.find((pkg) => pkg.id === packageId);
+
+  const governorateId = target.data?.governorateId ?? '';
+  const governorates = useAsync(() => repos.catalog.governorates(), []);
+  const governorateName =
+    (governorates.data ?? []).find((g) => g.id === governorateId)?.nameAr ?? '';
+
+  // A free grant does not touch stock, so there is nothing to look up for it.
+  const needsCard = method !== 'free_grant';
+  const nextCard = useAsync(
+    () =>
+      needsCard && governorateId && chosen
+        ? repos.stock.nextAvailable(governorateId, chosen.months)
+        : Promise.resolve(null),
+    [needsCard, governorateId, chosen?.months],
+  );
+  const cardMissing = needsCard && Boolean(chosen) && !nextCard.loading && nextCard.data === null;
 
   // Preview: an expired device restarts today, an active one is extended.
   const preview = useMemo(() => {
@@ -81,7 +102,8 @@ export function RenewDialog({
             variant="primary"
             icon={<CalendarCheck size={15} />}
             onClick={() => void save()}
-            disabled={action.pending}
+            disabled={action.pending || cardMissing}
+            title={cardMissing ? 'ما بيه كارت بهذه المدة في مخزن المحافظة' : undefined}
           >
             {action.pending ? 'جاري التسجيل…' : 'تسجيل التجديد'}
           </Button>
@@ -150,6 +172,28 @@ export function RenewDialog({
         <Field label="ملاحظة" hint="اختيارية">
           <TextArea value={note} onChange={setNote} rows={2} />
         </Field>
+
+        {chosen && needsCard ? (
+          cardMissing ? (
+            <Notice tone="danger" icon={<CreditCard size={16} />}>
+              ما بقى كارت <span className="num strong">{chosen.months}</span> أشهر في مخزن{' '}
+              <span className="strong">{governorateName}</span>. عبّي المخزن أو اختر باقة بمدة ثانية —
+              التجديد ما ينسجّل بدون كارت.
+            </Notice>
+          ) : nextCard.data ? (
+            <Notice tone="info" icon={<CreditCard size={16} />}>
+              راح ينسحب الكارت <span className="num strong">{nextCard.data.code}</span> من مخزن{' '}
+              <span className="strong">{governorateName}</span> — أقدم كارت{' '}
+              <span className="num">{chosen.months}</span> أشهر بالمخزن.
+            </Notice>
+          ) : null
+        ) : null}
+
+        {chosen && !needsCard ? (
+          <Notice tone="warning" icon={<CreditCard size={16} />}>
+            المنحة المجانية ما تسحب كارت من المخزن — الاشتراك يتمدد بدون مقابل.
+          </Notice>
+        ) : null}
 
         {preview ? (
           <Notice tone="success">

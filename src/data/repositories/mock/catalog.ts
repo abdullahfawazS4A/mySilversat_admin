@@ -1,4 +1,10 @@
-/** Mock reference data: governorates, leagues, teams and packages. */
+/**
+ * Mock reference data: governorates, leagues, teams and packages.
+ *
+ * Leagues and teams are read-only here. They belong to the fixtures feed, and
+ * `MockMatchesRepository.sync()` is the only thing that writes them — the sole
+ * exception being a league's `active` flag, which is a local product decision.
+ */
 
 import type { Governorate, Id, League, SubscriptionPackage, Team } from '@/types';
 import type { CatalogRepository } from '../types';
@@ -22,51 +28,21 @@ export class MockCatalogRepository implements CatalogRepository {
     return mockDb.read(() => [...mockDb.tables.leagues].sort((a, b) => a.sortOrder - b.sortOrder));
   }
 
-  async saveLeague(league: Omit<League, 'id'> & { id?: Id }): Promise<League> {
+  /**
+   * The one thing about a league that is ours rather than the feed's: whether
+   * the app shows it. The feed keeps sending a switched-off league's fixtures
+   * and this console keeps mirroring them — they just do not reach customers.
+   */
+  async setLeagueActive(id: Id, active: boolean): Promise<League> {
     await mockDb.latency();
-    const saved = upsert(mockDb.tables.leagues, league, 'lg', {
-      key: league.key,
-      nameAr: league.nameAr,
-      country: league.country,
-      active: true,
-      sortOrder: mockDb.tables.leagues.length,
-    });
-    mockDb.audit(league.id ? 'update' : 'create', 'league', saved.id, `دوري ${saved.nameAr}`);
-    return saved;
-  }
-
-  async deleteLeague(id: Id): Promise<void> {
-    await mockDb.latency();
-    if (mockDb.tables.matches.some((m) => m.leagueId === id)) {
-      throw new Error('لا يمكن حذف دوري عليه مباريات — عطّله بدل الحذف');
-    }
-    removeById(mockDb.tables.leagues, id);
-    mockDb.audit('delete', 'league', id, 'حذف دوري');
+    const league = requireById(mockDb.tables.leagues, id, 'الدوري');
+    league.active = active;
+    mockDb.audit('update', 'league', id, `${active ? 'تفعيل' : 'تعطيل'} دوري ${league.nameAr}`);
+    return league;
   }
 
   teams(): Promise<Team[]> {
     return mockDb.read(() => [...mockDb.tables.teams]);
-  }
-
-  async saveTeam(team: Omit<Team, 'id'> & { id?: Id }): Promise<Team> {
-    await mockDb.latency();
-    const saved = upsert(mockDb.tables.teams, team, 'tm', {
-      nameAr: team.nameAr,
-      shortNameAr: team.shortNameAr,
-      leagueId: team.leagueId,
-      crestSeed: team.crestSeed,
-    });
-    mockDb.audit(team.id ? 'update' : 'create', 'team', saved.id, `فريق ${saved.nameAr}`);
-    return saved;
-  }
-
-  async deleteTeam(id: Id): Promise<void> {
-    await mockDb.latency();
-    if (mockDb.tables.matches.some((m) => m.homeTeamId === id || m.awayTeamId === id)) {
-      throw new Error('لا يمكن حذف فريق عليه مباريات مسجلة');
-    }
-    removeById(mockDb.tables.teams, id);
-    mockDb.audit('delete', 'team', id, 'حذف فريق');
   }
 
   packages(): Promise<SubscriptionPackage[]> {

@@ -20,6 +20,8 @@ import {
   Tv,
   Ticket,
   Settings,
+  Boxes,
+  Plug,
   Store,
   Signal,
   Video,
@@ -79,7 +81,7 @@ export const NAV_GROUPS: NavGroup[] = [
         path: '/leagues',
         label: 'الدوريات والفرق',
         icon: ClipboardList,
-        hint: 'إدارة الدوريات والفرق المتاحة',
+        hint: 'الدوريات والفرق الواصلة من المزوّد',
       },
     ],
   },
@@ -109,6 +111,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'الباقات والأسعار',
         icon: Package,
         hint: 'مدد الاشتراك وأسعارها',
+      },
+      {
+        path: '/stock',
+        label: 'مخزن الكارتات',
+        icon: Boxes,
+        hint: 'كارتات كل محافظة — والتجديد يسحب منها',
       },
       {
         path: '/agents',
@@ -189,6 +197,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'المحافظات',
         icon: MapPin,
         hint: 'تفعيل وتعطيل المحافظات',
+      },
+      {
+        path: '/api',
+        label: 'الـ API',
+        icon: Plug,
+        hint: 'سيرفر كل محافظة وربطه بها',
       },
       {
         path: '/audit',

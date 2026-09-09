@@ -25,6 +25,8 @@ import { MockUsersRepository } from './mock/users';
 import { MockDevicesRepository } from './mock/devices';
 import { MockRenewalsRepository } from './mock/renewals';
 import { MockMatchesRepository } from './mock/matches';
+import { MockStockRepository } from './mock/stock';
+import { MockApiRepository } from './mock/api';
 import { MockLeaderboardRepository } from './mock/leaderboard';
 import { MockDrawsRepository } from './mock/draws';
 import { MockContentRepository } from './mock/content';
@@ -43,6 +45,8 @@ export function createRepositories(): Repositories {
     devices: new MockDevicesRepository(),
     renewals: new MockRenewalsRepository(),
     matches: new MockMatchesRepository(),
+    stock: new MockStockRepository(),
+    api: new MockApiRepository(),
     leaderboard: new MockLeaderboardRepository(),
     draws: new MockDrawsRepository(),
     content: new MockContentRepository(),

@@ -16,6 +16,7 @@
 
 import type {
   Agent,
+  ApiConnection,
   AdminUser,
   AppSettings,
   AppUser,
@@ -37,6 +38,7 @@ import type {
   Renewal,
   Season,
   Slide,
+  StockCard,
   SubscriptionPackage,
   Team,
   Tower,
@@ -54,6 +56,8 @@ export interface MockTables {
   packages: SubscriptionPackage[];
   renewals: Renewal[];
   agents: Agent[];
+  stockCards: StockCard[];
+  apiConnections: ApiConnection[];
   leagues: League[];
   teams: Team[];
   matches: Match[];
@@ -84,6 +88,8 @@ function buildTables(): MockTables {
     packages: [...seed.PACKAGES],
     renewals: [...seed.RENEWALS],
     agents: [...seed.AGENTS],
+    stockCards: [...seed.STOCK_CARDS],
+    apiConnections: [...seed.API_CONNECTIONS],
     leagues: [...seed.LEAGUES],
     teams: [...seed.TEAMS],
     matches: [...seed.MATCHES],

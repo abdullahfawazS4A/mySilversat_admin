@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, LifeBuoy, RotateCcw, Save, Settings, Target, Timer } from 'lucide-react';
+import { AlertTriangle, LifeBuoy, RotateCcw, Rss, Save, Settings, Target, Timer } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAction, useAsync } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
@@ -30,7 +30,7 @@ import {
   TextInput,
 } from '@/components/ui';
 import type { AppSettings } from '@/types';
-import { formatNumber } from '@/lib/format';
+import { formatNumber, relativeAr } from '@/lib/format';
 
 export function SettingsPage() {
   const repos = useRepos();
@@ -60,6 +60,14 @@ export function SettingsPage() {
   ) =>
     setDraft((current) =>
       current ? { ...current, scoring: { ...current.scoring, [key]: value } } : current,
+    );
+
+  const patchFeed = <K extends keyof AppSettings['matchFeed']>(
+    key: K,
+    value: AppSettings['matchFeed'][K],
+  ) =>
+    setDraft((current) =>
+      current ? { ...current, matchFeed: { ...current.matchFeed, [key]: value } } : current,
     );
 
   const save = async () => {
@@ -222,6 +230,18 @@ export function SettingsPage() {
                         onChange={(v) => patch('couponMinMonths', Number(v))}
                       />
                     </Field>
+                    <Field
+                      label="حد المخزون المنخفض"
+                      hint="عدد الكارتات اللي تحته تنطلع تنبيه بشاشة المخزن"
+                    >
+                      <TextInput
+                        type="number"
+                        min={0}
+                        max={500}
+                        value={draft.lowStockThreshold}
+                        onChange={(v) => patch('lowStockThreshold', Number(v))}
+                      />
+                    </Field>
                   </div>
 
                   <Notice tone="warning">
@@ -234,6 +254,69 @@ export function SettingsPage() {
                     onChange={(next) => patch('monthlyLeaderboardReset', next)}
                     label="صفّر الترتيب أول كل شهر"
                   />
+                </div>
+
+                {/* ------------------------------------- match feed --- */}
+                <div className="card card-pad col" style={{ gap: 'var(--sp-4)' }}>
+                  <div className="row row-gap-2">
+                    <span className="chip-icon" style={{ width: 30, height: 30 }}>
+                      <Rss size={15} />
+                    </span>
+                    <div className="col">
+                      <h3>مزوّد المباريات</h3>
+                      <span className="fs-12 muted">
+                        من وين تجي الدوريات والفرق والمباريات — ما تنضاف يدوياً
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-form">
+                    <Field label="اسم المزوّد">
+                      <TextInput
+                        value={draft.matchFeed.providerName}
+                        onChange={(v) => patchFeed('providerName', v)}
+                      />
+                    </Field>
+                    <Field label="فترة المزامنة" hint="بالدقائق — صفر يعني مزامنة يدوية فقط">
+                      <TextInput
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={draft.matchFeed.syncIntervalMinutes}
+                        onChange={(v) => patchFeed('syncIntervalMinutes', Number(v))}
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="الدومين" hint="العنوان الأساسي لواجهة المزوّد">
+                    <TextInput
+                      type="url"
+                      value={draft.matchFeed.baseUrl}
+                      onChange={(v) => patchFeed('baseUrl', v)}
+                    />
+                  </Field>
+
+                  <Field label="مفتاح الوصول">
+                    <TextInput
+                      type="password"
+                      value={draft.matchFeed.apiKey}
+                      onChange={(v) => patchFeed('apiKey', v)}
+                    />
+                  </Field>
+
+                  {draft.matchFeed.lastSyncAt ? (
+                    <Notice tone={draft.matchFeed.lastSyncOk === false ? 'danger' : 'info'}>
+                      آخر مزامنة <span className="num">{relativeAr(draft.matchFeed.lastSyncAt)}</span>
+                      {draft.matchFeed.lastSyncMessageAr
+                        ? ` — ${draft.matchFeed.lastSyncMessageAr}`
+                        : ''}
+                      . المزامنة تنفّذ من شاشة المباريات.
+                    </Notice>
+                  ) : (
+                    <Notice tone="warning">
+                      ما صارت مزامنة بعد — روح لشاشة المباريات واضغط «مزامنة الآن».
+                    </Notice>
+                  )}
                 </div>
 
                 {/* --------------------------------------- app status --- */}

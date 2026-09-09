@@ -17,6 +17,7 @@
 import type {
   Agent,
   AdminUser,
+  ApiConnection,
   AppSettings,
   AppUser,
   AuditEntry,
@@ -36,6 +37,7 @@ import type {
   Renewal,
   Season,
   Slide,
+  StockCard,
   SubscriptionPackage,
   Team,
   Tower,
@@ -127,15 +129,19 @@ export const ADMIN_USERS: AdminUser[] = [
 
 // ------------------------------------------------------- leagues and teams --
 
+/**
+ * Leagues as the feed returns them. `externalId` is the provider's own id —
+ * a sync joins on it, so these have to look like provider ids, not ours.
+ */
 export const LEAGUES: League[] = [
-  { id: 'lg_iraqi', key: 'iraqi', nameAr: 'دوري نجوم العراق', country: 'العراق', active: true, sortOrder: 0 },
-  { id: 'lg_spanish', key: 'spanish', nameAr: 'الدوري الإسباني', country: 'إسبانيا', active: true, sortOrder: 1 },
-  { id: 'lg_english', key: 'english', nameAr: 'الدوري الإنكليزي', country: 'إنكلترا', active: true, sortOrder: 2 },
-  { id: 'lg_italian', key: 'italian', nameAr: 'الدوري الإيطالي', country: 'إيطاليا', active: true, sortOrder: 3 },
-  { id: 'lg_german', key: 'german', nameAr: 'الدوري الألماني', country: 'ألمانيا', active: true, sortOrder: 4 },
-  { id: 'lg_french', key: 'french', nameAr: 'الدوري الفرنسي', country: 'فرنسا', active: true, sortOrder: 5 },
-  { id: 'lg_saudi', key: 'saudi', nameAr: 'الدوري السعودي', country: 'السعودية', active: true, sortOrder: 6 },
-  { id: 'lg_ucl', key: 'ucl', nameAr: 'دوري أبطال أوروبا', country: 'أوروبا', active: false, sortOrder: 7 },
+  { id: 'lg_iraqi', externalId: 'SD-101', key: 'iraqi', nameAr: 'دوري نجوم العراق', country: 'العراق', active: true, sortOrder: 0 },
+  { id: 'lg_spanish', externalId: 'SD-140', key: 'spanish', nameAr: 'الدوري الإسباني', country: 'إسبانيا', active: true, sortOrder: 1 },
+  { id: 'lg_english', externalId: 'SD-039', key: 'english', nameAr: 'الدوري الإنكليزي', country: 'إنكلترا', active: true, sortOrder: 2 },
+  { id: 'lg_italian', externalId: 'SD-135', key: 'italian', nameAr: 'الدوري الإيطالي', country: 'إيطاليا', active: true, sortOrder: 3 },
+  { id: 'lg_german', externalId: 'SD-078', key: 'german', nameAr: 'الدوري الألماني', country: 'ألمانيا', active: true, sortOrder: 4 },
+  { id: 'lg_french', externalId: 'SD-061', key: 'french', nameAr: 'الدوري الفرنسي', country: 'فرنسا', active: true, sortOrder: 5 },
+  { id: 'lg_saudi', externalId: 'SD-307', key: 'saudi', nameAr: 'الدوري السعودي', country: 'السعودية', active: true, sortOrder: 6 },
+  { id: 'lg_ucl', externalId: 'SD-002', key: 'ucl', nameAr: 'دوري أبطال أوروبا', country: 'أوروبا', active: false, sortOrder: 7 },
 ];
 
 /** [id, name, short name, league, crest seed] */
@@ -171,8 +177,10 @@ const TEAM_ROWS: [string, string, string, string, number][] = [
   ['tm_ahli', 'الأهلي', 'الأهلي', 'lg_saudi', 4],
 ];
 
-export const TEAMS: Team[] = TEAM_ROWS.map(([id, nameAr, shortNameAr, leagueId, crestSeed]) => ({
+export const TEAMS: Team[] = TEAM_ROWS.map(([id, nameAr, shortNameAr, leagueId, crestSeed], index) => ({
   id,
+  // The provider numbers its teams; ours are derived so the seed stays stable.
+  externalId: `SD-T${(index + 1).toString().padStart(4, '0')}`,
   nameAr,
   shortNameAr,
   leagueId,
@@ -306,6 +314,21 @@ const METHODS: Renewal['method'][] = ['kcard', 'cash_agent', 'online', 'kcard', 
 export const RENEWALS: Renewal[] = [];
 export const COUPONS: Coupon[] = [];
 
+// ------------------------------------------------------------- card stock ---
+
+/**
+ * Card codes carry their governorate and length in plain sight — SLV-BGD-12-
+ * 00042 — because a support call starts with the customer reading the code
+ * out, and the operator should know which stock it belongs to before looking
+ * anything up.
+ */
+function cardCode(governorateId: string, months: number, serial: number): string {
+  const region = governorateId.replace('gov_', '').toUpperCase();
+  return `SLV-${region}-${months.toString().padStart(2, '0')}-${serial.toString().padStart(5, '0')}`;
+}
+
+export const STOCK_CARDS: StockCard[] = [];
+
 DEVICES.forEach((device) => {
   // Every device has between one and four renewals in its history, walking the
   // expiry backwards from its current value.
@@ -338,6 +361,26 @@ DEVICES.forEach((device) => {
       couponId = couponId2;
     }
 
+    // Every historical renewal burnt a card out of its governorate's stock, so
+    // the used side of the stock is generated here rather than invented later.
+    const owner = APP_USERS.find((u) => u.id === device.userId);
+    const cardId = `crd_u${STOCK_CARDS.length + 1}`;
+    if (owner) {
+      STOCK_CARDS.push({
+        id: cardId,
+        code: cardCode(owner.governorateId, pkg.months, STOCK_CARDS.length + 1),
+        governorateId: owner.governorateId,
+        months: pkg.months,
+        status: status === 'refunded' ? 'void' : 'used',
+        batchRef: `B-${new Date(createdAt).getFullYear()}-${(new Date(createdAt).getMonth() + 1).toString().padStart(2, '0')}`,
+        addedAt: addDays(createdAt, -int(3, 40)),
+        usedAt: createdAt,
+        usedByRenewalId: renewalId,
+        usedByDeviceId: device.id,
+        voidReasonAr: status === 'refunded' ? 'تجديد مسترجع' : undefined,
+      });
+    }
+
     RENEWALS.push({
       id: renewalId,
       userId: device.userId,
@@ -349,6 +392,7 @@ DEVICES.forEach((device) => {
       agentId: agent?.id,
       status,
       couponId,
+      cardId: owner ? cardId : undefined,
       createdAt,
       expiryBefore: before,
       expiryAfter: expiryCursor,
@@ -386,6 +430,111 @@ DEVICES.forEach((device) => {
   for (const gov of GOVERNORATES) gov.subscriberCount = byGov.get(gov.id) ?? 0;
 }
 
+// Stock still on the shelf, sized against how busy each governorate is. A
+// couple of lengths are deliberately left thin or empty so the low-stock
+// warning and the "refuse the renewal" path are both reachable in a demo.
+{
+  const SELLABLE_MONTHS = [3, 6, 12];
+  let serial = STOCK_CARDS.length;
+
+  for (const gov of GOVERNORATES) {
+    const busy = Math.max(1, gov.subscriberCount);
+    for (const months of SELLABLE_MONTHS) {
+      // Baghdad holds hundreds; a governorate with three subscribers holds a
+      // handful. Twelve-month cards are the slow movers everywhere.
+      const base = Math.round(busy * (months === 12 ? 1.2 : months === 6 ? 2.1 : 3.4));
+      let count = int(Math.max(0, Math.round(base * 0.6)), Math.round(base * 1.4));
+      if (gov.id === 'gov_dyl' && months === 12) count = 4; // low-stock warning
+      if (gov.id === 'gov_msn' && months === 6) count = 0; // sold out
+      if (!gov.active) count = 0;
+
+      for (let i = 0; i < count; i += 1) {
+        serial += 1;
+        const addedAt = at(-int(1, 120), int(8, 16), 0);
+        STOCK_CARDS.push({
+          id: `crd_a${serial}`,
+          code: cardCode(gov.id, months, serial),
+          governorateId: gov.id,
+          months,
+          status: 'available',
+          batchRef: `B-${new Date(addedAt).getFullYear()}-${(new Date(addedAt).getMonth() + 1).toString().padStart(2, '0')}`,
+          addedAt,
+          usedAt: null,
+        });
+      }
+    }
+  }
+
+  // Oldest first: the renewal path burns FIFO, and the table shows the same
+  // order, so what the operator sees at the top is what goes next.
+  STOCK_CARDS.sort((a, b) => a.addedAt.localeCompare(b.addedAt));
+}
+
+// -------------------------------------------------------- governorate APIs --
+
+/**
+ * Every governorate runs the same stack behind its own domain, so a connection
+ * is four fields and a list of governorates it answers for. Three of these are
+ * shared regional servers; Baghdad has its own.
+ */
+export const API_CONNECTIONS: ApiConnection[] = [
+  {
+    id: 'api_bgd',
+    nameAr: 'سيرفر بغداد',
+    baseUrl: 'https://bgd.silversat.iq',
+    authKey: 'ak_bgd_7f31c2ea9d40',
+    username: 'silver_bgd',
+    password: 'Bgd@2026',
+    active: true,
+    governorateIds: ['gov_bgd'],
+    createdAt: at(-380, 10),
+    lastCheckAt: at(0, 8, 5),
+    lastCheckOk: true,
+    lastCheckMessageAr: 'الاتصال ناجح — 142ms',
+  },
+  {
+    id: 'api_north',
+    nameAr: 'سيرفر الشمال',
+    baseUrl: 'https://north.silversat.iq',
+    authKey: 'ak_nrt_2b98d5f16c77',
+    username: 'silver_north',
+    password: 'Nrt@2026',
+    active: true,
+    governorateIds: ['gov_nnw', 'gov_erb', 'gov_slm', 'gov_dhk', 'gov_krk'],
+    createdAt: at(-370, 11),
+    lastCheckAt: at(0, 8, 6),
+    lastCheckOk: true,
+    lastCheckMessageAr: 'الاتصال ناجح — 218ms',
+  },
+  {
+    id: 'api_south',
+    nameAr: 'سيرفر الجنوب',
+    baseUrl: 'https://south.silversat.iq',
+    authKey: 'ak_sth_5c40a1be2f83',
+    username: 'silver_south',
+    password: 'Sth@2026',
+    active: true,
+    governorateIds: ['gov_bsr', 'gov_njf', 'gov_krb', 'gov_dqr', 'gov_msn', 'gov_qds', 'gov_mth'],
+    createdAt: at(-365, 9),
+    lastCheckAt: at(-2, 14),
+    lastCheckOk: false,
+    lastCheckMessageAr: 'انتهت مهلة الاتصال — تأكد من الدومين',
+  },
+  {
+    id: 'api_mid',
+    nameAr: 'سيرفر الفرات الأوسط',
+    baseUrl: 'https://mid.silversat.iq',
+    authKey: 'ak_mid_8e12f4c790ab',
+    username: 'silver_mid',
+    password: 'Mid@2026',
+    active: true,
+    governorateIds: ['gov_bbl', 'gov_anb', 'gov_dyl', 'gov_wst', 'gov_slh'],
+    createdAt: at(-360, 13),
+    lastCheckAt: null,
+    lastCheckOk: null,
+  },
+];
+
 // ---------------------------------------------------------------- matches ---
 
 /** [league, home, away, day offset, hour, state] */
@@ -422,6 +571,8 @@ export const MATCHES: Match[] = MATCH_ROWS.map(([leagueId, homeTeamId, awayTeamI
   const live = state === 'live';
   return {
     id,
+    externalId: `SD-F${(1740000 + i * 37).toString()}`,
+    syncedAt: at(0, 7, 30),
     leagueId,
     homeTeamId,
     awayTeamId,
@@ -697,6 +848,15 @@ export const SETTINGS: AppSettings = {
     lockMinutesBeforeKickoff: 0,
     allowEditBeforeLock: true,
   },
+  matchFeed: {
+    providerName: 'SportsData Feed',
+    baseUrl: 'https://api.sportsdata.io/v3/soccer',
+    apiKey: 'sd_live_9f2c41ab7e05',
+    syncIntervalMinutes: 15,
+    lastSyncAt: at(0, 7, 30),
+    lastSyncOk: true,
+    lastSyncMessageAr: 'آخر مزامنة نجحت — 24 مباراة',
+  },
   monthlyLeaderboardReset: true,
   maintenanceMode: false,
   maintenanceMessageAr: 'التطبيق تحت الصيانة، راح نرجع خلال وقت قصير.',
@@ -704,5 +864,6 @@ export const SETTINGS: AppSettings = {
   supportWhatsapp: '9647700000000',
   expiryWarningDays: 7,
   couponMinMonths: 3,
+  lowStockThreshold: 20,
   mockLatencyMs: [220, 520],
 };

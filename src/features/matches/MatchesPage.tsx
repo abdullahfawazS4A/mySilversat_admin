@@ -1,25 +1,24 @@
 /**
  * Matches.
  *
- * This screen exists to answer one operator question: **out of every fixture we
- * have, which ones do we open for predictions?** Everything else — creating a
- * fixture, pushing a live score, ending a match — supports that decision.
+ * Fixtures are mirrored from the upstream feed — nothing here creates or
+ * deletes one — so this screen answers a single operator question: **out of
+ * every fixture the feed gave us, which ones do we open for predictions?**
  *
- * The prediction switch is therefore in the table itself, not buried in an edit
+ * The prediction switch is therefore in the table itself, not buried in a
  * dialog, and it works in bulk: a typical evening means opening five fixtures
- * at once.
+ * at once. Everything else on the row is feed data shown read-only, with one
+ * escape hatch — correcting a wrong score, because points are settled on it.
  */
 
 import { useMemo, useState } from 'react';
 import {
-  CalendarPlus,
   CheckCircle2,
   Flag,
   Lock,
   Pencil,
   Pin,
-  Radio,
-  Trash2,
+  RefreshCw,
   Unlock,
   Users,
 } from 'lucide-react';
@@ -33,6 +32,7 @@ import {
   Card,
   ConfirmDialog,
   FilterChips,
+  Notice,
   Pill,
   SearchInput,
   Select,
@@ -41,9 +41,8 @@ import {
 } from '@/components/ui';
 import type { Id, MatchState, MatchView } from '@/types';
 import { MATCH_STATE } from '@/lib/labels';
-import { countdownAr, formatDateAr, formatTimeAr } from '@/lib/format';
-import { MatchDialog } from './MatchDialog';
-import { LiveScoreDialog } from './LiveScoreDialog';
+import { countdownAr, formatDateAr, formatTimeAr, relativeAr } from '@/lib/format';
+import { ScoreOverrideDialog } from './ScoreOverrideDialog';
 import { MatchPredictionsDialog } from './MatchPredictionsDialog';
 
 type PredictFilter = 'all' | 'open' | 'closed';
@@ -60,14 +59,14 @@ export function MatchesPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const [editing, setEditing] = useState<MatchView | 'new' | null>(null);
   const [scoring, setScoring] = useState<MatchView | null>(null);
   const [viewingPicks, setViewingPicks] = useState<MatchView | null>(null);
-  const [deleting, setDeleting] = useState<MatchView | null>(null);
   const [settling, setSettling] = useState<MatchView | null>(null);
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const leagues = useAsync(() => repos.catalog.leagues(), []);
+  const settings = useAsync(() => repos.admin.settings(), []);
   const matches = useAsync(
     () =>
       repos.matches.list({
@@ -84,6 +83,24 @@ export function MatchesPage() {
   const refresh = () => {
     matches.reload();
     setSelected(new Set());
+  };
+
+  const runSync = async () => {
+    setSyncing(true);
+    try {
+      const result = await repos.matches.sync();
+      toast(
+        result.matchesUpdated > 0
+          ? `انمزامنت ${result.matchesUpdated} مباراة من المزوّد`
+          : 'المباريات محدّثة — ما بيها جديد',
+      );
+      settings.reload();
+      refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'تعذّرت المزامنة', 'error');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const toggleOpen = async (match: MatchView, open: boolean) => {
@@ -126,21 +143,6 @@ export function MatchesPage() {
     }
   };
 
-  const runDelete = async () => {
-    if (!deleting) return;
-    setBusy(true);
-    try {
-      await repos.matches.remove(deleting.id);
-      toast('انحذفت المباراة');
-      setDeleting(null);
-      refresh();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'تعذّر الحذف', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const columns = useMemo<Column<MatchView>[]>(
     () => [
       {
@@ -177,14 +179,21 @@ export function MatchesPage() {
         render: (match) => {
           const meta = MATCH_STATE[match.state];
           return (
-            <div className="row row-gap-2">
-              <Pill tone={meta.tone} dot={match.state === 'live'}>
-                {meta.label}
-              </Pill>
-              {match.homeScore !== null && match.awayScore !== null ? (
-                <span className="fs-13 strong num">
-                  {match.homeScore} – {match.awayScore}
-                  {match.liveMinute ? <span className="dim"> {match.liveMinute}</span> : null}
+            <div className="col" style={{ gap: 3 }}>
+              <div className="row row-gap-2">
+                <Pill tone={meta.tone} dot={match.state === 'live'}>
+                  {meta.label}
+                </Pill>
+                {match.homeScore !== null && match.awayScore !== null ? (
+                  <span className="fs-13 strong num">
+                    {match.homeScore} – {match.awayScore}
+                    {match.liveMinute ? <span className="dim"> {match.liveMinute}</span> : null}
+                  </span>
+                ) : null}
+              </div>
+              {match.scoreOverridden ? (
+                <span className="fs-11" style={{ color: 'var(--tone-warning-fg, inherit)' }}>
+                  نتيجة مثبتة يدوياً
                 </span>
               ) : null}
             </div>
@@ -260,31 +269,15 @@ export function MatchesPage() {
       {
         key: 'actions',
         header: '',
-        width: 130,
+        width: 60,
         render: (match) => (
-          <div className="row row-gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Radio size={14} />}
-              title="النتيجة المباشرة / إنهاء المباراة"
-              onClick={() => setScoring(match)}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Pencil size={14} />}
-              title="تعديل"
-              onClick={() => setEditing(match)}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Trash2 size={14} />}
-              title="حذف"
-              onClick={() => setDeleting(match)}
-            />
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Pencil size={14} />}
+            title="تصحيح النتيجة يدوياً"
+            onClick={() => setScoring(match)}
+          />
         ),
       },
     ],
@@ -292,20 +285,41 @@ export function MatchesPage() {
   );
 
   const openCount = matches.data?.items.filter((m) => m.openForPredict).length ?? 0;
+  const feed = settings.data?.matchFeed;
 
   return (
     <>
       <PageHeader
         title="المباريات"
-        subtitle="كل المباريات المتوفرة — وهنا تختار أي مباراة تنفتح للتوقع داخل التطبيق"
+        subtitle="المباريات تجي جاهزة من المزوّد — وهنا تختار أي وحدة تنفتح للتوقع داخل التطبيق"
         actions={
-          <Button variant="primary" icon={<CalendarPlus size={16} />} onClick={() => setEditing('new')}>
-            إضافة مباراة
+          <Button
+            variant="primary"
+            icon={<RefreshCw size={16} />}
+            disabled={syncing}
+            onClick={() => void runSync()}
+          >
+            {syncing ? 'جاري المزامنة…' : 'مزامنة الآن'}
           </Button>
         }
       />
 
-      <div className="page">
+      <div className="page col" style={{ gap: 'var(--sp-4)' }}>
+        {feed ? (
+          <Notice tone={feed.lastSyncOk === false ? 'danger' : 'info'}>
+            المباريات والفرق تجي من <span className="strong">{feed.providerName}</span> — ما تنضاف
+            يدوياً.{' '}
+            {feed.lastSyncAt ? (
+              <>
+                آخر مزامنة <span className="num">{relativeAr(feed.lastSyncAt)}</span>
+                {feed.lastSyncMessageAr ? ` — ${feed.lastSyncMessageAr}` : ''}.
+              </>
+            ) : (
+              'ما صارت مزامنة بعد.'
+            )}
+          </Notice>
+        ) : null}
+
         <Card>
           <Toolbar>
             <SearchInput value={search} onChange={setSearch} placeholder="ابحث بفريق أو دوري…" />
@@ -410,6 +424,7 @@ export function MatchesPage() {
                       <Flag size={22} />
                     </span>
                     <span className="strong">ما بيها مباريات بهذه الفلاتر</span>
+                    <span className="fs-12 muted">جرّب مزامنة المزوّد أو غيّر الفلاتر</span>
                   </div>
                 }
               />
@@ -418,19 +433,8 @@ export function MatchesPage() {
         </Card>
       </div>
 
-      {editing ? (
-        <MatchDialog
-          match={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            refresh();
-          }}
-        />
-      ) : null}
-
       {scoring ? (
-        <LiveScoreDialog
+        <ScoreOverrideDialog
           match={scoring}
           onClose={() => setScoring(null)}
           onSaved={() => {
@@ -458,18 +462,6 @@ export function MatchesPage() {
           pending={busy}
           onConfirm={() => void runSettle()}
           onCancel={() => setSettling(null)}
-        />
-      ) : null}
-
-      {deleting ? (
-        <ConfirmDialog
-          title="حذف المباراة"
-          message={`راح تنحذف مباراة ${deleting.homeTeam.nameAr} ضد ${deleting.awayTeam.nameAr} نهائياً.`}
-          confirmLabel="حذف"
-          danger
-          pending={busy}
-          onConfirm={() => void runDelete()}
-          onCancel={() => setDeleting(null)}
         />
       ) : null}
     </>

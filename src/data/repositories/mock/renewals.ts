@@ -1,10 +1,15 @@
 /**
  * Mock renewals.
  *
- * Creating a renewal is the one place in the console that touches money, a
- * device expiry and the draw at the same time, so the whole side-effect chain
- * lives here: extend expiry -> record the transaction -> issue a coupon when
- * the package qualifies -> draw down the agent float.
+ * Creating a renewal is the one place in the console that touches stock,
+ * money, a device expiry and the draw at the same time, so the whole
+ * side-effect chain lives here: burn a card out of the subscriber's own
+ * governorate -> extend expiry -> record the transaction -> issue a coupon
+ * when the package qualifies -> draw down the agent float.
+ *
+ * The card comes first on purpose. If the governorate is out of stock the
+ * whole renewal fails before anything else has moved, rather than leaving an
+ * extended subscription that no card paid for.
  */
 
 import type { Id, Page, Renewal } from '@/types';
@@ -14,12 +19,16 @@ import { addMonths, matchesSearch, newId } from '@/lib/utils';
 import { daysUntil } from '@/lib/format';
 import { paginate, requireById } from './helpers';
 import { deriveStatus } from './devices';
+import { takeCard } from './stock';
 
 function toRow(renewal: Renewal): RenewalRow {
   const user = mockDb.tables.users.find((u) => u.id === renewal.userId);
   const device = mockDb.tables.devices.find((d) => d.id === renewal.deviceId);
   const agent = renewal.agentId
     ? mockDb.tables.agents.find((a) => a.id === renewal.agentId)
+    : undefined;
+  const card = renewal.cardId
+    ? mockDb.tables.stockCards.find((c) => c.id === renewal.cardId)
     : undefined;
   return {
     ...renewal,
@@ -28,6 +37,7 @@ function toRow(renewal: Renewal): RenewalRow {
     deviceNumber: device?.number ?? '—',
     governorateId: user?.governorateId ?? '',
     agentName: agent?.fullName,
+    cardCode: card?.code,
   };
 }
 
@@ -70,6 +80,18 @@ export class MockRenewalsRepository implements RenewalsRepository {
       throw new Error('اختر الوكيل عند الدفع النقدي');
     }
 
+    const owner = requireById(mockDb.tables.users, device.userId, 'المشترك');
+    const renewalId = newId('rnw');
+
+    // Stock first: a free grant is the one method that extends a subscription
+    // without a card behind it, so it is also the only one that skips this.
+    // Anything else throws here when the governorate has run out, before a
+    // single expiry date has moved.
+    const card =
+      input.method === 'free_grant'
+        ? null
+        : takeCard(owner.governorateId, pkg.months, renewalId, device.id);
+
     // An expired device restarts from today; an active one is extended from its
     // current expiry so the customer never loses paid days.
     const base = daysUntil(device.expiryAt) < 0 ? new Date().toISOString() : device.expiryAt;
@@ -81,7 +103,7 @@ export class MockRenewalsRepository implements RenewalsRepository {
     device.status = deriveStatus(device);
 
     const renewal: Renewal = {
-      id: newId('rnw'),
+      id: renewalId,
       userId: device.userId,
       deviceId: device.id,
       packageId: pkg.id,
@@ -90,6 +112,7 @@ export class MockRenewalsRepository implements RenewalsRepository {
       method: input.method,
       agentId: input.agentId,
       status: 'completed',
+      cardId: card?.id,
       createdAt: new Date().toISOString(),
       expiryBefore,
       expiryAfter: device.expiryAt,
@@ -127,7 +150,14 @@ export class MockRenewalsRepository implements RenewalsRepository {
       user.totalSpend += pkg.price;
     }
 
-    mockDb.audit('create', 'renewal', renewal.id, `تجديد ${grantedMonths} أشهر للجهاز ${device.number}`);
+    mockDb.audit(
+      'create',
+      'renewal',
+      renewal.id,
+      card
+        ? `تجديد ${grantedMonths} أشهر للجهاز ${device.number} — كارت ${card.code}`
+        : `منحة ${grantedMonths} أشهر للجهاز ${device.number} — بدون كارت`,
+    );
     return renewal;
   }
 
@@ -144,6 +174,16 @@ export class MockRenewalsRepository implements RenewalsRepository {
     if (device) {
       device.expiryAt = renewal.expiryBefore;
       device.status = deriveStatus(device);
+    }
+    // The card was already activated upstream, so a refund cannot put it back
+    // on the shelf. It is marked void instead: the stock count drops for real,
+    // and the loss stays visible in the card table rather than disappearing.
+    if (renewal.cardId) {
+      const card = mockDb.tables.stockCards.find((c) => c.id === renewal.cardId);
+      if (card) {
+        card.status = 'void';
+        card.voidReasonAr = `تجديد مسترجع — ${reasonAr}`;
+      }
     }
     // Void the coupon it generated so it cannot enter a draw.
     if (renewal.couponId) {
