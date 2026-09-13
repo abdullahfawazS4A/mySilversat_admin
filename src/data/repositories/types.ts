@@ -285,6 +285,36 @@ export interface LeagueInput {
   isActive?: boolean;
 }
 
+/**
+ * How the leagues list is narrowed.
+ *
+ * `countryId` is server-side. `isActive` is not — `/leagues` accepts the
+ * parameter and ignores it, answering 1,237 rows either way — so the
+ * repository applies it over the fetched rows.
+ */
+export interface LeagueFilter {
+  countryId?: Id;
+  isActive?: boolean;
+}
+
+/**
+ * The leagues collection, plus the one decision the console owns over the feed.
+ *
+ * `isActive` is what decides whether a league reaches the app at all, and it
+ * is set in bulk far more often than one at a time: two of the twelve hundred
+ * mirrored leagues are switched on, so the operator is always turning a
+ * handful on or a long tail off.
+ */
+export type LeaguesRepository = CrudRepository<
+  League,
+  LeagueInput,
+  Partial<LeagueInput>,
+  LeagueFilter
+> & {
+  setActive(id: Id, active: boolean): Promise<League>;
+  bulkSetActive(ids: Id[], active: boolean): Promise<void>;
+};
+
 export interface TeamInput {
   name: string;
   leagueId: Id;
@@ -305,19 +335,30 @@ export interface MatchInput {
 }
 
 /**
+ * Which stretch of the fixture list a screen is looking at.
+ *
+ * The feed holds every fixture it has ever mirrored, so "all" is nine
+ * thousand rows that begin in the past. `upcoming` is the working view — the
+ * fixtures an operator can still open for predictions.
+ */
+export type MatchWindow = 'upcoming' | 'past' | 'all';
+
+/**
  * How the fixtures table is narrowed.
  *
- * `leagueId` and `status` are server-side; `isOpenForPrediction` is not, so
- * the repository applies it over the fetched rows.
+ * `leagueId` and `status` are server-side. `isOpenForPrediction` is not, so
+ * the repository applies it over the fetched rows, and `window` is not either
+ * — the API has no date parameter, so the repository turns it into an offset.
  */
 export interface MatchFilter {
   leagueId?: Id;
   status?: MatchStatus;
   isOpenForPrediction?: boolean;
+  window?: MatchWindow;
 }
 
 export interface MatchesRepository {
-  leagues: CrudRepository<League, LeagueInput, Partial<LeagueInput>, { countryId?: Id }>;
+  leagues: LeaguesRepository;
   teams: CrudRepository<Team, TeamInput, Partial<TeamInput>, { leagueId?: Id }>;
   matches: CrudRepository<Match, MatchInput, Partial<MatchInput>, MatchFilter> & {
     /** The core operator action — put a fixture on the predict screen. */

@@ -32,17 +32,19 @@ function crestSeed(id: string): number {
 function Stepper({
   label,
   seed,
+  logoUrl,
   value,
   onChange,
 }: {
   label: string;
   seed: number;
+  logoUrl?: string | null;
   value: number;
   onChange: (next: number) => void;
 }) {
   return (
     <div className="col center" style={{ gap: 'var(--sp-3)', flex: 1 }}>
-      <TeamCrest name={label} seed={seed} size={44} />
+      <TeamCrest name={label} seed={seed} logoUrl={logoUrl} size={44} />
       <span className="fs-13 truncate" style={{ maxWidth: 140, textAlign: 'center' }}>
         {label}
       </span>
@@ -149,6 +151,7 @@ export function ScoreOverrideDialog({
           <Stepper
             label={match.homeTeam?.name ?? '—'}
             seed={crestSeed(match.homeTeamId)}
+            logoUrl={match.homeTeam?.logoUrl}
             value={home}
             onChange={setHome}
           />
@@ -158,6 +161,7 @@ export function ScoreOverrideDialog({
           <Stepper
             label={match.awayTeam?.name ?? '—'}
             seed={crestSeed(match.awayTeamId)}
+            logoUrl={match.awayTeam?.logoUrl}
             value={away}
             onChange={setAway}
           />

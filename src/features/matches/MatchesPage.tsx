@@ -43,7 +43,8 @@ import {
   TeamCrest,
 } from '@/components/ui';
 import type { Id, Match, MatchStatus } from '@/types';
-import { MATCH_STATUS } from '@/lib/labels';
+import type { MatchWindow } from '@/data/repositories/types';
+import { MATCH_STATUS, leagueLabel } from '@/lib/labels';
 import { countdownAr, formatDateAr, formatTimeAr } from '@/lib/format';
 import { ScoreOverrideDialog } from './ScoreOverrideDialog';
 import { MatchPredictionsDialog } from './MatchPredictionsDialog';
@@ -66,6 +67,16 @@ export function MatchesPage() {
   const [status, setStatus] = useState<MatchStatus | 'all'>('all');
   const [predictFilter, setPredictFilter] = useState<PredictFilter>('all');
   const [leagueId, setLeagueId] = useState<Id | 'all'>('all');
+  /*
+   * The table opens on fixtures from today onward.
+   *
+   * `/matches` returns the whole archive ordered oldest-first and takes no date
+   * parameter, so "no filter" means page one is the oldest rows in the feed —
+   * in practice nine days of finished football in a single league. The screen's
+   * question is which *upcoming* fixtures to open for predictions, so that is
+   * where it starts; the archive is still one chip away.
+   */
+  const [timeWindow, setTimeWindow] = useState<MatchWindow>('upcoming');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -83,11 +94,34 @@ export function MatchesPage() {
         status: status === 'all' ? undefined : status,
         leagueId: leagueId === 'all' ? undefined : leagueId,
         isOpenForPrediction: predictFilter === 'all' ? undefined : predictFilter === 'open',
+        window: timeWindow,
         page,
         pageSize: 25,
       }),
-    [debounced, status, predictFilter, leagueId, page],
+    [debounced, status, predictFilter, leagueId, timeWindow, page],
   );
+
+  /*
+   * Active leagues first, then every other one the feed mirrors.
+   *
+   * Two of the 1,237 are switched on for the app, and alphabetical order buries
+   * them somewhere past "1a Divisão". The heading matters as much as the order:
+   * without it the jump from La Liga to "1. Deild — Faroe-Islands" just reads
+   * like a list that failed to sort.
+   */
+  const leagueOptions = useMemo(() => {
+    const rows = [...(leagues.data ?? [])].sort(
+      (a, b) =>
+        Number(b.isActive) - Number(a.isActive) ||
+        a.name.localeCompare(b.name) ||
+        (a.country?.name ?? '').localeCompare(b.country?.name ?? ''),
+    );
+    return rows.map((league) => ({
+      value: league.id,
+      label: leagueLabel(league),
+      group: league.isActive ? 'الدوريات الفعّالة بالتطبيق' : 'بقية الدوريات',
+    }));
+  }, [leagues.data]);
 
   const refresh = () => {
     matches.reload();
@@ -173,6 +207,7 @@ export function MatchesPage() {
             <TeamCrest
               name={match.homeTeam?.name ?? '—'}
               seed={crestSeed(match.homeTeamId)}
+              logoUrl={match.homeTeam?.logoUrl}
             />
             <div className="col" style={{ lineHeight: 1.35 }}>
               <span className="fs-13 strong">
@@ -184,6 +219,7 @@ export function MatchesPage() {
             <TeamCrest
               name={match.awayTeam?.name ?? '—'}
               seed={crestSeed(match.awayTeamId)}
+              logoUrl={match.awayTeam?.logoUrl}
               size={26}
             />
           </div>
@@ -328,6 +364,9 @@ export function MatchesPage() {
         <Notice tone="info">
           المباريات والفرق تجي من <span className="strong">API-Football</span> — ما تنضاف يدوياً.
           المزامنة تجيب المباريات الجديدة وتحدّث نتائج المباريات المباشرة.
+          {timeWindow === 'upcoming' ? (
+            <> الجدول يبدي من مباريات اليوم وجاي — للمباريات القديمة اختار «السابقة».</>
+          ) : null}
         </Notice>
 
         <Card>
@@ -340,10 +379,7 @@ export function MatchesPage() {
                 setLeagueId(next);
                 setPage(1);
               }}
-              options={[
-                { value: 'all' as const, label: 'كل الدوريات' },
-                ...(leagues.data ?? []).map((league) => ({ value: league.id, label: league.name })),
-              ]}
+              options={[{ value: 'all' as const, label: 'كل الدوريات' }, ...leagueOptions]}
             />
 
             <Select
@@ -362,6 +398,19 @@ export function MatchesPage() {
           </Toolbar>
 
           <Toolbar>
+            <FilterChips
+              value={timeWindow}
+              onChange={(next) => {
+                setTimeWindow(next);
+                setPage(1);
+              }}
+              items={[
+                { value: 'upcoming', label: 'القادمة' },
+                { value: 'past', label: 'السابقة' },
+                { value: 'all', label: 'كل الأرشيف' },
+              ]}
+            />
+
             <FilterChips
               value={predictFilter}
               onChange={(next) => {
@@ -432,7 +481,11 @@ export function MatchesPage() {
                       <Flag size={22} />
                     </span>
                     <span className="strong">ما بيها مباريات بهذه الفلاتر</span>
-                    <span className="fs-12 muted">جرّب مزامنة المزوّد أو غيّر الفلاتر</span>
+                    <span className="fs-12 muted">
+                      {timeWindow === 'upcoming'
+                        ? 'ماكو مباريات جاية — جرّب «السابقة» أو شغّل مزامنة'
+                        : 'جرّب مزامنة المزوّد أو غيّر الفلاتر'}
+                    </span>
                   </div>
                 }
               />

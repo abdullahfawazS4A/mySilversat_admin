@@ -223,6 +223,16 @@ export function TextArea({
   );
 }
 
+export interface SelectOption<T extends string> {
+  value: T;
+  label: string;
+  /**
+   * Heading this option is filed under. Consecutive options sharing one are
+   * rendered together; options without one stay loose at the top level.
+   */
+  group?: string;
+}
+
 export function Select<T extends string>({
   value,
   onChange,
@@ -231,9 +241,30 @@ export function Select<T extends string>({
 }: {
   value: T;
   onChange: (value: T) => void;
-  options: { value: T; label: string }[];
+  options: SelectOption<T>[];
   disabled?: boolean;
 }) {
+  /*
+   * Options are grouped by their run, not gathered by name.
+   *
+   * The caller has already put them in the order it wants — for the league
+   * filter, the two leagues the app actually shows ahead of the twelve hundred
+   * it mirrors — and re-sorting by group here would undo that. So a group
+   * heading simply opens where its run of options starts.
+   */
+  const runs: { group?: string; options: SelectOption<T>[] }[] = [];
+  for (const option of options) {
+    const last = runs[runs.length - 1];
+    if (last && last.group === option.group) last.options.push(option);
+    else runs.push({ group: option.group, options: [option] });
+  }
+
+  const render = (option: SelectOption<T>) => (
+    <option key={option.value} value={option.value}>
+      {option.label}
+    </option>
+  );
+
   return (
     <select
       className="select"
@@ -241,11 +272,15 @@ export function Select<T extends string>({
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as T)}
     >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
+      {runs.map((run, i) =>
+        run.group === undefined ? (
+          run.options.map(render)
+        ) : (
+          <optgroup key={i} label={run.group}>
+            {run.options.map(render)}
+          </optgroup>
+        ),
+      )}
     </select>
   );
 }
@@ -620,7 +655,48 @@ const CREST_GRADIENTS: [string, string][] = [
   ['#2F5FA8', '#1F4278'],
 ];
 
-export function TeamCrest({ name, seed, size = 30 }: { name: string; seed: number; size?: number }) {
+/**
+ * A team's crest: the real badge when the feed gave us one, a letter crest
+ * otherwise.
+ *
+ * API-Football ships a logo URL on every team it knows, so drawing the initial
+ * over a gradient when a badge exists throws away the one thing an operator
+ * scans a fixtures table by. The gradient goes back to being the fallback it
+ * was meant to be: used when the feed has no logo, and when the one it has
+ * fails to load, so a dead URL leaves a crest behind rather than a broken
+ * image icon.
+ */
+export function TeamCrest({
+  name,
+  seed,
+  logoUrl,
+  size = 30,
+}: {
+  name: string;
+  seed: number;
+  logoUrl?: string | null;
+  size?: number;
+}) {
+  const [broken, setBroken] = useState(false);
+
+  // A row reused for another team has to retry that team's logo rather than
+  // inherit the previous one's failure.
+  useEffect(() => setBroken(false), [logoUrl]);
+
+  if (logoUrl && !broken) {
+    return (
+      <img
+        className="crest-img"
+        src={logoUrl}
+        alt=""
+        title={name}
+        loading="lazy"
+        style={{ width: size, height: size }}
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+
   const [from, to] = CREST_GRADIENTS[seed % CREST_GRADIENTS.length];
   return (
     <span

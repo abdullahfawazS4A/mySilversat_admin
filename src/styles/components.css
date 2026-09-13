@@ -920,3 +920,14 @@
   height: 26px;
   object-fit: contain;
 }
+
+/*
+ * A crest image sits where a letter crest would, so it has to hold the same
+ * box: never squashed by a flex row, never stretched out of aspect by a badge
+ * that is not square.
+ */
+.crest-img {
+  display: block;
+  flex: none;
+  object-fit: contain;
+}

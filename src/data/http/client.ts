@@ -281,3 +281,44 @@ export async function fetchAll<T>(path: string, query?: Query, cap = 2000): Prom
   }
   return out.slice(0, cap);
 }
+
+/**
+ * Fetches `count` rows starting at `start`.
+ *
+ * `fetchAll` always walks from the top of a collection. A window into one does
+ * not start there — "fixtures from today onward" begins at row 3,636 of 9,385 —
+ * so the slice has to be walked from its own origin, and the last request of
+ * the walk has to stop at the window's end rather than run past it into rows
+ * the caller did not ask for.
+ *
+ * The cap is the same safety valve `fetchAll` carries, applied to the slice.
+ */
+export async function fetchRange<T>(
+  path: string,
+  query: Query | undefined,
+  start: number,
+  count: number,
+  cap = 2000,
+): Promise<T[]> {
+  const wanted = Math.min(Math.max(0, count), cap);
+  if (wanted === 0) return [];
+
+  const end = start + wanted;
+  const offsets: number[] = [];
+  for (let offset = start; offset < end; offset += MAX_PAGE_SIZE) offsets.push(offset);
+
+  const out: T[] = [];
+  for (let i = 0; i < offsets.length; i += FETCH_ALL_CONCURRENCY) {
+    const pages = await Promise.all(
+      offsets.slice(i, i + FETCH_ALL_CONCURRENCY).map((offset) =>
+        apiPage<T>(path, {
+          query: { ...query, limit: Math.min(MAX_PAGE_SIZE, end - offset), offset },
+        }),
+      ),
+    );
+    for (const page of pages) out.push(...page.items);
+    // An empty page means the collection ran out early; nothing follows it.
+    if (pages.some((page) => page.items.length === 0)) break;
+  }
+  return out.slice(0, wanted);
+}

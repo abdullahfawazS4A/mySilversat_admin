@@ -34,6 +34,20 @@ export const BATCH_STATUS: Record<BatchStatus, { label: string; tone: Tone }> = 
   disabled: { label: 'معطّلة', tone: 'muted' },
 };
 
+/**
+ * How a league is named in a picker.
+ *
+ * The feed mirrors 1,237 leagues and 291 of them share a name with another —
+ * "Premier League" alone is 34 separate competitions, England and Bangladesh
+ * and Mauritania among them, and there are 52 different "Super Cup"s. A list
+ * of bare names is therefore not a list the operator can choose from at all,
+ * so the country comes along with the name wherever one is offered.
+ */
+export function leagueLabel(league: { name: string; country?: { name: string } | null }): string {
+  const country = league.country?.name;
+  return country ? `${league.name} — ${country}` : league.name;
+}
+
 export const MATCH_STATUS: Record<MatchStatus, { label: string; tone: Tone }> = {
   scheduled: { label: 'مجدولة', tone: 'neutral' },
   live: { label: 'مباشر', tone: 'live' },
