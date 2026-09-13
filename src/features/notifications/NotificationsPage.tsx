@@ -1,192 +1,97 @@
 /**
- * Push campaigns.
+ * Push notifications.
  *
- * The one irreversible action in the console: a sent notification cannot be
- * recalled from anyone's phone. So the screen is built around making the blast
- * radius visible before the send — the composer resolves the live audience
- * count as the targeting changes, and sending goes through a confirm that
- * states that number back.
+ * The API has no drafts and no scheduling: `POST /notifications/send` *is* the
+ * creation, so everything in the table has already gone out to real phones.
+ * That makes the compose dialog a one-way door, which is why it ends in a
+ * confirm that names the audience size rather than a plain save button.
  *
- * A sent campaign is read-only afterwards: it is a record of what went out,
- * and editing it would make the delivery counters lie.
+ * The audience count is an upper bound on reach, not on delivery — a user with
+ * no FCM token is counted before sending and lands in `failureCount` after. The
+ * table shows both numbers for that reason.
  */
 
-import { useEffect, useState } from 'react';
-import { BellRing, Eye, Pencil, Send, Trash2, Users } from 'lucide-react';
+import { useState } from 'react';
+import { BellRing, Check, Send } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
-import { useAction, useAsync, useDebounced } from '@/app/useAsync';
+import { useAction, useAsync } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { DataTable, PageHeader, Toolbar, type Column } from '@/components/page';
+import { DataTable, PageHeader, type Column } from '@/components/page';
 import {
   AsyncBlock,
   Button,
-  ConfirmDialog,
+  Card,
   EmptyState,
   Field,
   Modal,
   Notice,
   Pill,
-  SearchInput,
   Select,
   TextArea,
   TextInput,
 } from '@/components/ui';
-import { StatTile } from '@/components/charts';
-import type { Governorate, Id, NotificationAudience, NotificationCampaign, SlideTarget } from '@/types';
-import { AUDIENCE, CAMPAIGN_STATE, SLIDE_TARGET } from '@/lib/labels';
-import { formatDateTimeAr, formatNumber, formatPercent, relativeAr } from '@/lib/format';
+import { formatDateTimeAr, formatNumber } from '@/lib/format';
+import { NOTIFICATION_TARGET } from '@/lib/labels';
+import type { AppUser, Id, NotificationRecord, NotificationTarget } from '@/types';
+import type { NotificationInput } from '@/data/repositories/types';
 
 export function NotificationsPage() {
   const repos = useRepos();
-  const { toast } = useToast();
-
-  const [search, setSearch] = useState('');
-  const debounced = useDebounced(search);
   const [page, setPage] = useState(1);
-  const [editing, setEditing] = useState<NotificationCampaign | 'new' | null>(null);
-  const [sending, setSending] = useState<NotificationCampaign | null>(null);
-  const [deleting, setDeleting] = useState<NotificationCampaign | null>(null);
-  const [run, action] = useAction();
+  const [composing, setComposing] = useState(false);
 
-  const campaigns = useAsync(
-    () => repos.notifications.list({ search: debounced, page, pageSize: 20 }),
-    [debounced, page],
-  );
-  const governorates = useAsync(() => repos.catalog.governorates(), []);
+  const sent = useAsync(() => repos.notifications.list({ page, pageSize: 20 }), [page]);
 
-  const all = campaigns.data?.items ?? [];
-  const sent = all.filter((c) => c.state === 'sent');
-  const reached = sent.reduce((total, c) => total + c.deliveredCount, 0);
-  const opened = sent.reduce((total, c) => total + c.openedCount, 0);
-
-  const confirmSend = async () => {
-    if (!sending) return;
-    const ok = await run(() => repos.notifications.send(sending.id));
-    if (ok) {
-      toast('انرسل الإشعار');
-      setSending(null);
-      campaigns.reload();
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!deleting) return;
-    const ok = await run(() => repos.notifications.remove(deleting.id));
-    if (ok) {
-      toast('انحذف الإشعار');
-      setDeleting(null);
-      campaigns.reload();
-    }
-  };
-
-  const columns: Column<NotificationCampaign>[] = [
+  const columns: Column<NotificationRecord>[] = [
     {
-      key: 'titleAr',
+      key: 'title',
       header: 'الإشعار',
       render: (row) => (
-        <div className="row row-gap-2" style={{ minWidth: 0 }}>
-          <span className="chip-icon" style={{ width: 28, height: 28 }}>
-            <BellRing size={14} />
-          </span>
-          <div className="col" style={{ lineHeight: 1.35, minWidth: 0 }}>
-            <span className="fs-13 strong truncate">{row.titleAr}</span>
-            <span className="fs-11 dim truncate">{row.bodyAr}</span>
-          </div>
+        <div className="col" style={{ lineHeight: 1.35 }}>
+          <span className="fs-13 strong">{row.titleAr}</span>
+          <span className="fs-11 dim truncate">{row.bodyAr}</span>
         </div>
       ),
     },
     {
-      key: 'audience',
+      key: 'target',
       header: 'الجمهور',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-12">{AUDIENCE[row.audience]}</span>
-          {row.audience === 'governorate' ? (
-            <span className="fs-11 dim truncate">
-              {row.targetIds
-                .map((id) => governorates.data?.find((g) => g.id === id)?.nameAr ?? '—')
-                .join('، ')}
-            </span>
-          ) : null}
+          <span className="fs-12">{NOTIFICATION_TARGET[row.targetType]}</span>
+          <span className="fs-11 dim">
+            {row.targetProvince?.name ?? row.targetUser?.name ?? ''}
+          </span>
         </div>
-      ),
-    },
-    {
-      key: 'state',
-      header: 'الحالة',
-      width: 110,
-      render: (row) => (
-        <Pill tone={CAMPAIGN_STATE[row.state].tone}>{CAMPAIGN_STATE[row.state].label}</Pill>
       ),
     },
     {
       key: 'delivery',
       header: 'الوصول',
       numeric: true,
-      render: (row) =>
-        row.state === 'sent' ? (
-          <div className="col" style={{ lineHeight: 1.35 }}>
-            <span className="fs-13 strong num">{formatNumber(row.deliveredCount)}</span>
-            <span className="fs-11 dim num">
-              فتحوه {formatPercent(row.deliveredCount ? row.openedCount / row.deliveredCount : 0)}
-            </span>
-          </div>
-        ) : (
-          <span className="fs-12 dim">—</span>
-        ),
+      render: (row) => (
+        <div className="row row-gap-2">
+          <Pill tone="success">{formatNumber(row.successCount)}</Pill>
+          {row.failureCount > 0 ? (
+            <Pill tone="danger">{formatNumber(row.failureCount)}</Pill>
+          ) : null}
+        </div>
+      ),
     },
     {
-      key: 'when',
-      header: 'التاريخ',
+      key: 'source',
+      header: 'المصدر',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-12">{formatDateTimeAr(row.sentAt ?? row.scheduledAt ?? row.createdAt)}</span>
-          <span className="fs-11 dim">{relativeAr(row.sentAt ?? row.createdAt)}</span>
+          <span className="fs-12">{row.source === 'admin' ? 'من اللوحة' : row.source}</span>
+          <span className="fs-11 dim">{row.createdByUser?.name ?? ''}</span>
         </div>
       ),
     },
     {
-      key: 'actions',
-      header: '',
-      width: 130,
-      render: (row) => (
-        <div className="row row-gap-1 end">
-          {row.state === 'sent' ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Eye size={13} />}
-              title="عرض"
-              onClick={() => setEditing(row)}
-            />
-          ) : (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<Pencil size={13} />}
-                title="تعديل"
-                onClick={() => setEditing(row)}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                icon={<Send size={13} />}
-                title="إرسال"
-                onClick={() => setSending(row)}
-              />
-            </>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Trash2 size={13} />}
-            title="حذف"
-            disabled={row.state === 'sent'}
-            onClick={() => setDeleting(row)}
-          />
-        </div>
-      ),
+      key: 'sentAt',
+      header: 'وقت الإرسال',
+      render: (row) => <span className="fs-12">{formatDateTimeAr(row.createdAt)}</span>,
     },
   ];
 
@@ -194,48 +99,17 @@ export function NotificationsPage() {
     <>
       <PageHeader
         title="الإشعارات"
-        subtitle="حملات الإشعارات المرسلة لتطبيق المشتركين"
+        subtitle="الإشعارات المرسلة للتطبيق — الإرسال فوري وما بيه مسودات"
         actions={
-          <Button variant="primary" icon={<BellRing size={16} />} onClick={() => setEditing('new')}>
-            إشعار جديد
+          <Button variant="primary" icon={<Send size={15} />} onClick={() => setComposing(true)}>
+            إرسال إشعار
           </Button>
         }
       />
 
-      <div className="page col" style={{ gap: 'var(--sp-4)' }}>
-        <div className="grid grid-kpi">
-          <StatTile label="إشعارات مُرسلة" value={formatNumber(sent.length)} icon={<Send size={15} />} />
-          <StatTile
-            label="مجموع الوصول"
-            value={formatNumber(reached)}
-            hint="عدد الأجهزة اللي وصلها إشعار"
-            icon={<Users size={15} />}
-          />
-          <StatTile
-            label="نسبة الفتح"
-            value={formatPercent(reached ? opened / reached : 0, 1)}
-            tone="success"
-            icon={<Eye size={15} />}
-          />
-          <StatTile
-            label="مسودّات"
-            value={formatNumber(all.filter((c) => c.state !== 'sent').length)}
-            hint="ما انرسلت بعد"
-          />
-        </div>
-
-        <div className="card">
-          <Toolbar>
-            <SearchInput value={search} onChange={setSearch} placeholder="بحث بالعنوان أو النص…" />
-          </Toolbar>
-
-          {action.error ? (
-            <div className="card-pad">
-              <Notice tone="danger">{action.error}</Notice>
-            </div>
-          ) : null}
-
-          <AsyncBlock state={campaigns}>
+      <div className="page">
+        <Card>
+          <AsyncBlock state={sent}>
             {(data) => (
               <DataTable
                 columns={columns}
@@ -247,47 +121,25 @@ export function NotificationsPage() {
                 onPage={setPage}
                 empty={
                   <EmptyState
-                    title="ما بيها إشعارات"
-                    hint="سوّي إشعار جديد وحدد الجمهور قبل الإرسال."
-                    icon={<BellRing size={22} />}
+                    icon={<BellRing size={20} />}
+                    title="ما انرسل أي إشعار"
+                    hint="الإشعارات اللي ترسلها راح تظهر هنا"
                   />
                 }
               />
             )}
           </AsyncBlock>
-        </div>
+        </Card>
       </div>
 
-      {editing ? (
-        <CampaignDialog
-          campaign={editing === 'new' ? null : editing}
-          governorates={governorates.data ?? []}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            campaigns.reload();
+      {composing ? (
+        <ComposeDialog
+          onClose={() => setComposing(false)}
+          onSent={() => {
+            setComposing(false);
+            setPage(1);
+            sent.reload();
           }}
-        />
-      ) : null}
-
-      {sending ? (
-        <SendConfirm
-          campaign={sending}
-          pending={action.pending}
-          onConfirm={() => void confirmSend()}
-          onCancel={() => setSending(null)}
-        />
-      ) : null}
-
-      {deleting ? (
-        <ConfirmDialog
-          title="حذف الإشعار"
-          message={`راح تنحذف مسودّة "${deleting.titleAr}".`}
-          confirmLabel="حذف"
-          danger
-          pending={action.pending}
-          onConfirm={() => void confirmDelete()}
-          onCancel={() => setDeleting(null)}
         />
       ) : null}
     </>
@@ -295,229 +147,193 @@ export function NotificationsPage() {
 }
 
 /**
- * The send gate. It re-resolves the audience at confirm time rather than
- * trusting the number stored on the draft, because the audience is a live
- * query — "اشتراكاتهم قرب تنتهي" is a different set of people today than it
- * was when the draft was written.
+ * Composing and sending.
+ *
+ * Two steps on purpose: the first is the message, the second states how many
+ * phones it is about to reach. A push cannot be recalled, so the number has to
+ * be in front of the operator at the moment they commit — not earlier, while
+ * they are still editing the text.
  */
-function SendConfirm({
-  campaign,
-  pending,
-  onConfirm,
-  onCancel,
-}: {
-  campaign: NotificationCampaign;
-  pending: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const repos = useRepos();
-  const size = useAsync(
-    () => repos.notifications.audienceSize(campaign.audience, campaign.targetIds),
-    [campaign.id],
-  );
-
-  return (
-    <ConfirmDialog
-      title="إرسال الإشعار"
-      message={
-        <div className="col" style={{ gap: 'var(--sp-3)' }}>
-          <span>
-            راح ينرسل <span className="strong">{campaign.titleAr}</span> إلى{' '}
-            <span className="strong">{AUDIENCE[campaign.audience]}</span>
-            {size.loading ? (
-              <span className="dim"> — جاري حساب العدد…</span>
-            ) : (
-              <>
-                {' '}
-                (<span className="num strong">{formatNumber(size.data ?? 0)}</span> مشترك).
-              </>
-            )}
-          </span>
-          <Notice tone="warning">
-            الإشعار ما يرجع بعد الإرسال — ما تكدر تسحبه من أجهزة المشتركين.
-          </Notice>
-        </div>
-      }
-      confirmLabel="إرسال الآن"
-      pending={pending}
-      onConfirm={onConfirm}
-      onCancel={onCancel}
-    />
-  );
-}
-
-function CampaignDialog({
-  campaign,
-  governorates,
-  onClose,
-  onSaved,
-}: {
-  campaign: NotificationCampaign | null;
-  governorates: Governorate[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
+function ComposeDialog({ onClose, onSent }: { onClose: () => void; onSent: () => void }) {
   const repos = useRepos();
   const { toast } = useToast();
   const [run, action] = useAction();
-  const readOnly = campaign?.state === 'sent';
 
-  const [titleAr, setTitleAr] = useState(campaign?.titleAr ?? '');
-  const [bodyAr, setBodyAr] = useState(campaign?.bodyAr ?? '');
-  const [audience, setAudience] = useState<NotificationAudience>(campaign?.audience ?? 'all');
-  const [targetIds, setTargetIds] = useState<Id[]>(campaign?.targetIds ?? []);
-  const [routeTarget, setRouteTarget] = useState<SlideTarget>(campaign?.routeTarget ?? 'none');
+  const [draft, setDraft] = useState<NotificationInput>({
+    titleAr: '',
+    titleKu: '',
+    bodyAr: '',
+    bodyKu: '',
+    targetType: 'all',
+  });
+  const set = <K extends keyof NotificationInput>(key: K, value: NotificationInput[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
 
-  // Live blast-radius readout: the composer shows who this reaches right now.
-  const [reach, setReach] = useState<number | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setReach(null);
-    repos.notifications
-      .audienceSize(audience, targetIds)
-      .then((count) => {
-        if (!cancelled) setReach(count);
-      })
-      .catch(() => {
-        if (!cancelled) setReach(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [repos, audience, targetIds]);
+  const [confirming, setConfirming] = useState(false);
+  const [invalid, setInvalid] = useState<string | null>(null);
 
-  const toggleGovernorate = (id: Id) =>
-    setTargetIds((current) =>
-      current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
-    );
+  const provinces = useAsync(() => repos.geo.provinces.all(), []);
+  const users = useAsync<AppUser[]>(
+    // Only loaded when a single user is the target — it is the whole table.
+    () => (draft.targetType === 'user' ? repos.appUsers.all() : Promise.resolve([])),
+    [draft.targetType],
+  );
 
-  const submit = async () => {
-    if (!titleAr.trim() || !bodyAr.trim()) {
-      toast('العنوان والنص مطلوبين', 'error');
-      return;
-    }
-    if (audience === 'governorate' && targetIds.length === 0) {
-      toast('اختر محافظة وحدة على الأقل', 'error');
-      return;
-    }
+  const audience = useAsync(
+    () => repos.notifications.audienceSize(draft.targetType, draft.provinceId),
+    [draft.targetType, draft.provinceId],
+  );
+
+  const problem = (): string | null => {
+    if (!draft.titleAr.trim()) return 'العنوان بالعربي مطلوب';
+    if (!draft.bodyAr.trim()) return 'نص الإشعار بالعربي مطلوب';
+    if (draft.targetType === 'province' && !draft.provinceId) return 'اختر المحافظة';
+    if (draft.targetType === 'user' && !draft.appUserId) return 'اختر المشترك';
+    return null;
+  };
+
+  const review = () => {
+    const found = problem();
+    setInvalid(found);
+    if (!found) setConfirming(true);
+  };
+
+  const send = async () => {
     const ok = await run(() =>
-      repos.notifications.save({
-        id: campaign?.id,
-        titleAr: titleAr.trim(),
-        bodyAr: bodyAr.trim(),
-        audience,
-        targetIds: audience === 'governorate' ? targetIds : [],
-        routeTarget,
-        state: campaign?.state ?? 'draft',
-        scheduledAt: campaign?.scheduledAt ?? null,
-        sentAt: campaign?.sentAt ?? null,
-        audienceSize: reach ?? 0,
-        deliveredCount: campaign?.deliveredCount ?? 0,
-        openedCount: campaign?.openedCount ?? 0,
+      repos.notifications.send({
+        ...draft,
+        // Kurdish falls back to Arabic so the app never renders a blank push.
+        titleKu: draft.titleKu.trim() || draft.titleAr,
+        bodyKu: draft.bodyKu.trim() || draft.bodyAr,
+        provinceId: draft.targetType === 'province' ? draft.provinceId : undefined,
+        appUserId: draft.targetType === 'user' ? draft.appUserId : undefined,
       }),
     );
-    if (ok) {
-      toast(campaign ? 'انحفظت المسودّة' : 'انضافت المسودّة');
-      onSaved();
-    }
+    if (!ok) return;
+    toast('انرسل الإشعار');
+    onSent();
   };
+
+  if (confirming) {
+    return (
+      <Modal
+        title="تأكيد الإرسال"
+        onClose={() => setConfirming(false)}
+        footer={
+          <>
+            <Button
+              variant="primary"
+              icon={<Check size={15} />}
+              disabled={action.pending}
+              onClick={() => void send()}
+            >
+              {action.pending ? 'جاري الإرسال…' : 'إرسال الآن'}
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirming(false)} disabled={action.pending}>
+              رجوع للتعديل
+            </Button>
+          </>
+        }
+      >
+        <div className="col" style={{ gap: 'var(--sp-4)' }}>
+          <Notice tone="warning">
+            راح يوصل الإشعار لـ{' '}
+            <span className="strong num">{formatNumber(audience.data ?? 0)}</span> مشترك
+            ({NOTIFICATION_TARGET[draft.targetType]}). الإرسال فوري وما تكدر تتراجع عنه.
+          </Notice>
+
+          <div className="card card-pad col" style={{ gap: 4 }}>
+            <span className="fs-13 strong">{draft.titleAr}</span>
+            <span className="fs-12">{draft.bodyAr}</span>
+          </div>
+
+          {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
+      title="إرسال إشعار"
       size="lg"
-      title={readOnly ? 'تفاصيل الإشعار' : campaign ? 'تعديل الإشعار' : 'إشعار جديد'}
       onClose={onClose}
       footer={
-        readOnly ? (
-          <Button variant="ghost" onClick={onClose}>
-            إغلاق
+        <>
+          <Button variant="primary" icon={<Send size={15} />} onClick={review}>
+            مراجعة وإرسال
           </Button>
-        ) : (
-          <>
-            <Button variant="primary" onClick={() => void submit()} disabled={action.pending}>
-              حفظ كمسودّة
-            </Button>
-            <Button variant="ghost" onClick={onClose}>
-              إلغاء
-            </Button>
-          </>
-        )
+          <Button variant="ghost" onClick={onClose}>
+            إلغاء
+          </Button>
+        </>
       }
     >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
-
-        {readOnly ? (
-          <Notice tone="info">
-            هذا الإشعار انرسل — ما ينعدّل، لأن أرقام الوصول والفتح مربوطة بنصّه الأصلي.
-          </Notice>
-        ) : null}
-
-        <Field label="العنوان" hint="يظهر بسطر واحد على شاشة الهاتف">
-          <TextInput value={titleAr} onChange={setTitleAr} disabled={readOnly} />
+      <div className="grid grid-form">
+        <Field label="العنوان بالعربي">
+          <TextInput value={draft.titleAr} onChange={(next) => set('titleAr', next)} />
         </Field>
-        <Field label="النص">
-          <TextArea value={bodyAr} onChange={setBodyAr} rows={3} />
+        <Field label="العنوان بالكردي" hint="إذا تركته فارغ ينرسل العربي">
+          <TextInput value={draft.titleKu} onChange={(next) => set('titleKu', next)} />
         </Field>
 
-        <div className="grid grid-form">
-          <Field label="الجمهور">
-            <Select
-              value={audience}
-              onChange={(next) => {
-                setAudience(next);
-                setTargetIds([]);
-              }}
-              disabled={readOnly}
-              options={(Object.keys(AUDIENCE) as NotificationAudience[])
-                .filter((key) => key !== 'single_user')
-                .map((key) => ({ value: key, label: AUDIENCE[key] }))}
-            />
-          </Field>
-          <Field label="يفتح على" hint="الشاشة اللي تنفتح لما يضغط المشترك">
-            <Select
-              value={routeTarget}
-              onChange={setRouteTarget}
-              disabled={readOnly}
-              options={(Object.keys(SLIDE_TARGET) as SlideTarget[]).map((key) => ({
-                value: key,
-                label: SLIDE_TARGET[key],
-              }))}
-            />
-          </Field>
-        </div>
+        <Field label="النص بالعربي" className="span-2">
+          <TextArea rows={3} value={draft.bodyAr} onChange={(next) => set('bodyAr', next)} />
+        </Field>
+        <Field label="النص بالكردي" className="span-2" hint="إذا تركته فارغ ينرسل العربي">
+          <TextArea rows={3} value={draft.bodyKu} onChange={(next) => set('bodyKu', next)} />
+        </Field>
 
-        {audience === 'governorate' ? (
-          <Field label="المحافظات المستهدفة">
-            <div className="chips">
-              {governorates.map((governorate) => (
-                <button
-                  key={governorate.id}
-                  type="button"
-                  disabled={readOnly}
-                  className={`chip${targetIds.includes(governorate.id) ? ' active' : ''}`}
-                  onClick={() => toggleGovernorate(governorate.id)}
-                >
-                  {governorate.nameAr}
-                </button>
-              ))}
-            </div>
+        <Field label="الجمهور">
+          <Select<NotificationTarget>
+            value={draft.targetType}
+            onChange={(next) => set('targetType', next)}
+            options={(Object.keys(NOTIFICATION_TARGET) as NotificationTarget[]).map((value) => ({
+              value,
+              label: NOTIFICATION_TARGET[value],
+            }))}
+          />
+        </Field>
+
+        {draft.targetType === 'province' ? (
+          <Field label="المحافظة">
+            <Select<Id>
+              value={draft.provinceId ?? ''}
+              onChange={(next) => set('provinceId', next)}
+              options={[
+                { value: '', label: 'اختر محافظة' },
+                ...(provinces.data ?? []).map((row) => ({ value: row.id, label: row.name })),
+              ]}
+            />
           </Field>
         ) : null}
 
-        <Notice tone={reach === 0 ? 'warning' : 'info'} icon={<Users size={16} />}>
-          {reach === null ? (
-            'جاري حساب حجم الجمهور…'
-          ) : reach === 0 ? (
-            'ما بيها أحد بهذا الجمهور — عدّل الاستهداف قبل الإرسال.'
-          ) : (
-            <>
-              راح يوصل إلى <span className="num strong">{formatNumber(reach)}</span> مشترك فعّال.
-            </>
-          )}
-        </Notice>
+        {draft.targetType === 'user' ? (
+          <Field label="المشترك">
+            <Select<Id>
+              value={draft.appUserId ?? ''}
+              onChange={(next) => set('appUserId', next)}
+              options={[
+                { value: '', label: 'اختر مشترك' },
+                ...(users.data ?? []).map((row) => ({
+                  value: row.id,
+                  label: `${row.name} — ${row.phone}`,
+                })),
+              ]}
+            />
+          </Field>
+        ) : null}
       </div>
+
+      <div className="mt-3 fs-12 muted">
+        الجمهور الحالي:{' '}
+        <span className="num strong">
+          {audience.loading ? '…' : formatNumber(audience.data ?? 0)}
+        </span>{' '}
+        مشترك
+      </div>
+
+      {invalid ? <div className="field-error mt-2">{invalid}</div> : null}
     </Modal>
   );
 }

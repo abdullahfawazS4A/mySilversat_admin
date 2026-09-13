@@ -1,450 +1,499 @@
 /**
- * Repository interfaces — the seam between the UI and any backend.
+ * Repository interfaces — the seam between the UI and the backend.
  *
- * The single architectural rule of this project, inherited from the customer
- * app: **the UI never talks to data directly, it goes through these
- * interfaces.** Swapping the mock for a real HTTP API means writing new classes
- * that implement these and changing one wiring file
- * (`data/repositories/index.ts`). No screen, no component and no hook changes.
+ * The one architectural rule of this project: **the UI never talks to `fetch`
+ * directly, it goes through these interfaces.** Screens take repositories from
+ * React context, so a route that moves, a header that changes or a fake in a
+ * test is a change here and nowhere else.
  *
- * Consequences that are deliberate:
- *  - every method is async, even the ones the mock answers instantly;
- *  - inputs are plain objects, never UI state;
- *  - list methods take a query object so paging/sorting can move server-side
- *    later without touching call sites.
+ * Most resources are plain REST collections, so they share `CrudRepository`
+ * rather than restating six identical method signatures each time. Anything
+ * the API does beyond CRUD — sending a push, health-checking a region, scoring
+ * a match — is spelled out on the specific interface, because those are the
+ * operations a reader actually needs to find.
  */
 
 import type {
-  Agent,
+  Ad,
   AdminSession,
-  ApiCheckResult,
-  ApiConnection,
-  AppSettings,
+  AdminUser,
+  ApiFootballConfig,
+  ApiFootballStatus,
   AppUser,
-  AuditEntry,
-  CardStatus,
-  Coupon,
+  Batch,
+  Category,
+  Code,
+  CodeStatus,
+  ContactChannel,
+  ContactLink,
+  Country,
   DashboardSummary,
   Device,
-  Draw,
-  DrawWinner,
-  FaqItem,
-  Governorate,
+  Faq,
   Id,
+  LeaderboardRow,
   League,
   ListQuery,
   Match,
   MatchPredictionStats,
-  MatchState,
-  MatchSyncResult,
-  MatchView,
-  NotificationCampaign,
-  Offer,
+  MatchStatus,
+  NotificationTarget,
+  OtpChallenge,
   Page,
-  PointsEntry,
-  PredictionView,
-  Prize,
-  Renewal,
-  Season,
-  Slide,
-  StockCard,
-  StockLevel,
-  SubscriptionPackage,
+  Prediction,
+  Product,
+  Province,
+  RechargeType,
+  RegionCheckResult,
+  SilversatRegion,
+  SyncResult,
   Team,
   Tower,
-  VideoItem,
-  LeaderboardRow,
+  TutorialVideo,
+  VendorResponse,
 } from '@/types';
 
-// ------------------------------------------------------------------- auth ---
+// ------------------------------------------------------------- generic -----
 
+/**
+ * The six operations every REST collection here supports.
+ *
+ * `F` is the resource's own filter object — `/codes` takes a status, `/teams`
+ * takes a league — merged into the list query so call sites pass one object.
+ */
+export interface CrudRepository<T, C, U = Partial<C>, F = Record<string, never>> {
+  list(query?: ListQuery & F): Promise<Page<T>>;
+  /** Every row, paged through internally. For pickers and dashboards. */
+  all(filter?: F): Promise<T[]>;
+  get(id: Id): Promise<T>;
+  create(input: C): Promise<T>;
+  update(id: Id, input: U): Promise<T>;
+  remove(id: Id): Promise<void>;
+}
+
+// ---------------------------------------------------------------- auth -----
+
+/**
+ * Admin sign-in is two steps: password buys an OTP challenge, the SMS code
+ * buys the JWT. `signIn` therefore cannot return a session, and the login
+ * screen has to render both steps.
+ */
 export interface AuthRepository {
   /** Restores a session from local storage, or null when signed out. */
   restore(): Promise<AdminSession | null>;
-  /** Signs in. Throws with an Arabic message when credentials are wrong. */
-  signIn(username: string, password: string): Promise<AdminSession>;
+  /** Step 1 — validates the password and sends an SMS code. */
+  signIn(phone: string, password: string): Promise<OtpChallenge>;
+  /** Step 2 — exchanges the code for a token and stores it. */
+  verifyOtp(challengeToken: string, code: string): Promise<AdminSession>;
+  /** Sends a fresh code for a challenge that has not expired. */
+  resendOtp(challengeToken: string): Promise<void>;
   signOut(): Promise<void>;
+  /** Re-reads the operator's own profile from the API. */
+  me(): Promise<AdminUser>;
+  updateProfile(input: { name?: string; email?: string; phone?: string }): Promise<AdminUser>;
+  changePassword(currentPassword: string, newPassword: string): Promise<void>;
 }
 
-// ---------------------------------------------------------------- catalog ---
+// ----------------------------------------------------------- geography -----
 
-/** Read-mostly reference data every other screen joins against. */
+export interface CountryInput {
+  code: string;
+  dialCode: string;
+  name: string;
+  currency: string;
+}
+
+export interface ProvinceInput {
+  countryId: Id;
+  code: string;
+  name: string;
+}
+
+export interface GeoRepository {
+  countries: CrudRepository<Country, CountryInput>;
+  provinces: CrudRepository<Province, ProvinceInput, Partial<ProvinceInput>, { countryId?: Id }>;
+}
+
+// ---------------------------------------------------- silversat regions ----
+
+export interface RegionInput {
+  name: string;
+  baseUrl: string;
+  authKey: string;
+  userId: string;
+  password: string;
+  appDeviceId?: string;
+  isActive?: boolean;
+}
+
+export interface RegionsRepository
+  extends CrudRepository<SilversatRegion, RegionInput> {
+  /** Pings one region through the vendor's GetToken. */
+  check(id: Id): Promise<RegionCheckResult>;
+  /** Pings every region at once — the health board's refresh button. */
+  checkAll(): Promise<RegionCheckResult[]>;
+}
+
+// ------------------------------------------------------------ catalog ------
+
+export interface ProductInput {
+  name: string;
+  displayName: string;
+  provinceId: Id;
+  activationApi?: 'silvers' | 'other';
+  silversatRegionId?: Id | null;
+  image?: string;
+}
+
+export interface CategoryInput {
+  productId: Id;
+  name: string;
+  nameKu: string;
+  costPrice: number;
+  unitPrice: number;
+  mainPrice: number;
+  subPrice: number;
+  hasSecondaryCode?: boolean;
+  lowStockThreshold?: number | null;
+  isDisabled?: boolean;
+  isDisplay?: boolean;
+  sortOrder?: number;
+  image?: string;
+}
+
 export interface CatalogRepository {
-  governorates(): Promise<Governorate[]>;
-  saveGovernorate(governorate: Governorate): Promise<Governorate>;
-
-  /**
-   * Leagues and teams are mirrored from the fixtures feed, so there is no
-   * save or delete here — `MatchesRepository.sync()` is the only writer.
-   * The one local decision is whether a league is shown in the app at all.
-   */
-  leagues(): Promise<League[]>;
-  setLeagueActive(id: Id, active: boolean): Promise<League>;
-
-  teams(): Promise<Team[]>;
-
-  packages(): Promise<SubscriptionPackage[]>;
-  savePackage(pkg: Omit<SubscriptionPackage, 'id'> & { id?: Id }): Promise<SubscriptionPackage>;
-  deletePackage(id: Id): Promise<void>;
+  products: CrudRepository<Product, ProductInput> & {
+    /** Creates a product and its price tiers in one call. */
+    createWithCategories(
+      input: ProductInput & { categories: Omit<CategoryInput, 'productId'>[] },
+    ): Promise<Product>;
+  };
+  categories: CrudRepository<Category, CategoryInput, Partial<CategoryInput>, { productId?: Id }>;
 }
 
-// ------------------------------------------------------------- card stock ---
+// -------------------------------------------------------------- stock ------
 
-export interface StockCardListQuery extends ListQuery {
-  governorateId?: Id;
-  months?: number;
-  status?: CardStatus | 'all';
-  batchRef?: string;
+export interface BatchInput {
+  categoryId: Id;
+  fileName: string;
+  status?: 'active' | 'disabled';
+  notes?: string | null;
 }
 
-/** A card joined with the names the stock table shows. */
-export interface StockCardRow extends StockCard {
-  governorateName: string;
-  /** Device the card was burnt on, when it has been used. */
-  deviceNumber?: string;
+export interface CodeInput {
+  batchId: Id;
+  categoryId: Id;
+  primaryValue: string;
+  secondaryValue?: string | null;
+  status?: CodeStatus;
+}
+
+export interface CodeFilter {
+  status?: CodeStatus;
+  categoryId?: Id;
+  batchId?: Id;
 }
 
 export interface StockRepository {
-  /** Availability per governorate per card length, for the stock grid. */
-  levels(): Promise<StockLevel[]>;
-  cards(query: StockCardListQuery): Promise<Page<StockCardRow>>;
-
-  /**
-   * Files a shipment of cards into one governorate's stock. Codes already in
-   * the system are reported back rather than silently duplicated.
-   */
-  addBatch(input: {
-    governorateId: Id;
-    months: number;
-    codes: string[];
-    batchRef: string;
-  }): Promise<{ added: number; duplicates: string[] }>;
-
-  /**
-   * The card a renewal would burn next, FIFO by arrival — null when that
-   * governorate has run out of that length. Read by the renew dialog so the
-   * operator sees the code before committing.
-   */
-  nextAvailable(governorateId: Id, months: number): Promise<StockCard | null>;
-
-  /** Takes a card out of circulation without using it (damaged, leaked). */
-  voidCard(id: Id, reasonAr: string): Promise<StockCard>;
-  /** Moves unused cards to another governorate's stock. */
-  transfer(ids: Id[], toGovernorateId: Id): Promise<number>;
-  /** Deletes a card filed by mistake. Refused once it has been used. */
-  remove(id: Id): Promise<void>;
+  batches: CrudRepository<
+    Batch,
+    BatchInput,
+    Partial<BatchInput>,
+    { categoryId?: Id; status?: 'active' | 'disabled'; fileName?: string }
+  > & {
+    /**
+     * Files a shipment: creates the batch and all of its codes in one request.
+     * The API takes `uploadedBy` from the JWT, so the console never sends it.
+     */
+    createWithCodes(input: {
+      categoryId: Id;
+      fileName: string;
+      status?: 'active' | 'disabled';
+      notes?: string | null;
+      codes: { primaryValue: string; secondaryValue?: string | null }[];
+    }): Promise<Batch>;
+  };
+  codes: CrudRepository<Code, CodeInput, Partial<CodeInput>, CodeFilter>;
+  /** Finds codes by id, primary or secondary value — the support lookup. */
+  lookup(q: string): Promise<Code[]>;
 }
 
-// -------------------------------------------------------- governorate APIs --
+// ---------------------------------------------------------- app users ------
 
-export interface ApiRepository {
-  list(): Promise<ApiConnection[]>;
-  save(
-    connection: Omit<ApiConnection, 'id' | 'createdAt' | 'lastCheckAt' | 'lastCheckOk'> & {
-      id?: Id;
-    },
-  ): Promise<ApiConnection>;
-  remove(id: Id): Promise<void>;
-  /**
-   * Points these governorates at this connection. A governorate answers to one
-   * connection at a time, so any previous link is dropped.
-   */
-  setGovernorates(id: Id, governorateIds: Id[]): Promise<ApiConnection>;
-  /** Pings the connection and records the outcome on it. */
-  test(id: Id): Promise<ApiCheckResult>;
+export interface AppUserInput {
+  name: string;
+  password?: string;
+  phone: string;
+  provinceId: Id;
+  email?: string | null;
+  image?: string;
 }
 
-// ------------------------------------------------------------------ users ---
-
-export interface UserListQuery extends ListQuery {
-  governorateId?: Id;
-  status?: AppUser['status'] | 'all';
-  /** Filters to users who own at least one device in this state. */
-  deviceStatus?: Device['status'] | 'all';
-  minPoints?: number;
+/**
+ * What the users list can be narrowed by.
+ *
+ * Neither filter exists server-side, so the repository applies both over the
+ * fetched rows — the same compromise `search` already makes on this route.
+ */
+export interface AppUserFilter {
+  provinceId?: Id;
+  isBlocked?: boolean;
 }
 
-/** Everything the user detail screen needs, in one round trip. */
-export interface UserDetail {
+/** Everything the user detail screen needs, gathered in one call. */
+export interface AppUserDetail {
   user: AppUser;
   devices: Device[];
-  renewals: Renewal[];
-  coupons: Coupon[];
-  predictions: PredictionView[];
-  pointsLedger: PointsEntry[];
+  predictions: Prediction[];
+  /** Codes this user has bought — their purchase history. */
+  purchases: Code[];
 }
 
-export interface UsersRepository {
-  list(query: UserListQuery): Promise<Page<AppUser>>;
-  detail(id: Id): Promise<UserDetail>;
-  save(user: AppUser): Promise<AppUser>;
-  setStatus(id: Id, status: AppUser['status'], reason?: string): Promise<AppUser>;
-  /** Appends a manual ledger entry and recomputes the cached total. */
-  adjustPoints(id: Id, delta: number, reasonAr: string): Promise<AppUser>;
-  saveNote(id: Id, notes: string): Promise<AppUser>;
+export interface AppUsersRepository
+  extends CrudRepository<AppUser, AppUserInput, Partial<AppUserInput>, AppUserFilter> {
+  detail(id: Id): Promise<AppUserDetail>;
+  /** Blocks and invalidates the user's live sessions immediately. */
+  block(id: Id): Promise<AppUser>;
+  unblock(id: Id): Promise<AppUser>;
+  /** App users ranked by points. Built from the user list, newest first. */
+  leaderboard(query?: ListQuery & { provinceId?: Id }): Promise<Page<LeaderboardRow>>;
 }
 
-// ---------------------------------------------------------------- devices ---
+// ------------------------------------------------------------ devices ------
 
-export interface DeviceListQuery extends ListQuery {
-  status?: Device['status'] | 'all';
-  governorateId?: Id;
-  userId?: Id;
-}
-
-/** A device joined with its owner, for the global device table. */
-export interface DeviceRow extends Device {
-  ownerName: string;
-  ownerPhone: string;
-  governorateId: Id;
-}
-
-export interface DevicesRepository {
-  list(query: DeviceListQuery): Promise<Page<DeviceRow>>;
-  /** One device joined with its owner. Throws when the id is unknown. */
-  get(id: Id): Promise<DeviceRow>;
-  save(device: Device): Promise<Device>;
-  create(input: Omit<Device, 'id' | 'createdAt' | 'status'>): Promise<Device>;
-  remove(id: Id): Promise<void>;
-  setSuspended(id: Id, suspended: boolean, reason?: string): Promise<Device>;
-  /** Moves a device to another account, keeping its renewal history. */
-  transfer(id: Id, toUserId: Id): Promise<Device>;
-  /** Extends expiry by whole months without taking payment. */
-  grantMonths(id: Id, months: number, reasonAr: string): Promise<Device>;
-}
-
-// --------------------------------------------------------------- renewals ---
-
-export interface RenewalListQuery extends ListQuery {
-  method?: Renewal['method'] | 'all';
-  status?: Renewal['status'] | 'all';
-  governorateId?: Id;
-  agentId?: Id;
-  from?: string;
-  to?: string;
-}
-
-/** A renewal joined with the names the table shows. */
-export interface RenewalRow extends Renewal {
-  userName: string;
-  userPhone: string;
+export interface DeviceInput {
+  name: string;
   deviceNumber: string;
-  governorateId: Id;
-  agentName?: string;
-  /** Code of the card this renewal burnt, when it consumed one. */
-  cardCode?: string;
 }
 
-export interface RenewalsRepository {
-  list(query: RenewalListQuery): Promise<Page<RenewalRow>>;
-  /**
-   * Records a renewal: burns a stock card, extends the device expiry and
-   * issues a coupon.
-   *
-   * The card comes from the subscriber's **own governorate**, FIFO by arrival,
-   * and must match the package length — an empty stock refuses the renewal
-   * rather than extending a subscription nothing paid for. A free grant is the
-   * one method that skips the stock entirely.
-   */
-  create(input: {
-    deviceId: Id;
-    packageId: Id;
-    method: Renewal['method'];
-    agentId?: Id;
-    note?: string;
-  }): Promise<Renewal>;
-  refund(id: Id, reasonAr: string): Promise<Renewal>;
+export interface DeviceFilter {
+  appUserId?: Id;
+  provinceId?: Id;
+  name?: string;
+  deviceNumber?: string;
 }
 
-// -------------------------------------------------------- matches & picks ---
+/** Admin device routes go through `/devices/all`; `/devices` is app-user only. */
+export type DevicesRepository = CrudRepository<Device, DeviceInput, Partial<DeviceInput>, DeviceFilter>;
 
-export interface MatchListQuery extends ListQuery {
+// ------------------------------------------- leagues, teams and matches ----
+
+export interface LeagueInput {
+  name: string;
+  countryId: Id;
+  order?: number;
+  isActive?: boolean;
+}
+
+export interface TeamInput {
+  name: string;
+  leagueId: Id;
+  logo?: string;
+}
+
+export interface MatchInput {
+  leagueId: Id;
+  homeTeamId: Id;
+  awayTeamId: Id;
+  matchAt: string;
+  predictionClosesAt?: string | null;
+  status?: MatchStatus;
+  homeScore?: number | null;
+  awayScore?: number | null;
+  currentMinute?: number | null;
+  isOpenForPrediction?: boolean;
+}
+
+/**
+ * How the fixtures table is narrowed.
+ *
+ * `leagueId` and `status` are server-side; `isOpenForPrediction` is not, so
+ * the repository applies it over the fetched rows.
+ */
+export interface MatchFilter {
   leagueId?: Id;
-  state?: Match['state'] | 'all';
-  /** 'open' = accepting picks now, 'closed' = switched off. */
-  predictFilter?: 'all' | 'open' | 'closed';
-  from?: string;
-  to?: string;
+  status?: MatchStatus;
+  isOpenForPrediction?: boolean;
 }
 
 export interface MatchesRepository {
-  list(query: MatchListQuery): Promise<Page<MatchView>>;
-  get(id: Id): Promise<MatchView>;
-
-  /**
-   * Pulls leagues, teams and fixtures from the upstream feed.
-   *
-   * This is the **only** way a fixture enters the console — there is no
-   * create and no delete. Rows are matched on the provider's `externalId`, so
-   * a second sync updates rather than duplicates, and the console's own
-   * prediction fields survive untouched.
-   */
-  sync(): Promise<MatchSyncResult>;
-
-  /**
-   * The core operator action: choose which fixtures accept predictions.
-   * `closeAt` defaults to kickoff when omitted.
-   */
-  setOpenForPredict(id: Id, open: boolean, closeAt?: string | null): Promise<Match>;
-  /** Bulk version of setOpenForPredict, for the multi-select toolbar. */
-  bulkSetOpenForPredict(ids: Id[], open: boolean): Promise<void>;
-  setFeatured(id: Id, featured: boolean): Promise<Match>;
-
-  /**
-   * Corrects a score by hand when the feed is wrong or lagging. Settlement
-   * pays out on this number, so the override is deliberate: the fixture is
-   * flagged and later syncs stop overwriting its score.
-   */
-  overrideScore(
-    id: Id,
-    homeScore: number,
-    awayScore: number,
-    state: Extract<MatchState, 'live' | 'finished'>,
-    minute?: string,
-  ): Promise<Match>;
-  /** Drops a manual correction and lets the feed own the score again. */
-  clearScoreOverride(id: Id): Promise<Match>;
-
-  /**
-   * Awards points for every prediction on a finished match, using the current
-   * scoring rules. Idempotent: a second call on a settled match is refused.
-   */
-  settle(id: Id): Promise<{ settled: number; pointsAwarded: number }>;
-  /** Reverts a settlement, removing its ledger entries. */
-  unsettle(id: Id): Promise<void>;
-
-  predictions(matchId: Id, query: ListQuery): Promise<Page<PredictionView>>;
-  predictionStats(matchId: Id): Promise<MatchPredictionStats>;
-  /** Removes a single pick, e.g. a proven-abusive entry. */
-  deletePrediction(predictionId: Id): Promise<void>;
+  leagues: CrudRepository<League, LeagueInput, Partial<LeagueInput>, { countryId?: Id }>;
+  teams: CrudRepository<Team, TeamInput, Partial<TeamInput>, { leagueId?: Id }>;
+  matches: CrudRepository<Match, MatchInput, Partial<MatchInput>, MatchFilter> & {
+    /** The core operator action — put a fixture on the predict screen. */
+    setOpenForPrediction(id: Id, open: boolean, closesAt?: string | null): Promise<Match>;
+    /** Bulk version, for the multi-select toolbar. */
+    bulkSetOpenForPrediction(ids: Id[], open: boolean): Promise<void>;
+    /**
+     * Corrects a score by hand. Scoring pays out on this number, so a fix has
+     * to land before `scoreMatch` runs.
+     */
+    setScore(
+      id: Id,
+      homeScore: number,
+      awayScore: number,
+      status: Extract<MatchStatus, 'live' | 'finished'>,
+      currentMinute?: number | null,
+    ): Promise<Match>;
+  };
 }
 
-// ------------------------------------------------- leaderboard and seasons --
+// -------------------------------------------------------- predictions ------
 
-export interface LeaderboardRepository {
-  seasons(): Promise<Season[]>;
-  activeSeason(): Promise<Season>;
-  leaderboard(seasonId: Id, query: ListQuery & { governorateId?: Id }): Promise<Page<LeaderboardRow>>;
-  /** Closes the active season, freezes its board and opens the next one. */
-  closeSeason(seasonId: Id, nextNameAr: string): Promise<Season>;
-  /** Zeroes every balance in the active season. Destructive; audited. */
-  resetPoints(seasonId: Id, reasonAr: string): Promise<void>;
+export interface PredictionsRepository {
+  list(query?: ListQuery & { appUserId?: Id; matchId?: Id }): Promise<Page<Prediction>>;
+  remove(id: Id): Promise<void>;
+  /** How one fixture's picks are distributed, for the sentiment bar. */
+  stats(matchId: Id): Promise<MatchPredictionStats>;
+  /** Awards points for one finished match. Only unscored picks are touched. */
+  scoreMatch(matchId: Id): Promise<{ scored: number }>;
+  /** Scores every finished match that still has unscored picks. */
+  scorePending(): Promise<{ scored: number }>;
 }
 
-// ------------------------------------------------ coupons, draws & prizes ---
+// ------------------------------------------------------ fixtures sync ------
 
-export interface CouponListQuery extends ListQuery {
-  year?: string;
-  active?: boolean | 'all';
-  governorateId?: Id;
+/**
+ * The API-Football mirror. Leagues, teams and fixtures enter the system only
+ * through these calls — there is no manual "add fixture" anywhere.
+ */
+export interface SyncRepository {
+  config(): Promise<ApiFootballConfig>;
+  status(): Promise<ApiFootballStatus>;
+  syncLeagues(): Promise<SyncResult>;
+  syncTeams(): Promise<SyncResult>;
+  syncFixtures(): Promise<SyncResult>;
+  syncLive(): Promise<SyncResult>;
 }
 
-/** A coupon joined with its owner, for the coupon table. */
-export interface CouponRow extends Coupon {
-  userName: string;
-  userPhone: string;
-  governorateId: Id;
+// ------------------------------------------------------ notifications ------
+
+export interface NotificationInput {
+  titleAr: string;
+  titleKu: string;
+  bodyAr: string;
+  bodyKu: string;
+  targetType: NotificationTarget;
+  appUserId?: Id;
+  provinceId?: Id;
+  data?: Record<string, unknown>;
 }
 
-export interface DrawsRepository {
-  coupons(query: CouponListQuery): Promise<Page<CouponRow>>;
-
-  draws(): Promise<Draw[]>;
-  saveDraw(draw: Omit<Draw, 'id' | 'entryCount'> & { id?: Id }): Promise<Draw>;
-  deleteDraw(id: Id): Promise<void>;
-
-  prizes(drawId: Id): Promise<Prize[]>;
-  savePrize(prize: Omit<Prize, 'id'> & { id?: Id }): Promise<Prize>;
-  deletePrize(id: Id): Promise<void>;
-
-  /** How many coupons would enter this draw right now. */
-  eligibleCount(drawId: Id): Promise<number>;
-  /** Picks winners at random across every prize tier. Refused if already run. */
-  runDraw(drawId: Id): Promise<DrawWinner[]>;
-  winners(drawId: Id): Promise<(DrawWinner & { userName: string; prizeTitle: string; couponCode: string })[]>;
-  /** Makes the winner list visible inside the customer app. */
-  publishDraw(drawId: Id): Promise<Draw>;
-  setWinnerClaimed(winnerId: Id, claimed: boolean): Promise<DrawWinner>;
-}
-
-// ---------------------------------------------------------------- content ---
-
-/** Everything shown inside the app that marketing edits. */
-export interface ContentRepository {
-  offers(): Promise<Offer[]>;
-  saveOffer(offer: Omit<Offer, 'id'> & { id?: Id }): Promise<Offer>;
-  deleteOffer(id: Id): Promise<void>;
-
-  slides(): Promise<Slide[]>;
-  saveSlide(slide: Omit<Slide, 'id'> & { id?: Id }): Promise<Slide>;
-  deleteSlide(id: Id): Promise<void>;
-
-  towers(): Promise<Tower[]>;
-  saveTower(tower: Omit<Tower, 'id'> & { id?: Id }): Promise<Tower>;
-  deleteTower(id: Id): Promise<void>;
-
-  videos(): Promise<VideoItem[]>;
-  saveVideo(video: Omit<VideoItem, 'id'> & { id?: Id }): Promise<VideoItem>;
-  deleteVideo(id: Id): Promise<void>;
-
-  faq(): Promise<FaqItem[]>;
-  saveFaq(item: Omit<FaqItem, 'id'> & { id?: Id }): Promise<FaqItem>;
-  deleteFaq(id: Id): Promise<void>;
-
-  /** Moves an item up or down within its own list. */
-  reorder(kind: 'offer' | 'slide' | 'video' | 'faq', id: Id, direction: -1 | 1): Promise<void>;
-}
-
-// ---------------------------------------------------------- notifications ---
-
+/** The API has no drafts — sending is what creates the record. */
 export interface NotificationsRepository {
-  list(query: ListQuery): Promise<Page<NotificationCampaign>>;
-  save(campaign: Omit<NotificationCampaign, 'id' | 'createdAt' | 'createdBy'> & { id?: Id }): Promise<NotificationCampaign>;
-  remove(id: Id): Promise<void>;
-  /** Resolves how many devices a given audience currently covers. */
-  audienceSize(audience: NotificationCampaign['audience'], targetIds: Id[]): Promise<number>;
-  send(id: Id): Promise<NotificationCampaign>;
+  list(query?: ListQuery): Promise<Page<import('@/types').NotificationRecord>>;
+  get(id: Id): Promise<import('@/types').NotificationRecord>;
+  send(input: NotificationInput): Promise<import('@/types').NotificationRecord>;
+  /** How many app users a target currently covers, for the confirm step. */
+  audienceSize(targetType: NotificationTarget, provinceId?: Id): Promise<number>;
 }
 
-// ----------------------------------------------------------------- agents ---
+// ----------------------------------------------------------- content -------
 
-export interface AgentsRepository {
-  list(query: ListQuery & { governorateId?: Id; active?: boolean | 'all' }): Promise<Page<Agent>>;
-  save(agent: Omit<Agent, 'id' | 'createdAt' | 'renewalCount'> & { id?: Id }): Promise<Agent>;
-  remove(id: Id): Promise<void>;
-  /** Tops the prepaid float up or draws it down. */
-  adjustBalance(id: Id, delta: number, reasonAr: string): Promise<Agent>;
+export interface AdInput {
+  title: string;
+  titleKu: string;
+  image: string;
+  actionType?: 'none' | 'url' | 'screen';
+  actionValue?: string | null;
+  order?: number;
+  isActive?: boolean;
+  provinceId?: Id | null;
 }
 
-// -------------------------------------------------- audit, settings ---------
-
-export interface AdminRepository {
-  audit(query: ListQuery & { adminId?: Id; entityType?: string }): Promise<Page<AuditEntry>>;
-
-  settings(): Promise<AppSettings>;
-  saveSettings(settings: AppSettings): Promise<AppSettings>;
-
-  dashboard(): Promise<DashboardSummary>;
-  /** Throws away every local change and reloads the seed dataset. */
-  resetMockData(): Promise<void>;
+export interface FaqInput {
+  question: string;
+  questionKu: string;
+  answer: string;
+  answerKu: string;
+  order?: number;
+  isActive?: boolean;
 }
 
-// ------------------------------------------------------------- the bundle ---
+export interface VideoInput {
+  title: string;
+  titleKu: string;
+  videoUrl: string;
+  durationSeconds: number;
+  subtitle?: string | null;
+  subtitleKu?: string | null;
+  order?: number;
+  isActive?: boolean;
+}
+
+export interface TowerInput {
+  name: string;
+  nameKu: string;
+  latitude: number;
+  longitude: number;
+  provinceId: Id;
+}
+
+export interface ContactLinkInput {
+  type: ContactChannel;
+  label: string;
+  labelKu: string;
+  value: string;
+  subLabel?: string | null;
+  subLabelKu?: string | null;
+  order?: number;
+  isActive?: boolean;
+}
+
+export interface ContentRepository {
+  ads: CrudRepository<Ad, AdInput>;
+  faqs: CrudRepository<Faq, FaqInput>;
+  videos: CrudRepository<TutorialVideo, VideoInput>;
+  towers: CrudRepository<Tower, TowerInput, Partial<TowerInput>, { provinceId?: Id }>;
+  contactLinks: CrudRepository<ContactLink, ContactLinkInput>;
+}
+
+// ------------------------------------------- silversat vendor operations ---
+
+/**
+ * Direct calls into the vendor system. These are support tools: they reach
+ * past our database into the box itself, so every one of them is a live
+ * action with no local record.
+ */
+export interface SilversatRepository {
+  /** Active regions, as the vendor tools' picker sees them. */
+  regions(): Promise<SilversatRegion[]>;
+  /** Validates a code against a region before anyone burns it. */
+  checkCode(regionId: Id, code: string): Promise<VendorResponse>;
+  /** Looks a subscription up by receiver number, within one region. */
+  subscription(regionId: Id, deviceNumber: string): Promise<VendorResponse>;
+  /** Re-authorises a receiver so it refreshes its entitlements. */
+  sendSignal(regionId: Id, deviceNumber: string): Promise<VendorResponse>;
+  /**
+   * Renews (0) or activates (1). The region comes from the code's product, so
+   * this call takes no region of its own — and the code must already be sold
+   * to the app user who owns the receiver.
+   */
+  recharge(deviceNumber: string, code: string, type: RechargeType): Promise<VendorResponse>;
+}
+
+// --------------------------------------------------------- dashboard -------
+
+export interface DashboardRepository {
+  summary(): Promise<DashboardSummary>;
+}
+
+// ------------------------------------------------------------ the bundle ---
 
 /** The full set, injected into React through one context. */
 export interface Repositories {
   auth: AuthRepository;
+  geo: GeoRepository;
+  regions: RegionsRepository;
   catalog: CatalogRepository;
-  users: UsersRepository;
-  devices: DevicesRepository;
-  renewals: RenewalsRepository;
-  matches: MatchesRepository;
   stock: StockRepository;
-  api: ApiRepository;
-  leaderboard: LeaderboardRepository;
-  draws: DrawsRepository;
-  content: ContentRepository;
+  appUsers: AppUsersRepository;
+  devices: DevicesRepository;
+  matches: MatchesRepository;
+  predictions: PredictionsRepository;
+  sync: SyncRepository;
   notifications: NotificationsRepository;
-  agents: AgentsRepository;
-  admin: AdminRepository;
+  content: ContentRepository;
+  silversat: SilversatRepository;
+  dashboard: DashboardRepository;
 }

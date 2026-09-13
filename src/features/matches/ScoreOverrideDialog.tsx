@@ -6,19 +6,28 @@
  * that is wrong or twenty minutes behind will otherwise settle real points on
  * a wrong result.
  *
- * Correcting a score pins it — later syncs stop touching this fixture — which
- * is a commitment worth stating in the dialog rather than hiding, along with
- * the way back to the feed once the feed is right again.
+ * One thing the API does *not* do is pin a corrected score — there is no
+ * override flag, so the next live sync can overwrite whatever is saved here.
+ * The dialog says so plainly instead of implying a permanence it cannot give,
+ * and points the operator at the order that actually works: correct, then
+ * settle, immediately.
  */
 
 import { useState } from 'react';
-import { Minus, Plus, RotateCcw, Trophy, Radio } from 'lucide-react';
+import { Minus, Plus, Radio, Trophy } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAction } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { Button, Field, Modal, Notice, Pill, TeamCrest, TextInput } from '@/components/ui';
-import type { MatchView } from '@/types';
-import { formatDateTimeAr, relativeAr } from '@/lib/format';
+import { Button, Field, Modal, Notice, TeamCrest, TextInput } from '@/components/ui';
+import type { Match } from '@/types';
+import { formatDateTimeAr } from '@/lib/format';
+
+/** A crest seed from the team id, so the same team always gets the same look. */
+function crestSeed(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return hash;
+}
 
 function Stepper({
   label,
@@ -65,7 +74,7 @@ export function ScoreOverrideDialog({
   onClose,
   onSaved,
 }: {
-  match: MatchView;
+  match: Match;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -75,38 +84,22 @@ export function ScoreOverrideDialog({
 
   const [home, setHome] = useState(match.homeScore ?? 0);
   const [away, setAway] = useState(match.awayScore ?? 0);
-  const [minute, setMinute] = useState(match.liveMinute?.replace("'", '') ?? '45');
+  const [minute, setMinute] = useState(String(match.currentMinute ?? 45));
 
   const saveLive = async () => {
     const ok = await run(() =>
-      repos.matches.overrideScore(match.id, home, away, 'live', `${minute}'`),
+      repos.matches.matches.setScore(match.id, home, away, 'live', Number(minute) || null),
     );
     if (ok) {
-      toast('انحفظت النتيجة — المزوّد ما راح يغيّرها');
+      toast('انحفظت النتيجة كمباشر');
       onSaved();
     }
   };
 
   const saveFinished = async () => {
-    const ok = await run(() => repos.matches.overrideScore(match.id, home, away, 'finished'));
+    const ok = await run(() => repos.matches.matches.setScore(match.id, home, away, 'finished'));
     if (ok) {
       toast('انتهت المباراة بالنتيجة المصححة — تكدر تحتسب النقاط الآن');
-      onSaved();
-    }
-  };
-
-  const backToFeed = async () => {
-    const ok = await run(() => repos.matches.clearScoreOverride(match.id));
-    if (ok) {
-      toast('رجعت النتيجة لمزوّد المباريات');
-      onSaved();
-    }
-  };
-
-  const unsettle = async () => {
-    const ok = await run(() => repos.matches.unsettle(match.id));
-    if (ok) {
-      toast('انسحبت النقاط ورجعت التوقعات لحالة الانتظار');
       onSaved();
     }
   };
@@ -120,7 +113,7 @@ export function ScoreOverrideDialog({
           <Button
             variant="primary"
             icon={<Radio size={15} />}
-            disabled={action.pending || Boolean(match.settledAt)}
+            disabled={action.pending}
             onClick={() => void saveLive()}
           >
             حفظ كمباشر
@@ -128,7 +121,7 @@ export function ScoreOverrideDialog({
           <Button
             variant="outline"
             icon={<Trophy size={15} />}
-            disabled={action.pending || Boolean(match.settledAt)}
+            disabled={action.pending}
             onClick={() => void saveFinished()}
           >
             حفظ كنتيجة نهائية
@@ -143,43 +136,19 @@ export function ScoreOverrideDialog({
         {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
 
         <div className="col" style={{ gap: 2 }}>
-          <span className="fs-12 muted">{match.league.nameAr}</span>
-          <span className="fs-12 dim num">{formatDateTimeAr(match.kickoffAt)}</span>
-          <span className="fs-11 dim">
-            آخر تحديث من المزوّد {relativeAr(match.syncedAt)}
-          </span>
+          <span className="fs-12 muted">{match.league?.name ?? ''}</span>
+          <span className="fs-12 dim num">{formatDateTimeAr(match.matchAt)}</span>
         </div>
 
-        <Notice tone={match.scoreOverridden ? 'warning' : 'info'}>
-          {match.scoreOverridden ? (
-            <div className="col" style={{ gap: 'var(--sp-2)' }}>
-              <span>
-                نتيجة هذه المباراة مثبتة يدوياً — المزامنة ما تلمسها. إذا صار المزوّد صحيح، رجّعها له.
-              </span>
-              <div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={<RotateCcw size={13} />}
-                  disabled={action.pending}
-                  onClick={() => void backToFeed()}
-                >
-                  رجّع النتيجة للمزوّد
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <span>
-              النتيجة الآن تجي من <span className="strong">{match.league.nameAr}</span> عبر المزوّد. أي
-              حفظ هنا يثبّتها ويوقف المزامنة عن هذه المباراة لحد ما ترجّعها.
-            </span>
-          )}
+        <Notice tone="warning">
+          التصحيح هنا ما يثبّت النتيجة — مزامنة المباشر الجاية تكدر ترجع تكتب عليها من المزوّد.
+          إذا كنت تصحّح حتى تحتسب النقاط، احتسبها فوراً بعد الحفظ كنتيجة نهائية.
         </Notice>
 
         <div className="row" style={{ gap: 'var(--sp-4)' }}>
           <Stepper
-            label={match.homeTeam.nameAr}
-            seed={match.homeTeam.crestSeed}
+            label={match.homeTeam?.name ?? '—'}
+            seed={crestSeed(match.homeTeamId)}
             value={home}
             onChange={setHome}
           />
@@ -187,8 +156,8 @@ export function ScoreOverrideDialog({
             –
           </span>
           <Stepper
-            label={match.awayTeam.nameAr}
-            seed={match.awayTeam.crestSeed}
+            label={match.awayTeam?.name ?? '—'}
+            seed={crestSeed(match.awayTeamId)}
             value={away}
             onChange={setAway}
           />
@@ -197,29 +166,6 @@ export function ScoreOverrideDialog({
         <Field label="الدقيقة" hint="تظهر داخل شارة المباشر في التطبيق — تنستخدم مع «حفظ كمباشر»">
           <TextInput type="number" min={0} max={130} value={minute} onChange={setMinute} />
         </Field>
-
-        {match.settledAt ? (
-          <Notice tone="warning">
-            <div className="col" style={{ gap: 'var(--sp-2)' }}>
-              <span>
-                نقاط هذه المباراة محتسبة مسبقاً، فما تنعدّل النتيجة. تراجع عن الاحتساب أولاً، صحّح
-                النتيجة، وبعدين أعد الاحتساب.
-              </span>
-              <div className="row row-gap-2">
-                <Pill tone="success">محتسبة</Pill>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={<RotateCcw size={13} />}
-                  disabled={action.pending}
-                  onClick={() => void unsettle()}
-                >
-                  تراجع عن احتساب النقاط
-                </Button>
-              </div>
-            </div>
-          </Notice>
-        ) : null}
       </div>
     </Modal>
   );

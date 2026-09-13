@@ -1,112 +1,79 @@
 /**
- * Leaderboard, seasons and manual point adjustments.
+ * The prediction leaderboard.
  *
- * The app tells users the ranking resets monthly, so this screen owns that
- * promise: closing a season freezes its board and opens the next one, which is
- * safer than deleting points and lets a customer still be shown last month's
- * standing.
+ * There is no leaderboard endpoint an admin can call — `/app-auth/leaderboard`
+ * belongs to the app's own token — so the repository builds the board by
+ * ranking app users on the `points` column, which is the column the app's
+ * board reads too. The numbers therefore agree with what a subscriber sees.
+ *
+ * Ties share a rank: two users on 40 points are both 3rd and the next is 5th.
  */
 
 import { useState } from 'react';
-import { Award, Download, Minus, Plus, RotateCcw, Trophy } from 'lucide-react';
+import { Download, Trophy } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useRepos } from '@/app/RepositoryContext';
-import { useAsync, useAction, useDebounced } from '@/app/useAsync';
+import { useAsync, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { PageHeader, DataTable, Toolbar, type Column } from '@/components/page';
+import { DataTable, PageHeader, Toolbar, type Column } from '@/components/page';
 import {
   AsyncBlock,
   Button,
   Card,
-  CardHead,
-  ConfirmDialog,
-  Field,
-  Modal,
-  Notice,
+  EmptyState,
   Pill,
   SearchInput,
   Select,
-  TextInput,
 } from '@/components/ui';
-import type { Id, LeaderboardRow } from '@/types';
-import { formatNumber, formatPercent } from '@/lib/format';
+import { StatTile } from '@/components/charts';
+import { formatNumber, formatPercent, formatPhone } from '@/lib/format';
 import { downloadCsv } from '@/lib/utils';
+import { collectAll } from '@/lib/paging';
+import type { Id, LeaderboardRow } from '@/types';
+
+/** The podium gets its own treatment; everyone else is a plain number. */
+function RankBadge({ rank }: { rank: number }) {
+  if (rank === 1) return <Pill tone="gold">الأول</Pill>;
+  if (rank === 2) return <Pill tone="neutral">الثاني</Pill>;
+  if (rank === 3) return <Pill tone="neutral">الثالث</Pill>;
+  return <span className="num dim">{rank}</span>;
+}
 
 export function LeaderboardPage() {
   const repos = useRepos();
   const { toast } = useToast();
 
-  const [seasonId, setSeasonId] = useState<Id | ''>('');
-  const [governorateId, setGovernorateId] = useState<Id | 'all'>('all');
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
+  const [provinceId, setProvinceId] = useState<Id | 'all'>('all');
   const [page, setPage] = useState(1);
 
-  const [adjusting, setAdjusting] = useState<LeaderboardRow | null>(null);
-  const [confirmClose, setConfirmClose] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const seasons = useAsync(() => repos.leaderboard.seasons(), []);
-  const governorates = useAsync(() => repos.catalog.governorates(), []);
-
-  // Default to the active season the first time the list arrives.
-  const activeSeasonId = seasons.data?.find((s) => s.active)?.id ?? '';
-  const currentSeasonId = seasonId || activeSeasonId;
-
+  const provinces = useAsync(() => repos.geo.provinces.all(), []);
   const board = useAsync(
     () =>
-      currentSeasonId
-        ? repos.leaderboard.leaderboard(currentSeasonId, {
-            search: debounced,
-            governorateId: governorateId === 'all' ? undefined : governorateId,
-            page,
-            pageSize: 25,
-          })
-        : Promise.resolve({ items: [], total: 0, page: 1, pageSize: 25 }),
-    [currentSeasonId, debounced, governorateId, page],
+      repos.appUsers.leaderboard({
+        search: debounced,
+        provinceId: provinceId === 'all' ? undefined : provinceId,
+        page,
+        pageSize: 25,
+      }),
+    [debounced, provinceId, page],
   );
 
-  const season = seasons.data?.find((s) => s.id === currentSeasonId);
-  const isActiveSeason = season?.active ?? false;
-
-  const closeSeason = async () => {
-    setBusy(true);
-    try {
-      const next = await repos.leaderboard.closeSeason(currentSeasonId, 'الموسم الجديد');
-      toast(`انغلق الموسم وانفتح ${next.nameAr}`);
-      setConfirmClose(false);
-      setSeasonId('');
-      seasons.reload();
-      board.reload();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'تعذّر الإغلاق', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resetPoints = async () => {
-    setBusy(true);
-    try {
-      await repos.leaderboard.resetPoints(currentSeasonId, 'تصفير يدوي من لوحة التحكم');
-      toast('انصفّرت نقاط الموسم');
-      setConfirmReset(false);
-      board.reload();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'تعذّر التصفير', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const exportCsv = async () => {
-    const all = await repos.leaderboard.leaderboard(currentSeasonId, { pageSize: 100000 });
-    downloadCsv(`leaderboard-${currentSeasonId}.csv`, [
-      ['المركز', 'الاسم', 'المحافظة', 'النقاط', 'عدد التوقعات', 'نسبة الإصابة'],
-      ...all.items.map((row) => [
+    const rows = await collectAll((paging) =>
+      repos.appUsers.leaderboard({
+        provinceId: provinceId === 'all' ? undefined : provinceId,
+        ...paging,
+      }),
+    );
+    downloadCsv('leaderboard.csv', [
+      ['الترتيب', 'الاسم', 'الهاتف', 'المحافظة', 'النقاط', 'التوقعات', 'الدقة'],
+      ...rows.map((row) => [
         row.rank,
-        row.name,
-        governorates.data?.find((g) => g.id === row.governorateId)?.nameAr ?? '',
+        row.user.name,
+        row.user.phone,
+        row.user.province?.name ?? '',
         row.points,
         row.predictionCount,
         formatPercent(row.accuracy),
@@ -118,117 +85,95 @@ export function LeaderboardPage() {
   const columns: Column<LeaderboardRow>[] = [
     {
       key: 'rank',
-      header: 'المركز',
-      width: 74,
-      numeric: true,
-      render: (row) =>
-        row.rank <= 3 ? (
-          <Pill tone="gold">
-            <Award size={12} />
-            <span className="num">{row.rank}</span>
-          </Pill>
-        ) : (
-          <span className="num muted">{row.rank}</span>
-        ),
+      header: 'الترتيب',
+      width: 92,
+      render: (row) => <RankBadge rank={row.rank} />,
     },
-    { key: 'name', header: 'المشترك', render: (row) => <span className="fs-13">{row.name}</span> },
     {
-      key: 'governorate',
-      header: 'المحافظة',
+      key: 'user',
+      header: 'المشترك',
       render: (row) => (
-        <span className="fs-12 muted">
-          {governorates.data?.find((g) => g.id === row.governorateId)?.nameAr ?? '—'}
-        </span>
+        <Link className="col" to={`/users/${row.user.id}`} style={{ lineHeight: 1.35 }}>
+          <span className="fs-13 strong">{row.user.name}</span>
+          <span className="fs-11 dim num">{formatPhone(row.user.phone)}</span>
+        </Link>
       ),
+    },
+    {
+      key: 'province',
+      header: 'المحافظة',
+      render: (row) => row.user.province?.name ?? '—',
     },
     {
       key: 'points',
       header: 'النقاط',
       numeric: true,
-      sortable: true,
-      render: (row) => <span className="fs-13 strong num">{formatNumber(row.points)}</span>,
+      width: 96,
+      render: (row) => <span className="num strong">{formatNumber(row.points)}</span>,
     },
     {
-      key: 'predictionCount',
+      key: 'predictions',
       header: 'التوقعات',
       numeric: true,
-      render: (row) => <span className="num muted">{row.predictionCount}</span>,
+      width: 96,
+      render: (row) => <span className="num">{formatNumber(row.predictionCount)}</span>,
     },
     {
       key: 'accuracy',
-      header: 'نسبة الإصابة',
+      header: 'الدقة',
       numeric: true,
-      render: (row) => <span className="num">{formatPercent(row.accuracy)}</span>,
-    },
-    {
-      key: 'actions',
-      header: '',
-      width: 100,
+      width: 90,
       render: (row) =>
-        isActiveSeason ? (
-          <Button variant="ghost" size="sm" onClick={() => setAdjusting(row)}>
-            تعديل النقاط
-          </Button>
-        ) : null,
+        row.predictionCount === 0 ? (
+          <span className="dim">—</span>
+        ) : (
+          <span className="num">{formatPercent(row.accuracy)}</span>
+        ),
     },
   ];
+
+  const rows = board.data?.items ?? [];
+  const totalPoints = rows.reduce((sum, row) => sum + row.points, 0);
+  const totalPicks = rows.reduce((sum, row) => sum + row.predictionCount, 0);
 
   return (
     <>
       <PageHeader
         title="الترتيب والنقاط"
-        subtitle="ترتيب المتوقعين حسب الموسم، مع إدارة المواسم والتعديلات اليدوية"
+        subtitle="ترتيب المتوقعين حسب النقاط — نفس الترتيب اللي يشوفه المشترك بالتطبيق"
         actions={
-          <>
-            <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportCsv()}>
-              تصدير
-            </Button>
-            {isActiveSeason ? (
-              <>
-                <Button variant="outline" icon={<RotateCcw size={15} />} onClick={() => setConfirmReset(true)}>
-                  تصفير النقاط
-                </Button>
-                <Button variant="primary" icon={<Trophy size={15} />} onClick={() => setConfirmClose(true)}>
-                  إغلاق الموسم
-                </Button>
-              </>
-            ) : null}
-          </>
+          <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportCsv()}>
+            تصدير CSV
+          </Button>
         }
       />
 
       <div className="page">
-        {!isActiveSeason && season ? (
-          <Notice tone="info">
-            تشوف ترتيب موسم مغلق ({season.nameAr}). البيانات مجمّدة وما تتعدل.
-          </Notice>
-        ) : null}
+        <div className="grid grid-kpi-3">
+          <StatTile label="عدد المتنافسين" value={formatNumber(board.data?.total ?? 0)} />
+          <StatTile label="نقاط هذه الصفحة" value={formatNumber(totalPoints)} />
+          <StatTile label="توقعات هذه الصفحة" value={formatNumber(totalPicks)} />
+        </div>
 
         <Card>
-          <CardHead title="الترتيب" subtitle="المركز محسوب على مستوى العراق حتى لو فلترت بمحافظة" />
-
           <Toolbar>
-            <SearchInput value={search} onChange={setSearch} placeholder="ابحث باسم المشترك…" />
-            <Select
-              value={currentSeasonId}
+            <SearchInput
+              value={search}
               onChange={(next) => {
-                setSeasonId(next);
+                setSearch(next);
                 setPage(1);
               }}
-              options={(seasons.data ?? []).map((item) => ({
-                value: item.id,
-                label: item.active ? `${item.nameAr} (فعّال)` : item.nameAr,
-              }))}
+              placeholder="ابحث باسم أو هاتف…"
             />
             <Select
-              value={governorateId}
+              value={provinceId}
               onChange={(next) => {
-                setGovernorateId(next);
+                setProvinceId(next);
                 setPage(1);
               }}
               options={[
                 { value: 'all' as const, label: 'كل المحافظات' },
-                ...(governorates.data ?? []).map((g) => ({ value: g.id, label: g.nameAr })),
+                ...(provinces.data ?? []).map((row) => ({ value: row.id, label: row.name })),
               ]}
             />
           </Toolbar>
@@ -238,144 +183,23 @@ export function LeaderboardPage() {
               <DataTable
                 columns={columns}
                 rows={data.items}
-                rowKey={(row) => row.userId}
+                rowKey={(row) => row.user.id}
                 page={data.page}
                 pageSize={data.pageSize}
                 total={data.total}
                 onPage={setPage}
+                empty={
+                  <EmptyState
+                    icon={<Trophy size={20} />}
+                    title="ماكو ترتيب بعد"
+                    hint="ما احتسبت نقاط لأي مشترك لحد الآن"
+                  />
+                }
               />
             )}
           </AsyncBlock>
         </Card>
       </div>
-
-      {adjusting ? (
-        <AdjustPointsDialog
-          row={adjusting}
-          onClose={() => setAdjusting(null)}
-          onSaved={() => {
-            setAdjusting(null);
-            board.reload();
-          }}
-        />
-      ) : null}
-
-      {confirmClose ? (
-        <ConfirmDialog
-          title="إغلاق الموسم"
-          message="راح ينجمّد ترتيب هذا الموسم وينفتح موسم جديد بنقاط صفر للجميع. السجل القديم يبقى محفوظ."
-          confirmLabel="إغلاق وفتح موسم جديد"
-          pending={busy}
-          onConfirm={() => void closeSeason()}
-          onCancel={() => setConfirmClose(false)}
-        />
-      ) : null}
-
-      {confirmReset ? (
-        <ConfirmDialog
-          title="تصفير نقاط الموسم"
-          message="راح تنصفّر نقاط كل المشتركين في هذا الموسم بقيد معاكس في السجل — يعني تكدر تشرح للمشترك وين راحت نقاطه."
-          confirmLabel="تصفير النقاط"
-          danger
-          pending={busy}
-          onConfirm={() => void resetPoints()}
-          onCancel={() => setConfirmReset(false)}
-        />
-      ) : null}
     </>
-  );
-}
-
-/** Manual +/- with a mandatory reason. The reason is what the customer is told. */
-function AdjustPointsDialog({
-  row,
-  onClose,
-  onSaved,
-}: {
-  row: LeaderboardRow;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const repos = useRepos();
-  const { toast } = useToast();
-  const [run, action] = useAction();
-  const [amount, setAmount] = useState('10');
-  const [sign, setSign] = useState<1 | -1>(1);
-  const [reason, setReason] = useState('');
-
-  const save = async () => {
-    const delta = sign * Number(amount || 0);
-    if (!delta) {
-      toast('أدخل عدد نقاط أكبر من صفر', 'error');
-      return;
-    }
-    if (!reason.trim()) {
-      toast('اكتب سبب التعديل — يظهر بسجل نقاط المشترك', 'error');
-      return;
-    }
-    const ok = await run(() => repos.users.adjustPoints(row.userId, delta, reason.trim()));
-    if (ok) {
-      toast(`${delta > 0 ? 'انضافت' : 'انخصمت'} ${Math.abs(delta)} نقطة`);
-      onSaved();
-    }
-  };
-
-  return (
-    <Modal
-      title={`تعديل نقاط ${row.name}`}
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="primary" onClick={() => void save()} disabled={action.pending}>
-            {action.pending ? 'جاري الحفظ…' : 'حفظ التعديل'}
-          </Button>
-          <Button variant="ghost" onClick={onClose} disabled={action.pending}>
-            إلغاء
-          </Button>
-        </>
-      }
-    >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
-
-        <div className="row between fs-13">
-          <span className="muted">الرصيد الحالي</span>
-          <span className="strong num">{formatNumber(row.points)} نقطة</span>
-        </div>
-
-        <div className="row row-gap-2">
-          <Button
-            variant={sign === 1 ? 'primary' : 'outline'}
-            icon={<Plus size={15} />}
-            onClick={() => setSign(1)}
-          >
-            إضافة
-          </Button>
-          <Button
-            variant={sign === -1 ? 'danger' : 'outline'}
-            icon={<Minus size={15} />}
-            onClick={() => setSign(-1)}
-          >
-            خصم
-          </Button>
-        </div>
-
-        <Field label="عدد النقاط">
-          <TextInput type="number" min={1} value={amount} onChange={setAmount} />
-        </Field>
-
-        <Field label="سبب التعديل" hint="يُسجَّل في سجل النقاط ويمكن عرضه للمشترك">
-          <TextInput value={reason} onChange={setReason} placeholder="مثلاً: مكافأة حملة ترويجية" />
-        </Field>
-
-        <Notice tone="info">
-          الرصيد الجديد راح يصير{' '}
-          <span className="num strong">
-            {formatNumber(Math.max(0, row.points + sign * Number(amount || 0)))}
-          </span>{' '}
-          نقطة.
-        </Notice>
-      </div>
-    </Modal>
   );
 }

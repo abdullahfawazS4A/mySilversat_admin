@@ -1,230 +1,330 @@
 /**
- * Subscriber directory.
+ * The subscriber list.
  *
- * The search box deliberately matches receiver serials as well as names and
- * phones: support calls almost always start with "the number on my box is
- * SLV-…", and making the agent look that up on a different screen first is
- * the wrong shape.
+ * This is the support desk's front door: someone calls, you find them by name
+ * or phone, and you open their record. So the row is a link to the detail
+ * screen and the only action offered inline is the one support actually takes
+ * without reading the record first — blocking.
+ *
+ * Blocking is not a flag. The API invalidates the user's live tokens on the
+ * same call, so a blocked user is signed out of the app immediately; the
+ * confirm says so, because it is not obvious from the word.
  */
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Download, UserX, Users as UsersIcon } from 'lucide-react';
+import { Plus, ShieldBan, ShieldCheck } from 'lucide-react';
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  Field,
+  FilterChips,
+  Modal,
+  Pill,
+  SearchInput,
+  Select,
+  TextInput,
+  useDraft,
+} from '@/components/ui';
+import { DataTable, PageHeader, Toolbar } from '@/components/page';
+import { useAction, useAsync, useDebounced } from '@/app/useAsync';
 import { useRepos } from '@/app/RepositoryContext';
-import { useAsync, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { PageHeader, DataTable, Toolbar, type Column } from '@/components/page';
-import { AsyncBlock, Button, Card, FilterChips, Pill, SearchInput, Select } from '@/components/ui';
-import type { AppUser, AppUserStatus, DeviceStatus, Id } from '@/types';
-import { USER_STATUS } from '@/lib/labels';
-import { formatDateAr, formatIqd, formatNumber, formatPhone, relativeAr } from '@/lib/format';
-import { downloadCsv } from '@/lib/utils';
+import { formatDateAr, formatNumber, formatPhone } from '@/lib/format';
+import type { AppUser, Id } from '@/types';
+import type { AppUserInput } from '@/data/repositories/types';
+
+type StatusFilter = 'all' | 'active' | 'blocked';
 
 export function UsersPage() {
   const repos = useRepos();
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
-  const [status, setStatus] = useState<AppUserStatus | 'all'>('all');
-  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus | 'all'>('all');
-  const [governorateId, setGovernorateId] = useState<Id | 'all'>('all');
-  const [page, setPage] = useState(1);
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [provinceId, setProvinceId] = useState<Id>('');
 
-  const governorates = useAsync(() => repos.catalog.governorates(), []);
+  const provinces = useAsync(() => repos.geo.provinces.all(), []);
+  const provinceOptions = (provinces.data ?? []).map((row) => ({ value: row.id, label: row.name }));
+
   const users = useAsync(
     () =>
-      repos.users.list({
-        search: debounced,
-        status,
-        deviceStatus,
-        governorateId: governorateId === 'all' ? undefined : governorateId,
+      repos.appUsers.list({
         page,
-        pageSize: 25,
+        search: debounced,
+        provinceId: provinceId || undefined,
+        isBlocked: status === 'all' ? undefined : status === 'blocked',
       }),
-    [debounced, status, deviceStatus, governorateId, page],
+    [page, debounced, status, provinceId],
   );
 
-  const governorateName = (id: Id) =>
-    governorates.data?.find((g) => g.id === id)?.nameAr ?? '—';
+  const [blocking, setBlocking] = useState<AppUser | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [run, action] = useAction();
 
-  const exportCsv = async () => {
-    const all = await repos.users.list({ search: debounced, status, deviceStatus, pageSize: 100000 });
-    downloadCsv('subscribers.csv', [
-      ['الاسم', 'الهاتف', 'المحافظة', 'المنطقة', 'الحالة', 'النقاط', 'عدد التجديدات', 'إجمالي الصرف', 'تاريخ الانضمام'],
-      ...all.items.map((user) => [
-        user.fullName,
-        user.phone,
-        governorateName(user.governorateId),
-        user.area,
-        USER_STATUS[user.status].label,
-        user.points,
-        user.totalRenewals,
-        user.totalSpend,
-        formatDateAr(user.joinedAt),
-      ]),
-    ]);
-    toast('تم تصدير الملف');
+  const toggleBlock = async (user: AppUser) => {
+    const ok = await run(() =>
+      user.isBlocked ? repos.appUsers.unblock(user.id) : repos.appUsers.block(user.id),
+    );
+    if (!ok) return;
+    toast(user.isBlocked ? 'انفك الحظر عن المشترك' : 'انحظر المشترك وانقطعت جلساته');
+    setBlocking(null);
+    users.reload();
   };
-
-  const columns: Column<AppUser>[] = [
-    {
-      key: 'fullName',
-      header: 'المشترك',
-      sortable: true,
-      render: (user) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13 strong">{user.fullName}</span>
-          <span className="fs-11 dim num">{formatPhone(user.phone)}</span>
-        </div>
-      ),
-    },
-    {
-      key: 'governorate',
-      header: 'الموقع',
-      render: (user) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13">{governorateName(user.governorateId)}</span>
-          <span className="fs-11 dim">{user.area}</span>
-        </div>
-      ),
-    },
-    {
-      key: 'status',
-      header: 'الحالة',
-      render: (user) => {
-        const meta = USER_STATUS[user.status];
-        return <Pill tone={meta.tone}>{meta.label}</Pill>;
-      },
-    },
-    {
-      key: 'points',
-      header: 'النقاط',
-      numeric: true,
-      sortable: true,
-      width: 92,
-      render: (user) => (
-        <div className="col" style={{ lineHeight: 1.3 }}>
-          <span className="strong num">{formatNumber(user.points)}</span>
-          {user.rank ? <span className="fs-11 dim num">#{user.rank}</span> : null}
-        </div>
-      ),
-    },
-    {
-      key: 'totalRenewals',
-      header: 'التجديدات',
-      numeric: true,
-      sortable: true,
-      width: 92,
-      render: (user) => <span className="num">{user.totalRenewals}</span>,
-    },
-    {
-      key: 'totalSpend',
-      header: 'إجمالي الصرف',
-      numeric: true,
-      sortable: true,
-      render: (user) => <span className="num">{formatIqd(user.totalSpend)}</span>,
-    },
-    {
-      key: 'lastSeenAt',
-      header: 'آخر ظهور',
-      render: (user) => <span className="fs-12 dim">{relativeAr(user.lastSeenAt)}</span>,
-    },
-  ];
 
   return (
     <>
       <PageHeader
         title="المشتركون"
-        subtitle="ابحث بالاسم أو رقم الهاتف أو رقم الجهاز المطبوع على الرسيفر"
+        subtitle="دوّر بالاسم أو الهاتف، وافتح السجل حتى تشوف أجهزته ومشترياته"
         actions={
-          <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportCsv()}>
-            تصدير CSV
+          <Button variant="primary" icon={<Plus size={15} />} onClick={() => setCreating(true)}>
+            إضافة مشترك
           </Button>
         }
       />
 
-      <div className="page">
-        <Card>
-          <Toolbar>
-            <SearchInput value={search} onChange={setSearch} placeholder="اسم، هاتف، أو SLV-…" />
-            <Select
-              value={governorateId}
-              onChange={(next) => {
-                setGovernorateId(next);
-                setPage(1);
-              }}
-              options={[
-                { value: 'all' as const, label: 'كل المحافظات' },
-                ...(governorates.data ?? []).map((g) => ({
-                  value: g.id,
-                  label: `${g.nameAr} (${g.subscriberCount})`,
-                })),
-              ]}
-            />
-            <Select
-              value={deviceStatus}
-              onChange={(next) => {
-                setDeviceStatus(next);
-                setPage(1);
-              }}
-              options={[
-                { value: 'all' as const, label: 'كل حالات الأجهزة' },
-                { value: 'active' as const, label: 'عنده جهاز فعّال' },
-                { value: 'expiring' as const, label: 'عنده جهاز قرب ينتهي' },
-                { value: 'expired' as const, label: 'عنده جهاز منتهي' },
-                { value: 'suspended' as const, label: 'عنده جهاز معلّق' },
-              ]}
-            />
-          </Toolbar>
+      <Card>
+        <Toolbar>
+          <SearchInput
+            value={search}
+            placeholder="اسم أو رقم هاتف…"
+            onChange={(next) => {
+              setSearch(next);
+              setPage(1);
+            }}
+          />
+          <Select<Id>
+            value={provinceId}
+            onChange={(next) => {
+              setProvinceId(next);
+              setPage(1);
+            }}
+            options={[{ value: '', label: 'كل المحافظات' }, ...provinceOptions]}
+          />
+          <FilterChips<StatusFilter>
+            value={status}
+            onChange={(next) => {
+              setStatus(next);
+              setPage(1);
+            }}
+            items={[
+              { value: 'all', label: 'الكل' },
+              { value: 'active', label: 'فعّالون' },
+              { value: 'blocked', label: 'محظورون' },
+            ]}
+          />
+        </Toolbar>
 
-          <Toolbar>
-            <FilterChips
-              value={status}
-              onChange={(next) => {
-                setStatus(next);
-                setPage(1);
-              }}
-              items={[
-                { value: 'all', label: 'الكل' },
-                { value: 'active', label: 'فعّال' },
-                { value: 'pending', label: 'قيد التفعيل' },
-                { value: 'blocked', label: 'محظور' },
-              ]}
-            />
-            <span className="grow" />
-            {users.data ? (
-              <span className="fs-12 dim">
-                <span className="num">{formatNumber(users.data.total)}</span> مشترك
-              </span>
-            ) : null}
-          </Toolbar>
+        <DataTable
+          rows={users.data?.items ?? []}
+          rowKey={(row) => row.id}
+          loading={users.loading && !users.data}
+          onRowClick={(row) => navigate(`/users/${row.id}`)}
+          page={users.data?.page}
+          pageSize={users.data?.pageSize}
+          total={users.data?.total}
+          onPage={setPage}
+          columns={[
+            {
+              key: 'name',
+              header: 'المشترك',
+              render: (row) => (
+                <div className="col">
+                  <span className="strong">{row.name}</span>
+                  <span className="fs-12 dim num">{formatPhone(row.phone)}</span>
+                </div>
+              ),
+            },
+            {
+              key: 'province',
+              header: 'المحافظة',
+              render: (row) => row.province?.name ?? '—',
+            },
+            {
+              key: 'points',
+              header: 'النقاط',
+              numeric: true,
+              width: 90,
+              render: (row) => <span className="num">{formatNumber(row.points)}</span>,
+            },
+            {
+              key: 'joined',
+              header: 'تاريخ الاشتراك',
+              render: (row) => <span className="fs-12">{formatDateAr(row.createdAt)}</span>,
+            },
+            {
+              key: 'status',
+              header: 'الحالة',
+              width: 100,
+              render: (row) =>
+                row.isBlocked ? <Pill tone="danger">محظور</Pill> : <Pill tone="success">فعّال</Pill>,
+            },
+            {
+              key: '__actions',
+              header: '',
+              width: 52,
+              render: (row) => (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title={row.isBlocked ? 'فك الحظر' : 'حظر'}
+                  icon={row.isBlocked ? <ShieldCheck size={15} /> : <ShieldBan size={15} />}
+                  onClick={(event) => {
+                    // The row itself navigates; the action must not.
+                    event.stopPropagation();
+                    setBlocking(row);
+                  }}
+                />
+              ),
+            },
+          ]}
+        />
+      </Card>
 
-          <AsyncBlock state={users}>
-            {(data) => (
-              <DataTable
-                columns={columns}
-                rows={data.items}
-                rowKey={(user) => user.id}
-                onRowClick={(user) => navigate(`/users/${user.id}`)}
-                page={data.page}
-                pageSize={data.pageSize}
-                total={data.total}
-                onPage={setPage}
-                empty={
-                  <div className="empty">
-                    <span className="empty-icon">
-                      {status === 'blocked' ? <UserX size={22} /> : <UsersIcon size={22} />}
-                    </span>
-                    <span className="strong">ما لكينا مشترك بهذه الفلاتر</span>
-                  </div>
-                }
-              />
-            )}
-          </AsyncBlock>
-        </Card>
-      </div>
+      {blocking ? (
+        <ConfirmDialog
+          danger={!blocking.isBlocked}
+          title={blocking.isBlocked ? 'فك الحظر' : 'حظر المشترك'}
+          confirmLabel={blocking.isBlocked ? 'فك الحظر' : 'حظر'}
+          pending={action.pending}
+          message={
+            <>
+              {blocking.isBlocked ? (
+                <>
+                  راح يرجع <span className="strong">{blocking.name}</span> يكدر يسجّل دخول
+                  بالتطبيق.
+                </>
+              ) : (
+                <>
+                  راح ينحظر <span className="strong">{blocking.name}</span> وتنقطع جلساته
+                  المفتوحة بالتطبيق فوراً — مو بس يمنع الدخول الجاي.
+                </>
+              )}
+              {action.error ? <div className="field-error mt-2">{action.error}</div> : null}
+            </>
+          }
+          onCancel={() => setBlocking(null)}
+          onConfirm={() => void toggleBlock(blocking)}
+        />
+      ) : null}
+
+      {creating ? (
+        <CreateUserDialog
+          provinceOptions={provinceOptions}
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            setPage(1);
+            users.reload();
+            toast('انضاف المشترك');
+          }}
+        />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * Creating a subscriber by hand.
+ *
+ * Normally the app registers them; this is for the case where support sets an
+ * account up on the phone. The password is optional because the API lets a
+ * user claim the account later through the app's own OTP flow.
+ */
+function CreateUserDialog({
+  provinceOptions,
+  onClose,
+  onCreated,
+}: {
+  provinceOptions: { value: Id; label: string }[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const repos = useRepos();
+  const { draft, set } = useDraft<AppUserInput>({
+    name: '',
+    phone: '',
+    provinceId: provinceOptions[0]?.value ?? '',
+    email: '',
+    password: '',
+  });
+  const [run, action] = useAction();
+  const [invalid, setInvalid] = useState<string | null>(null);
+
+  const submit = async () => {
+    const problem = !draft.name.trim()
+      ? 'اسم المشترك مطلوب'
+      : !draft.phone.trim()
+        ? 'رقم الهاتف مطلوب'
+        : !draft.provinceId
+          ? 'اختر المحافظة'
+          : null;
+    setInvalid(problem);
+    if (problem) return;
+
+    const ok = await run(() =>
+      repos.appUsers.create({
+        ...draft,
+        email: draft.email?.trim() ? draft.email : null,
+        password: draft.password?.trim() ? draft.password : undefined,
+      }),
+    );
+    if (ok) onCreated();
+  };
+
+  return (
+    <Modal
+      title="إضافة مشترك"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="primary" onClick={submit} disabled={action.pending}>
+            {action.pending ? 'جاري الحفظ…' : 'حفظ'}
+          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={action.pending}>
+            إلغاء
+          </Button>
+        </>
+      }
+    >
+      <div className="grid grid-form">
+        <Field label="الاسم">
+          <TextInput value={draft.name} onChange={(next) => set('name', next)} />
+        </Field>
+        <Field label="رقم الهاتف">
+          <TextInput
+            type="tel"
+            value={draft.phone}
+            onChange={(next) => set('phone', next)}
+            placeholder="07XXXXXXXXX"
+          />
+        </Field>
+        <Field label="المحافظة">
+          <Select<Id>
+            value={draft.provinceId}
+            onChange={(next) => set('provinceId', next)}
+            options={provinceOptions}
+          />
+        </Field>
+        <Field label="البريد الإلكتروني" hint="اختياري">
+          <TextInput value={draft.email ?? ''} onChange={(next) => set('email', next)} />
+        </Field>
+        <Field label="كلمة المرور" hint="اختيارية — يكدر يفعّل حسابه من التطبيق">
+          <TextInput
+            type="password"
+            value={draft.password ?? ''}
+            onChange={(next) => set('password', next)}
+          />
+        </Field>
+      </div>
+      {invalid || action.error ? (
+        <div className="field-error mt-3">{invalid ?? action.error}</div>
+      ) : null}
+    </Modal>
   );
 }

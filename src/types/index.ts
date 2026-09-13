@@ -1,778 +1,529 @@
 /**
  * Domain model for the Silversat admin console.
  *
- * These types are the contract between the UI and the data layer. They mirror
- * the customer app models (Mysilversat/lib/data/models) but are strictly
- * richer: the app only reads what it renders, while the console has to edit
- * ownership, scheduling, moderation and audit fields the app never sees.
+ * These types mirror what `api.silversat.ahmed-muthana.com` actually returns —
+ * field for field, name for name. That is deliberate: an admin console that
+ * renames the backend's concepts has to translate in both directions forever,
+ * and every translation is a place for the two models to drift apart.
  *
- * Nothing here is UI-specific. When a real backend arrives these become the
- * response DTOs and only data/repositories/mock gets rewritten.
+ * Two shapes of the API leak through on purpose:
+ *
+ *  - **Money arrives as a string.** The columns are SQL `decimal`, so the
+ *    driver hands back `"4000"` rather than `4000`. `toAmount()` converts at
+ *    the edge of a render instead of the type lying about it.
+ *  - **Relations arrive expanded and flat at once.** A category carries both
+ *    `product` and `productId`. The expanded object is optional because list
+ *    routes include it and nested payloads sometimes do not.
  */
 
-/** Every id in the system is an opaque string. */
+/** Every id in the system is a UUID string. */
 export type Id = string;
 
-/** ISO-8601 timestamp, always stored in UTC. */
+/** ISO-8601 timestamp, always UTC. */
 export type IsoDate = string;
 
-// ---------------------------------------------------------------- shared ----
+/** IQD amount as the API sends it — a decimal in a string. */
+export type Amount = string;
 
-/**
- * Index into the app promoArt gradient inventory. The customer app draws art
- * surfaces from a fixed list of gradients rather than free-form colors, so the
- * console picks an index instead of a color.
- */
-export type GradientIndex = 0 | 1 | 2 | 3 | 4 | 5;
+/** Reads an API decimal as a number. Returns 0 for null/empty/garbage. */
+export function toAmount(value: Amount | number | null | undefined): number {
+  if (value === null || value === undefined || value === '') return 0;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
 
-/** Keys the app maps to Iconsax glyphs. Adding one here needs an app change. */
-export type IconKey =
-  | 'home'
-  | 'shop'
-  | 'family'
-  | 'tv'
-  | 'receiver'
-  | 'subscription'
-  | 'merch'
-  | 'trophy'
-  | 'satellite'
-  | 'gift';
+/** Columns every table carries. */
+export interface Entity {
+  id: Id;
+  createdAt: IsoDate;
+  updatedAt: IsoDate;
+  /** Soft-delete marker. Rows the API returns normally have this null. */
+  deletedAt?: IsoDate | null;
+}
 
-/** Locales the app ships. Both are RTL. */
-export type Locale = 'ar' | 'ckb';
+/** The app ships Arabic and Kurdish; every authored string comes in both. */
+export type Locale = 'ar' | 'ku';
 
-/** Generic paginated envelope used by every list endpoint. */
+/** One page of a list route. */
 export interface Page<T> {
   items: T[];
   total: number;
+  /** One-based page index, the way the pager renders it. */
   page: number;
   pageSize: number;
 }
 
-/** Shared list query. Repositories apply what they support and ignore the rest. */
+/** What the UI asks a list route for. Repositories map it to limit/offset. */
 export interface ListQuery {
+  /** One-based. */
   page?: number;
   pageSize?: number;
-  search?: string;
-  sortBy?: string;
-  sortDir?: 'asc' | 'desc';
-}
-
-// ----------------------------------------------------------- governorates ---
-
-/** An Iraqi governorate. Drives offer targeting, tower coverage and reporting. */
-export interface Governorate {
-  id: Id;
-  nameAr: string;
-  nameCkb: string;
-  /** Whether the service is sold here at all. Disabling hides it everywhere. */
-  active: boolean;
-  /** Denormalised counter the dashboard reads without scanning users. */
-  subscriberCount: number;
-}
-
-// -------------------------------------------------------- governorate APIs --
-
-/**
- * One governorate's upstream system.
- *
- * Every governorate runs the same software behind a different domain, so the
- * request shape is identical everywhere and only these four credentials
- * change. A connection is what actually burns a card and extends a
- * subscription upstream; the console's own tables are the local mirror.
- */
-export interface ApiConnection {
-  id: Id;
-  /** Operator-facing label, e.g. "سيرفر بغداد". */
-  nameAr: string;
-  /** Domain or full base URL, e.g. https://bgd.silversat.iq */
-  baseUrl: string;
-  /** The `X-Auth-Key` header every request carries. */
-  authKey: string;
-  username: string;
   /**
-   * Kept here because the mock has nowhere else to put it. A real backend
-   * stores this server-side and never returns it to the console — the edit
-   * form would send a new value or leave it untouched.
+   * Free-text filter. Only `/devices/all` and `/codes/lookup` support this
+   * server-side; everywhere else the repository filters the fetched rows.
    */
-  password: string;
-  active: boolean;
-  /** Governorates served by this connection. A governorate belongs to one. */
-  governorateIds: Id[];
-  createdAt: IsoDate;
-  lastCheckAt: IsoDate | null;
-  /** Null until the connection has been tested at least once. */
-  lastCheckOk: boolean | null;
-  lastCheckMessageAr?: string;
+  search?: string;
 }
 
-/** Outcome of pinging a connection. */
-export interface ApiCheckResult {
-  ok: boolean;
-  messageAr: string;
-  latencyMs: number;
+// ------------------------------------------------------ geography ----------
+
+export interface Country extends Entity {
+  /** ISO-ish short code, e.g. `iq`. */
+  code: string;
+  /** Dial-code key the app uses for the phone picker. */
+  dialCode: string;
+  name: string;
+  currency: string;
 }
 
-// ------------------------------------------------------------- card stock ---
+/** A province (محافظة). Products, users, towers and ads all hang off one. */
+export interface Province extends Entity {
+  countryId: Id;
+  country?: Country;
+  code: string;
+  name: string;
+}
 
-export type CardStatus = 'available' | 'used' | 'void';
+// ------------------------------------------------ silversat regions --------
 
 /**
- * One prepaid subscription card sitting in a governorate's stock.
+ * One upstream SilverSat server.
  *
- * A renewal consumes exactly one card of the matching length from the
- * subscriber's own governorate — that is the whole reason stock is tracked
- * per governorate rather than centrally.
+ * Every region runs the same vendor software behind a different domain, so
+ * only the credentials change. A product points at the region that will
+ * actually activate its codes.
+ *
+ * `authKey`, `userId` and `password` come back only on the admin list; the
+ * agent-facing list returns id/name/isActive alone, which is why they are
+ * optional here.
  */
-export interface StockCard {
-  id: Id;
-  /** Printed on the card. Unique across the whole stock. */
-  code: string;
-  governorateId: Id;
-  /** Subscription length the card is worth, matched against the package. */
-  months: number;
-  status: CardStatus;
-  /** The shipment it arrived in, so a bad batch can be traced and voided. */
-  batchRef: string;
-  addedAt: IsoDate;
-  usedAt: IsoDate | null;
-  usedByRenewalId?: Id;
-  usedByDeviceId?: Id;
-  voidReasonAr?: string;
+export interface SilversatRegion extends Entity {
+  name: string;
+  baseUrl?: string;
+  authKey?: string;
+  userId?: string;
+  password?: string;
+  appDeviceId?: string;
+  isActive: boolean;
 }
 
-/** How many cards of one length one governorate holds, by status. */
-export interface StockLevel {
-  governorateId: Id;
-  months: number;
-  available: number;
-  used: number;
-  voided: number;
+/** Outcome of a vendor `GetToken` health check. */
+export interface RegionCheckResult {
+  id: Id;
+  name: string;
+  ok: boolean;
+  message?: string;
+  latencyMs?: number;
 }
 
-// ------------------------------------------------------------ admin users ---
+// -------------------------------------------------- products & catalog -----
 
-export interface AdminUser {
-  id: Id;
-  fullName: string;
-  username: string;
+/** Which upstream actually activates a code bought under this product. */
+export type ActivationApi = 'silvers' | 'other';
+
+/**
+ * A sellable service in one province, e.g. "Fiber 50 Mbps" in Ninawa.
+ *
+ * The province is what makes stock provincial: a code belongs to a category,
+ * a category to a product, and a product to exactly one province.
+ */
+export interface Product extends Entity {
+  name: string;
+  displayName: string;
+  imageUrl: string | null;
+  activationApi: ActivationApi;
+  silversatRegionId: Id | null;
+  silversatRegion?: SilversatRegion | null;
+  provinceId: Id;
+  province?: Province;
+}
+
+/** A purchasable variant of a product — the row that carries prices. */
+export interface Category extends Entity {
+  productId: Id;
+  product?: Product;
+  name: string;
+  nameKu: string;
+  /** What the code costs us. */
+  costPrice: Amount;
+  /** List price in the app. */
+  unitPrice: Amount;
+  /** Price for the main tier of resellers. */
+  mainPrice: Amount;
+  /** Price for the sub tier of resellers. */
+  subPrice: Amount;
+  /** True when a code also carries a second value (e.g. a PIN). */
+  hasSecondaryCode: boolean;
+  /** Available codes at or below this raise a low-stock warning. Null = off. */
+  lowStockThreshold: number | null;
+  isDisabled: boolean;
+  /** Whether the app lists it at all. */
+  isDisplay: boolean;
+  sortOrder: number;
+  imageUrl: string | null;
+}
+
+// ------------------------------------------------------- code stock --------
+
+export type BatchStatus = 'active' | 'disabled';
+
+/**
+ * One import of codes into a category.
+ *
+ * The counters are computed by the API over the batch's codes, so the stock
+ * screen reads them instead of scanning `/codes`.
+ */
+export interface Batch extends Entity {
+  categoryId: Id;
+  category?: Category;
+  /** Name of the file the codes arrived in — the shipment's identity. */
+  fileName: string;
+  status: BatchStatus;
+  uploadedBy: Id | null;
+  uploadedByUser?: AdminUser | null;
+  notes: string | null;
+  allCodeCount: number;
+  codeAvailableCount: number;
+  codeSoldCount: number;
+  codeDisabledCount: number;
+}
+
+export type CodeStatus = 'available' | 'sold' | 'disabled';
+
+/** One prepaid code. Selling it is what a renewal actually is. */
+export interface Code extends Entity {
+  batchId: Id;
+  batch?: Batch;
+  categoryId: Id;
+  category?: Category;
+  /** The code printed on the card. Unique across the system. */
+  primaryValue: string;
+  /** Second value, when the category declares `hasSecondaryCode`. */
+  secondaryValue: string | null;
+  status: CodeStatus;
+  disabledAt: IsoDate | null;
+  soldToAppUserId: Id | null;
+  soldAt: IsoDate | null;
+}
+
+// ------------------------------------------------------- admin users -------
+
+/** Roles the API issues in the JWT. */
+export type AdminRole = 'SUPER_ADMIN' | 'ADMIN' | 'AGENT';
+
+/** A console operator. */
+export interface AdminUser extends Entity {
+  email: string | null;
   phone: string;
-  active: boolean;
-  createdAt: IsoDate;
-  lastLoginAt: IsoDate | null;
+  name: string;
+  role: AdminRole;
+  tokenInvalidatedAt?: IsoDate | null;
 }
 
-/** The signed-in admin. The console has one account and no roles. */
+/** The signed-in operator plus the token the client sends. */
 export interface AdminSession {
   admin: AdminUser;
+  token: string;
 }
 
-// ------------------------------------------------------------- app users ----
+/** What `/auth/login` returns — a challenge, not a session. */
+export interface OtpChallenge {
+  requiresOtp: boolean;
+  challengeToken: string;
+  /** `077****1696`, safe to print on the OTP step. */
+  maskedPhone: string;
+  expiresInSeconds: number;
+}
 
-export type AppUserStatus = 'active' | 'blocked' | 'pending';
+// --------------------------------------------------------- app users -------
 
-/** A customer of the TV service — the person who uses the mobile app. */
-export interface AppUser {
-  id: Id;
-  fullName: string;
-  /** Login identity in the app. Iraqi mobile format, e.g. 0770 000 0000. */
+/** A customer of the service — the person who uses the mobile app. */
+export interface AppUser extends Entity {
+  name: string;
+  email: string | null;
+  imageUrl: string | null;
   phone: string;
-  governorateId: Id;
-  /** Free-text area inside the governorate. */
-  area: string;
-  status: AppUserStatus;
-  /** Set when status is blocked so support can explain the block. */
-  blockReason?: string;
-  locale: Locale;
-  joinedAt: IsoDate;
-  lastSeenAt: IsoDate | null;
-  /** Running total for the active season. Derived from the points ledger. */
+  provinceId: Id;
+  province?: Province;
+  /** Running prediction score. The leaderboard is a sort of this column. */
   points: number;
-  /** Cached leaderboard position for the active season; null when unranked. */
-  rank: number | null;
-  /** Lifetime totals, denormalised for the user detail header. */
-  totalRenewals: number;
-  totalSpend: number;
-  notes: string;
+  isBlocked: boolean;
+  /** Set when a block invalidated the user's live JWTs. */
+  tokenInvalidatedAt: IsoDate | null;
+  fcmToken: string | null;
 }
 
-// --------------------------------------------------------------- devices ----
+// ----------------------------------------------------------- devices -------
 
-export type DeviceStatus = 'active' | 'expiring' | 'expired' | 'suspended';
-
-/** A physical receiver bound to a customer. `number` is printed on the box. */
-export interface Device {
-  id: Id;
-  userId: Id;
+/** A receiver bound to a customer. `deviceNumber` is printed on the box. */
+export interface Device extends Entity {
+  appUserId: Id;
+  appUser?: AppUser;
   /** Customer-chosen label. */
   name: string;
-  iconKey: Extract<IconKey, 'home' | 'shop' | 'family'>;
-  /** Serial as shown in the app: SLV-0000 0000 000. */
-  number: string;
-  /** Hardware model, used by support when diagnosing. */
-  model: string;
-  status: DeviceStatus;
-  /** End of the paid period. */
-  expiryAt: IsoDate;
-  /** Start of the current paid period; the progress bar spans start -> expiry. */
-  periodStartAt: IsoDate;
-  createdAt: IsoDate;
-  /** Set when status is suspended. */
-  suspendReason?: string;
+  deviceNumber: string;
 }
 
-// ----------------------------------------------------- packages & renewals --
-
-/** A sellable subscription length. Prices are IQD, whole dinars. */
-export interface SubscriptionPackage {
-  id: Id;
-  months: number;
-  price: number;
-  /** Discount versus buying the 3-month package repeatedly. 0 when none. */
-  save: number;
-  /** Grants the bonus free month advertised in the offers screen. */
-  bonus: boolean;
-  /** The one package highlighted in the renew screen. Only one may be true. */
-  featured: boolean;
-  active: boolean;
-  sortOrder: number;
-}
-
-export type PaymentMethod = 'kcard' | 'cash_agent' | 'online' | 'free_grant';
-
-export type RenewalStatus = 'completed' | 'pending' | 'refunded' | 'failed';
-
-/** One renewal transaction. This is what extends a device expiry. */
-export interface Renewal {
-  id: Id;
-  userId: Id;
-  deviceId: Id;
-  packageId: Id;
-  months: number;
-  price: number;
-  method: PaymentMethod;
-  /** Set when method is cash_agent. */
-  agentId?: Id;
-  status: RenewalStatus;
-  /** The draw coupon this renewal generated, when the package qualifies. */
-  couponId?: Id;
-  /**
-   * The stock card burnt to pay for this renewal. Absent only on a free grant,
-   * which extends a subscription without consuming stock.
-   */
-  cardId?: Id;
-  createdAt: IsoDate;
-  /** Expiry before and after, so support can audit a disputed renewal. */
-  expiryBefore: IsoDate;
-  expiryAfter: IsoDate;
-  note?: string;
-}
-
-// ------------------------------------------------- leagues, teams, matches --
+// -------------------------------------------- leagues, teams, matches ------
 
 /**
- * Leagues, teams and fixtures are **not authored here**. They arrive from the
- * upstream fixtures feed and the console only mirrors them, which is why each
- * one carries the provider's own id: a sync matches on `externalId`, never on
- * a name, so a renamed team updates instead of duplicating.
+ * Leagues, teams and fixtures are **mirrored from API-Football**, never
+ * authored here. Each carries the provider's `externalId`, so a sync updates
+ * the matching row rather than duplicating it.
  *
- * What the console does own on top of the feed is the prediction decision —
- * `openForPredict`, `predictionCloseAt`, `featured` and settlement. Those are
- * ours and a sync never touches them.
+ * What the console owns on top of the feed is the prediction decision —
+ * `isOpenForPrediction` and `predictionClosesAt` — and a manual score fix.
  */
-export interface League {
-  id: Id;
-  /** The provider's id for this league. Stable across syncs. */
-  externalId: string;
-  /** Stable key the app uses for grouping, e.g. iraqi, spanish. */
-  key: string;
-  nameAr: string;
-  country: string;
-  active: boolean;
-  sortOrder: number;
+export interface League extends Entity {
+  externalId: number | null;
+  name: string;
+  countryId: Id;
+  country?: Country;
+  order: number;
+  /** Inactive leagues are hidden from the app entirely. */
+  isActive: boolean;
 }
 
-export interface Team {
-  id: Id;
-  /** The provider's id for this team. Stable across syncs. */
-  externalId: string;
-  nameAr: string;
-  shortNameAr: string;
+export interface Team extends Entity {
+  externalId: number | null;
+  name: string;
+  logoUrl: string | null;
   leagueId: Id;
-  /**
-   * Index into the app teamCrest gradient list. The app draws a letter crest
-   * rather than uploading logos, so a team identity is its seed.
-   */
-  crestSeed: number;
+  league?: League;
 }
 
-export type MatchState = 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled';
+export type MatchStatus = 'scheduled' | 'live' | 'finished';
 
-/**
- * A fixture, mirrored from the feed.
- *
- * The feed owns the teams, the kickoff, the state and the score. The console
- * owns the prediction lifecycle on top of it: open for predictions -> lock ->
- * settle points.
- */
-export interface Match {
-  id: Id;
-  /** The provider's fixture id. A sync updates the row that matches this. */
-  externalId: string;
-  /** When this fixture was last refreshed from the feed. */
-  syncedAt: IsoDate;
-  /**
-   * Set when an operator corrected the score by hand because the feed was
-   * wrong. A sync leaves a corrected score alone rather than overwriting it.
-   */
-  scoreOverridden?: boolean;
+export interface Match extends Entity {
+  externalId: number | null;
   leagueId: Id;
+  league?: League;
   homeTeamId: Id;
+  homeTeam?: Team;
   awayTeamId: Id;
-  kickoffAt: IsoDate;
-  state: MatchState;
+  awayTeam?: Team;
+  matchAt: IsoDate;
+  /** Picks are refused after this instant. Defaults to kickoff. */
+  predictionClosesAt: IsoDate | null;
+  status: MatchStatus;
   homeScore: number | null;
   awayScore: number | null;
-  /** Display clock while live. Cleared when the match finishes. */
-  liveMinute?: string;
-  /**
-   * The switch the operator flips to put this fixture on the predict screen.
-   * Only fixtures with this true and a future predictionCloseAt accept picks.
-   */
-  openForPredict: boolean;
-  /** Picks are refused after this instant. Defaults to kickoff. */
-  predictionCloseAt: IsoDate | null;
-  /** Pins the fixture to the home screen preview card. */
-  featured: boolean;
-  /** Set once points have been awarded; prevents double settlement. */
-  settledAt: IsoDate | null;
-  /** Denormalised counter so the list does not have to scan predictions. */
-  predictionCount: number;
-  note?: string;
+  /** Display clock while live. */
+  currentMinute: number | null;
+  /** The switch that puts this fixture on the app's predict screen. */
+  isOpenForPrediction: boolean;
 }
 
-/** A match joined with its league and both teams, for display. */
-export interface MatchView extends Match {
-  league: League;
-  homeTeam: Team;
-  awayTeam: Team;
-}
+// -------------------------------------------------------- predictions ------
 
-// ----------------------------------------------------------- predictions ----
-
-export type PredictionOutcome = 'pending' | 'exact' | 'result' | 'goaldiff' | 'wrong';
-
-/** One user score guess on one fixture. Unique per (userId, matchId). */
-export interface Prediction {
-  id: Id;
+/** One user's score guess on one fixture. Unique per (appUserId, matchId). */
+export interface Prediction extends Entity {
+  appUserId: Id;
+  appUser?: AppUser;
   matchId: Id;
-  userId: Id;
-  homePick: number;
-  awayPick: number;
-  createdAt: IsoDate;
-  /** Last edit before lock; null when never changed. */
-  updatedAt: IsoDate | null;
-  outcome: PredictionOutcome;
-  /** Null until the match is settled. */
-  pointsAwarded: number | null;
+  match?: Match;
+  predictedHomeScore: number;
+  predictedAwayScore: number;
+  /** Null until the match is scored. Exact = 25, right outcome = 10. */
+  pointsEarned: number | null;
 }
 
-/** Prediction joined with the user display fields, for tables. */
-export interface PredictionView extends Prediction {
-  userName: string;
-  userPhone: string;
-  governorateId: Id;
+/** Points the API awards. Fixed server-side; shown so the rules are visible. */
+export const SCORING = { exact: 25, sameOutcome: 10 } as const;
+
+/** How a settled prediction turned out, derived from `pointsEarned`. */
+export type PredictionOutcome = 'pending' | 'exact' | 'outcome' | 'wrong';
+
+export function outcomeOf(prediction: Prediction): PredictionOutcome {
+  if (prediction.pointsEarned === null) return 'pending';
+  if (prediction.pointsEarned >= SCORING.exact) return 'exact';
+  if (prediction.pointsEarned > 0) return 'outcome';
+  return 'wrong';
 }
 
-/**
- * How points are earned. Editable in settings because the client tunes it
- * between seasons.
- */
-export interface ScoringRules {
-  /** Both numbers right. */
-  exactScore: number;
-  /** Right winner (or draw) and right goal difference, wrong scoreline. */
-  goalDifference: number;
-  /** Right winner (or draw) only. */
-  correctResult: number;
-  /** Wrong. Usually 0; negative is allowed. */
-  wrong: number;
-  /** Awarded for submitting at all, win or lose. */
-  participation: number;
-  /** Minutes before kickoff when picks lock, when no explicit close time set. */
-  lockMinutesBeforeKickoff: number;
-  /** Whether a user may edit a pick before lock. */
-  allowEditBeforeLock: boolean;
-}
-
-/** Aggregate view of how a fixture predictions are distributed. */
+/** Aggregate of how one fixture's picks are distributed. */
 export interface MatchPredictionStats {
   matchId: Id;
   total: number;
-  /** Share of picks by outcome, for the pre-match sentiment bar. */
   homeWin: number;
   draw: number;
   awayWin: number;
-  /** The most-picked scorelines, highest first. */
+  /** Most-picked scorelines, highest first. */
   topScorelines: { home: number; away: number; count: number }[];
 }
 
-// ------------------------------------------------------ points & seasons ----
-
-export type PointsEntryKind =
-  | 'prediction'
-  | 'manual'
-  | 'bonus'
-  | 'penalty'
-  | 'season_reset'
-  | 'redeem';
-
-/**
- * Append-only ledger. A user points total is the sum of their entries for the
- * active season; nothing mutates a balance directly, so every change is
- * explainable to a customer who disputes it.
- */
-export interface PointsEntry {
-  id: Id;
-  userId: Id;
-  seasonId: Id;
-  delta: number;
-  kind: PointsEntryKind;
-  reasonAr: string;
-  /** Match id for prediction, draw id for redeem, etc. */
-  refId?: Id;
-  /** Set when an admin made the change by hand. */
-  adminId?: Id;
-  createdAt: IsoDate;
-}
-
-/**
- * A competition period. The app tells users the ranking resets at the start of
- * each month, so a season is normally one calendar month and closing it zeroes
- * the board.
- */
-export interface Season {
-  id: Id;
-  nameAr: string;
-  startsAt: IsoDate;
-  endsAt: IsoDate;
-  /** Exactly one season is active at a time. */
-  active: boolean;
-  /** Set when the season was closed and its leaderboard frozen. */
-  closedAt: IsoDate | null;
-}
-
+/** A leaderboard row, built by ranking app users on `points`. */
 export interface LeaderboardRow {
   rank: number;
-  userId: Id;
-  name: string;
-  governorateId: Id;
+  user: AppUser;
   points: number;
-  /** Correct-prediction rate over the season, 0..1. */
-  accuracy: number;
   predictionCount: number;
+  /** Share of scored picks that earned anything, 0..1. */
+  accuracy: number;
 }
 
-// --------------------------------------------------- coupons, draws, prizes -
+// ------------------------------------------------------ notifications ------
 
-/** A draw entry generated by a qualifying renewal. */
-export interface Coupon {
-  id: Id;
-  code: string;
-  userId: Id;
-  deviceId: Id;
-  renewalId: Id;
-  /** Draw season the coupon belongs to, e.g. 2026. */
-  year: string;
-  /** False once the draw it belongs to has been run. */
-  active: boolean;
-  issuedAt: IsoDate;
-  /** Set after the draw: either the prize won or the did-not-win line. */
-  resultTextAr?: string;
-  drawId?: Id;
-}
+export type NotificationTarget = 'user' | 'all' | 'province';
 
-/** A prize tier inside a draw. */
-export interface Prize {
-  id: Id;
-  drawId: Id;
-  iconKey: IconKey;
+/** A push that was sent. The API has no drafts — sending is the creation. */
+export interface NotificationRecord extends Entity {
   titleAr: string;
-  subtitleAr: string;
-  /** 1/2/3 render a medal accent; undefined tiers render plain. */
-  rank?: 1 | 2 | 3;
-  gradientIndex: GradientIndex;
-  /** How many coupons this tier draws. */
-  winnersCount: number;
-  sortOrder: number;
+  titleKu: string;
+  bodyAr: string;
+  bodyKu: string;
+  /** `admin` for a console send, otherwise a system trigger. */
+  source: string;
+  targetType: NotificationTarget;
+  targetUserId: Id | null;
+  targetUser?: AppUser | null;
+  targetProvinceId: Id | null;
+  targetProvince?: Province | null;
+  /** Deep-link payload, e.g. `{ matchId }`. */
+  dataJson: Record<string, unknown> | null;
+  createdBy: Id | null;
+  createdByUser?: AdminUser | null;
+  successCount: number;
+  failureCount: number;
 }
 
-export type DrawState = 'draft' | 'open' | 'drawn' | 'published';
+// ----------------------------------------------------------- content -------
 
-/** A prize draw run over the eligible coupons of a period. */
-export interface Draw {
-  id: Id;
-  nameAr: string;
-  year: string;
-  state: DrawState;
-  opensAt: IsoDate;
-  closesAt: IsoDate;
-  drawnAt: IsoDate | null;
-  publishedAt: IsoDate | null;
-  /** Only coupons issued in these governorates enter. Empty means nationwide. */
-  governorateIds: Id[];
-  /** Denormalised count of eligible coupons at the time of drawing. */
-  entryCount: number;
+/** What tapping an ad does inside the app. */
+export type AdAction = 'none' | 'url' | 'screen';
+
+/** A banner in the app. Global when `provinceId` is null. */
+export interface Ad extends Entity {
+  title: string;
+  titleKu: string;
+  actionType: AdAction;
+  actionValue: string | null;
+  order: number;
+  isActive: boolean;
+  provinceId: Id | null;
+  province?: Province | null;
+  imageUrl: string;
 }
 
-export interface DrawWinner {
-  id: Id;
-  drawId: Id;
-  prizeId: Id;
-  couponId: Id;
-  userId: Id;
-  /** Privacy-masked name the app shows publicly. */
-  maskedName: string;
-  drawnAt: IsoDate;
-  /** Whether the operator has handed the prize over. */
-  claimed: boolean;
-  claimedAt: IsoDate | null;
+export interface Faq extends Entity {
+  question: string;
+  questionKu: string;
+  answer: string;
+  answerKu: string;
+  order: number;
+  isActive: boolean;
 }
 
-// ------------------------------------------------------------- app content --
-
-/** A card on the offers screen. */
-export interface Offer {
-  id: Id;
-  badgeAr: string;
-  titleAr: string;
-  /** Big text drawn on the art tile, e.g. +1 or 10%. */
-  artText?: string;
-  artSubAr?: string;
-  iconKey?: IconKey;
-  gradientIndex: GradientIndex;
-  /** Renders as a double-height tile in the offers grid. */
-  tall: boolean;
-  /** When true the offer only shows to users in governorateIds. */
-  governorateScoped: boolean;
-  governorateIds: Id[];
-  startsAt: IsoDate;
-  endsAt: IsoDate;
-  active: boolean;
-  sortOrder: number;
+export interface TutorialVideo extends Entity {
+  title: string;
+  titleKu: string;
+  subtitle: string | null;
+  subtitleKu: string | null;
+  videoUrl: string;
+  durationSeconds: number;
+  order: number;
+  isActive: boolean;
 }
 
-export type SlideTarget =
-  | 'offers'
-  | 'predict'
-  | 'renew'
-  | 'draws'
-  | 'matches'
-  | 'tower'
-  | 'none';
-
-/** A slide in the home screen ad carousel. */
-export interface Slide {
-  id: Id;
-  tagAr: string;
-  titleAr: string;
-  subtitleAr: string;
-  gradientIndex: GradientIndex;
-  /** Which screen tapping the slide opens. */
-  routeTarget: SlideTarget;
-  startsAt: IsoDate;
-  endsAt: IsoDate;
-  active: boolean;
-  sortOrder: number;
-}
-
-/** A transmitter the app compass points at. */
-export interface Tower {
-  id: Id;
-  nameAr: string;
-  governorateId: Id;
+/** A transmitter the app's compass points at. */
+export interface Tower extends Entity {
+  name: string;
+  nameKu: string;
   latitude: number;
   longitude: number;
-  /** True for the primary tower of its area — the app marks it as strong. */
-  strong: boolean;
-  active: boolean;
-  /** Dish alignment values support reads out to customers. */
-  frequency: string;
-  polarization: 'H' | 'V';
-  symbolRate: string;
+  provinceId: Id;
+  province?: Province;
 }
 
-export interface VideoItem {
-  id: Id;
-  titleAr: string;
-  titleCkb: string;
-  descriptionAr: string;
-  /** Display length, mm:ss. */
-  duration: string;
-  url: string;
-  gradientIndex: GradientIndex;
-  active: boolean;
-  sortOrder: number;
+/** Channels the app can open from the contact screen. */
+export type ContactChannel = 'phone' | 'whatsapp' | 'facebook' | 'instagram' | 'telegram';
+
+/** A support channel shown in the app. `type` picks the icon and the handler. */
+export interface ContactLink extends Entity {
+  type: ContactChannel;
+  label: string;
+  labelKu: string;
+  subLabel: string | null;
+  subLabelKu: string | null;
+  /** Phone number, URL or handle, depending on `type`. */
+  value: string;
+  order: number;
+  isActive: boolean;
 }
 
-export interface FaqItem {
-  id: Id;
-  questionAr: string;
-  answerAr: string;
-  questionCkb: string;
-  answerCkb: string;
-  categoryAr: string;
-  active: boolean;
-  sortOrder: number;
-}
+// ------------------------------------------------- API-Football sync -------
 
-// --------------------------------------------------------- notifications ----
-
-export type NotificationAudience =
-  | 'all'
-  | 'governorate'
-  | 'expiring_soon'
-  | 'expired'
-  | 'predictors'
-  | 'single_user';
-
-export type CampaignState = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
-
-/** A push campaign. Delivery counters are filled in by the backend. */
-export interface NotificationCampaign {
-  id: Id;
-  titleAr: string;
-  bodyAr: string;
-  audience: NotificationAudience;
-  /** Governorate ids or a single user id, depending on audience. */
-  targetIds: Id[];
-  /** Deep link opened on tap. */
-  routeTarget: SlideTarget;
-  state: CampaignState;
-  scheduledAt: IsoDate | null;
-  sentAt: IsoDate | null;
-  audienceSize: number;
-  deliveredCount: number;
-  openedCount: number;
-  createdBy: Id;
-  createdAt: IsoDate;
-}
-
-// ---------------------------------------------------------------- agents ----
-
-/** A reseller who takes cash renewals in the field. */
-export interface Agent {
-  id: Id;
-  fullName: string;
-  phone: string;
-  governorateId: Id;
-  area: string;
-  active: boolean;
-  /** Share of each renewal the agent keeps, 0..1. */
-  commissionRate: number;
-  /** Prepaid float, IQD. Cash renewals draw it down. */
-  balance: number;
-  renewalCount: number;
-  createdAt: IsoDate;
-}
-
-// ------------------------------------------------------------- audit log ----
-
-export type AuditAction = 'create' | 'update' | 'delete' | 'login' | 'run' | 'send';
-
-/** Who changed what. Written by the repository layer on every mutation. */
-export interface AuditEntry {
-  id: Id;
-  adminId: Id;
-  adminName: string;
-  action: AuditAction;
-  entityType: string;
-  entityId: Id;
-  /** Human-readable Arabic summary shown in the log table. */
-  summaryAr: string;
-  at: IsoDate;
-}
-
-// ---------------------------------------------------------------- settings --
-
-/**
- * The upstream fixtures feed. Matches, leagues and teams are pulled from here
- * and never entered by hand, so this is the only place their source is
- * configured.
- */
-export interface MatchFeedSettings {
-  providerName: string;
+/** The fixtures feed configuration. Secrets are never returned. */
+export interface ApiFootballConfig {
+  enabled: boolean;
   baseUrl: string;
-  apiKey: string;
-  /** Minutes between automatic pulls. 0 means manual sync only. */
-  syncIntervalMinutes: number;
-  lastSyncAt: IsoDate | null;
-  /** Null until the feed has been pulled at least once. */
-  lastSyncOk: boolean | null;
-  lastSyncMessageAr?: string;
+  hasApiKey: boolean;
+  season: number;
+  /** Leagues synced when the quota is too tight to sync them all. */
+  leagueIds: number[];
+  fixtureDaysBack: number;
+  fixtureDaysAhead: number;
+  quotaReserve: number;
+  syncAllIfQuotaAllows: boolean;
+  maxRequestsPerMinute: number;
 }
 
-/** What one sync pulled in. Shown as a toast and kept on the feed card. */
-export interface MatchSyncResult {
-  leaguesAdded: number;
-  teamsAdded: number;
-  matchesAdded: number;
-  matchesUpdated: number;
-  /** Fixtures skipped because an operator had corrected their score by hand. */
-  matchesSkipped: number;
-  at: IsoDate;
+/** Account and quota state, plus what the next sync would cover. */
+export interface ApiFootballStatus {
+  account?: Record<string, unknown>;
+  requests?: { current?: number; limit_day?: number };
+  willSyncAllLeagues?: boolean;
+  [key: string]: unknown;
 }
 
-/** Global switches. Everything here is read by the app at startup. */
-export interface AppSettings {
-  scoring: ScoringRules;
-  /** Where leagues, teams and fixtures come from. */
-  matchFeed: MatchFeedSettings;
-  /** Available cards at or below this count raise a low-stock warning. */
-  lowStockThreshold: number;
-  /** Close the season and zero the leaderboard on the 1st of each month. */
-  monthlyLeaderboardReset: boolean;
-  /** Blocks the app with a maintenance notice. */
-  maintenanceMode: boolean;
-  maintenanceMessageAr: string;
-  supportPhone: string;
-  supportWhatsapp: string;
-  /** Days before expiry when a device starts showing the warning color. */
-  expiryWarningDays: number;
-  /** Minimum months a renewal must buy to generate a draw coupon. */
-  couponMinMonths: number;
-  /** Simulated network latency of the mock layer, in milliseconds. */
-  mockLatencyMs: [number, number];
+/** What one sync call reported back. Shapes vary per route, so this is loose. */
+export interface SyncResult {
+  created?: number;
+  updated?: number;
+  skipped?: number;
+  total?: number;
+  [key: string]: unknown;
 }
 
-// -------------------------------------------------------------- dashboard ---
+// ------------------------------------------------ silversat operations -----
 
-/** Everything the dashboard shows, assembled in one call. */
+/** `0` renews an existing subscription, `1` activates a new device. */
+export type RechargeType = 0 | 1;
+
+/** Vendor answers are pass-through — the shape is the vendor's, not ours. */
+export type VendorResponse = Record<string, unknown>;
+
+// --------------------------------------------------------- dashboard -------
+
+/** Everything the dashboard shows, assembled from several list routes. */
 export interface DashboardSummary {
   totalUsers: number;
-  activeUsers: number;
   blockedUsers: number;
   newUsersThisMonth: number;
   totalDevices: number;
-  activeDevices: number;
-  expiringDevices: number;
-  expiredDevices: number;
-  renewalsThisMonth: number;
+  totalProducts: number;
+  totalCategories: number;
+  codesAvailable: number;
+  codesSold: number;
+  codesDisabled: number;
+  /** Value of sold codes at list price, IQD. */
+  revenueAllTime: number;
   revenueThisMonth: number;
-  revenueLastMonth: number;
-  openPredictionMatches: number;
+  soldThisMonth: number;
   liveMatches: number;
-  predictionsThisWeek: number;
-  couponsIssued: number;
-  pendingDraws: number;
-  /** Revenue per month for the trend chart, oldest first. */
+  openForPrediction: number;
+  totalPredictions: number;
+  pendingScoring: number;
+  notificationsSent: number;
+  activeRegions: number;
+  totalRegions: number;
+  /** Sold codes per month for the trend chart, oldest first. */
+  salesTrend: { label: string; value: number }[];
   revenueTrend: { label: string; value: number }[];
-  /** Renewal count per month, aligned with revenueTrend. */
-  renewalTrend: { label: string; value: number }[];
-  /** Subscriber split by governorate, largest first. */
-  usersByGovernorate: { governorateId: Id; label: string; value: number }[];
-  /** Renewal split by package. */
-  renewalsByPackage: { label: string; value: number }[];
-  /** Renewal split by payment method. */
-  renewalsByMethod: { label: string; value: number }[];
+  /** Subscriber split by province, largest first. */
+  usersByProvince: { label: string; value: number }[];
+  /** Sold-code split by category. */
+  salesByCategory: { label: string; value: number }[];
+  /** Available stock per category, lowest first — the restock queue. */
+  stockByCategory: { label: string; value: number; threshold: number | null }[];
 }

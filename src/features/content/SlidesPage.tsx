@@ -1,293 +1,222 @@
 /**
- * Home-screen carousel slides.
+ * The home-screen banners.
  *
- * Order matters here more than anywhere else in the console — slide one is
- * what most users ever see — so reordering is a first-class action rather than
- * a numeric field inside the edit dialog.
+ * A banner is an image plus what tapping it does: nothing, an external URL, or
+ * a named screen inside the app. The action value means something different in
+ * each case, so the field relabels itself rather than staying a generic box.
+ *
+ * `provinceId` is the targeting: null shows the banner to everyone, a province
+ * shows it only there. The app resolves this per user, so a targeted banner
+ * never reaches the wrong province.
  */
 
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, Image, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Field, KeyValue, Modal, Pill, Select, Switch, TextInput } from '@/components/ui';
+import { useAsync } from '@/app/useAsync';
 import { useRepos } from '@/app/RepositoryContext';
-import { useAsync, useAction } from '@/app/useAsync';
-import { useToast } from '@/app/ToastContext';
-import { PageHeader } from '@/components/page';
-import {
-  AsyncBlock,
-  Button,
-  Card,
-  ConfirmDialog,
-  EmptyState,
-  Field,
-  Modal,
-  Notice,
-  Pill,
-  Select,
-  Switch,
-  TextArea,
-  TextInput,
-} from '@/components/ui';
-import type { GradientIndex, Slide, SlideTarget } from '@/types';
-import { GRADIENT_SWATCHES, SLIDE_TARGET } from '@/lib/labels';
-import { formatDateAr } from '@/lib/format';
+import type { Ad, AdAction, Id } from '@/types';
+import type { AdInput } from '@/data/repositories/types';
+import { AD_ACTION } from '@/lib/labels';
+import { CrudScreen } from '../shared/CrudScreen';
+
+/** What `actionValue` holds, which depends entirely on `actionType`. */
+const ACTION_HINT: Record<AdAction, string | undefined> = {
+  none: undefined,
+  url: 'الرابط اللي يفتح بالمتصفح',
+  screen: 'اسم الشاشة داخل التطبيق، مثل predictions',
+};
 
 export function SlidesPage() {
   const repos = useRepos();
-  const { toast } = useToast();
-  const [editing, setEditing] = useState<Slide | 'new' | null>(null);
-  const [deleting, setDeleting] = useState<Slide | null>(null);
-  const [busy, setBusy] = useState(false);
+  const provinces = useAsync(() => repos.geo.provinces.all(), []);
+  const provinceOptions = (provinces.data ?? []).map((row) => ({ value: row.id, label: row.name }));
 
-  const slides = useAsync(() => repos.content.slides(), []);
-
-  const move = async (slide: Slide, direction: -1 | 1) => {
-    await repos.content.reorder('slide', slide.id, direction);
-    slides.reload();
-  };
-
-  const runDelete = async () => {
-    if (!deleting) return;
-    setBusy(true);
-    try {
-      await repos.content.deleteSlide(deleting.id);
-      toast('انحذف السلايد');
-      setDeleting(null);
-      slides.reload();
-    } finally {
-      setBusy(false);
-    }
-  };
+  // The table thumbnail is too small to judge a banner, so a click opens it
+  // full size. Kept here rather than inside the cell so only one is ever open.
+  const [preview, setPreview] = useState<Ad | null>(null);
 
   return (
-    <>
-      <PageHeader
-        title="سلايدر الرئيسية"
-        subtitle="الإعلانات المتحركة في أعلى الشاشة الرئيسية — الترتيب هنا هو الترتيب داخل التطبيق"
-        actions={
-          <Button variant="primary" icon={<Plus size={16} />} onClick={() => setEditing('new')}>
-            إضافة سلايد
-          </Button>
-        }
-      />
-
-      <div className="page">
-        <AsyncBlock
-          state={slides}
-          emptyWhen={(rows) => rows.length === 0}
-          empty={<EmptyState title="ما بيها سلايدات" icon={<Image size={22} />} />}
-        >
-          {(rows) => (
-            <div className="col" style={{ gap: 'var(--sp-4)' }}>
-              {rows.map((slide, index) => {
-                const now = Date.now();
-                const live =
-                  slide.active &&
-                  new Date(slide.startsAt).getTime() <= now &&
-                  new Date(slide.endsAt).getTime() >= now;
-                return (
-                  <Card key={slide.id} className="row row-gap-4 wrap card-pad">
-                    <div
-                      style={{
-                        width: 128,
-                        height: 76,
-                        borderRadius: 'var(--r-card)',
-                        background: GRADIENT_SWATCHES[slide.gradientIndex],
-                        flex: 'none',
-                        display: 'flex',
-                        alignItems: 'flex-end',
-                        padding: 10,
-                        color: '#fff',
-                      }}
-                    >
-                      <span className="fs-11">{slide.tagAr}</span>
-                    </div>
-
-                    <div className="col grow" style={{ gap: 4, minWidth: 200 }}>
-                      <div className="row row-gap-2 wrap">
-                        <span className="fs-11 dim num">#{index + 1}</span>
-                        <Pill tone={live ? 'success' : 'muted'}>{live ? 'ظاهر الآن' : 'ما يظهر'}</Pill>
-                        <Pill tone="neutral">{SLIDE_TARGET[slide.routeTarget]}</Pill>
-                      </div>
-                      <span className="fs-13 strong">{slide.titleAr}</span>
-                      <span className="fs-12 muted">{slide.subtitleAr}</span>
-                      <span className="fs-11 dim">
-                        من {formatDateAr(slide.startsAt)} إلى {formatDateAr(slide.endsAt)}
-                      </span>
-                    </div>
-
-                    <div className="row row-gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<ArrowUp size={13} />}
-                        title="تقديم"
-                        disabled={index === 0}
-                        onClick={() => void move(slide, -1)}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<ArrowDown size={13} />}
-                        title="تأخير"
-                        disabled={index === rows.length - 1}
-                        onClick={() => void move(slide, 1)}
-                      />
-                      <Button variant="outline" size="sm" icon={<Pencil size={13} />} onClick={() => setEditing(slide)}>
-                        تعديل
-                      </Button>
-                      <Button variant="ghost" size="sm" icon={<Trash2 size={13} />} onClick={() => setDeleting(slide)} />
-                    </div>
-                  </Card>
-                );
-              })}
+    <CrudScreen<Ad, AdInput>
+      title="سلايدر الرئيسية"
+      subtitle="الإعلانات المتحركة بأعلى الشاشة الرئيسية — عامة أو موجّهة لمحافظة"
+      repo={repos.content.ads}
+      searchable
+      createLabel="إضافة إعلان"
+      createTitle="إضافة إعلان"
+      editTitle="تعديل الإعلان"
+      dialogSize="lg"
+      rowKey={(row) => row.id}
+      labelOf={(row) => row.title}
+      columns={[
+        {
+          key: 'order',
+          header: 'الترتيب',
+          numeric: true,
+          width: 80,
+          render: (row) => <span className="num">{row.order}</span>,
+        },
+        {
+          key: 'image',
+          header: 'الصورة',
+          width: 92,
+          render: (row) => (
+            <button className="thumb-button" title={row.title} onClick={() => setPreview(row)}>
+              <img className="thumb" src={row.imageUrl} alt="" loading="lazy" />
+            </button>
+          ),
+        },
+        {
+          key: 'title',
+          header: 'العنوان',
+          render: (row) => (
+            <div className="col">
+              <span className="strong">{row.title}</span>
+              <span className="fs-12 dim">{row.titleKu || '—'}</span>
             </div>
-          )}
-        </AsyncBlock>
-      </div>
-
-      {editing ? (
-        <SlideDialog
-          slide={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            slides.reload();
-          }}
-        />
-      ) : null}
-
-      {deleting ? (
-        <ConfirmDialog
-          title="حذف السلايد"
-          message={`راح ينحذف "${deleting.titleAr}".`}
-          confirmLabel="حذف"
-          danger
-          pending={busy}
-          onConfirm={() => void runDelete()}
-          onCancel={() => setDeleting(null)}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function SlideDialog({
-  slide,
-  onClose,
-  onSaved,
-}: {
-  slide: Slide | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const repos = useRepos();
-  const { toast } = useToast();
-  const [run, action] = useAction();
-
-  const [tagAr, setTagAr] = useState(slide?.tagAr ?? '');
-  const [titleAr, setTitleAr] = useState(slide?.titleAr ?? '');
-  const [subtitleAr, setSubtitleAr] = useState(slide?.subtitleAr ?? '');
-  const [gradientIndex, setGradientIndex] = useState<GradientIndex>(slide?.gradientIndex ?? 0);
-  const [routeTarget, setRouteTarget] = useState<SlideTarget>(slide?.routeTarget ?? 'none');
-  const [startsAt, setStartsAt] = useState((slide?.startsAt ?? new Date().toISOString()).slice(0, 10));
-  const [endsAt, setEndsAt] = useState((slide?.endsAt ?? new Date().toISOString()).slice(0, 10));
-  const [active, setActive] = useState(slide?.active ?? true);
-
-  const submit = async () => {
-    if (!titleAr.trim()) {
-      toast('اكتب عنوان السلايد', 'error');
-      return;
-    }
-    const ok = await run(() =>
-      repos.content.saveSlide({
-        id: slide?.id,
-        tagAr: tagAr.trim(),
-        titleAr: titleAr.trim(),
-        subtitleAr: subtitleAr.trim(),
-        gradientIndex,
-        routeTarget,
-        startsAt: new Date(startsAt).toISOString(),
-        endsAt: new Date(`${endsAt}T23:59:59`).toISOString(),
-        active,
-        sortOrder: slide?.sortOrder ?? 0,
-      }),
-    );
-    if (ok) {
-      toast(slide ? 'انحفظ السلايد' : 'انضاف السلايد');
-      onSaved();
-    }
-  };
-
-  return (
-    <Modal
-      title={slide ? 'تعديل السلايد' : 'إضافة سلايد'}
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="primary" onClick={() => void submit()} disabled={action.pending}>
-            حفظ
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            إلغاء
-          </Button>
-        </>
+          ),
+        },
+        {
+          key: 'action',
+          header: 'عند الضغط',
+          render: (row) => (
+            <div className="col">
+              <span className="fs-12">{AD_ACTION[row.actionType]}</span>
+              {row.actionValue ? (
+                <span className="fs-11 dim num truncate">{row.actionValue}</span>
+              ) : null}
+            </div>
+          ),
+        },
+        {
+          key: 'target',
+          header: 'الاستهداف',
+          render: (row) =>
+            row.provinceId ? (
+              <Pill tone="neutral">{row.province?.name ?? 'محافظة'}</Pill>
+            ) : (
+              <Pill tone="muted">كل المحافظات</Pill>
+            ),
+        },
+        {
+          key: 'active',
+          header: 'الحالة',
+          width: 96,
+          render: (row) =>
+            row.isActive ? <Pill tone="success">ظاهر</Pill> : <Pill tone="muted">مخفي</Pill>,
+        },
+      ]}
+      blank={() => ({
+        title: '',
+        titleKu: '',
+        image: '',
+        actionType: 'none',
+        actionValue: '',
+        order: 0,
+        isActive: true,
+        provinceId: null,
+      })}
+      toInput={(row) => ({
+        title: row.title,
+        titleKu: row.titleKu,
+        image: row.imageUrl,
+        actionType: row.actionType,
+        actionValue: row.actionValue ?? '',
+        order: row.order,
+        isActive: row.isActive,
+        provinceId: row.provinceId,
+      })}
+      validate={(draft) =>
+        !draft.title.trim()
+          ? 'عنوان الإعلان مطلوب'
+          : !draft.image.trim()
+            ? 'رابط الصورة مطلوب'
+            : draft.actionType !== 'none' && !draft.actionValue?.trim()
+              ? 'حدّد وجهة الضغط'
+              : null
       }
+      form={(draft, set) => (
+        <>
+          <Field label="العنوان بالعربي">
+            <TextInput value={draft.title} onChange={(next) => set('title', next)} />
+          </Field>
+          <Field label="العنوان بالكردي">
+            <TextInput value={draft.titleKu} onChange={(next) => set('titleKu', next)} />
+          </Field>
+
+          <Field label="رابط الصورة" className="span-2">
+            <TextInput
+              type="url"
+              value={draft.image}
+              onChange={(next) => set('image', next)}
+              placeholder="https://…"
+            />
+          </Field>
+          {draft.image.trim() ? (
+            <div className="span-2">
+              <img className="image-preview" src={draft.image} alt="" />
+            </div>
+          ) : null}
+
+          <Field label="عند الضغط">
+            <Select<AdAction>
+              value={draft.actionType ?? 'none'}
+              onChange={(next) => set('actionType', next)}
+              options={(Object.keys(AD_ACTION) as AdAction[]).map((value) => ({
+                value,
+                label: AD_ACTION[value],
+              }))}
+            />
+          </Field>
+          <Field label="وجهة الضغط" hint={ACTION_HINT[draft.actionType ?? 'none']}>
+            <TextInput
+              value={draft.actionValue ?? ''}
+              onChange={(next) => set('actionValue', next)}
+              disabled={(draft.actionType ?? 'none') === 'none'}
+            />
+          </Field>
+
+          <Field label="الاستهداف" hint="خلّيها فارغة حتى يوصل كل المحافظات">
+            <Select<Id>
+              value={draft.provinceId ?? ''}
+              onChange={(next) => set('provinceId', next || null)}
+              options={[{ value: '', label: 'كل المحافظات' }, ...provinceOptions]}
+            />
+          </Field>
+          <Field label="الترتيب" hint="الأصغر يظهر أول">
+            <TextInput
+              type="number"
+              value={draft.order ?? 0}
+              onChange={(next) => set('order', Number(next) || 0)}
+            />
+          </Field>
+          <Field label="الظهور">
+            <Switch
+              checked={draft.isActive ?? true}
+              onChange={(next) => set('isActive', next)}
+              label="ظاهر بالتطبيق"
+            />
+          </Field>
+        </>
+      )}
     >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
-
-        <Field label="الشارة">
-          <TextInput value={tagAr} onChange={setTagAr} placeholder="عرض خاص" />
-        </Field>
-        <Field label="العنوان">
-          <TextInput value={titleAr} onChange={setTitleAr} />
-        </Field>
-        <Field label="النص التوضيحي">
-          <TextArea value={subtitleAr} onChange={setSubtitleAr} rows={2} />
-        </Field>
-
-        <Field label="عند الضغط يفتح">
-          <Select
-            value={routeTarget}
-            onChange={setRouteTarget}
-            options={(Object.keys(SLIDE_TARGET) as SlideTarget[]).map((key) => ({
-              value: key,
-              label: SLIDE_TARGET[key],
-            }))}
-          />
-        </Field>
-
-        <Field label="اللون">
-          <div className="row row-gap-2 wrap">
-            {GRADIENT_SWATCHES.map((swatch, index) => (
-              <button
-                key={index}
-                type="button"
-                onClick={() => setGradientIndex(index as GradientIndex)}
-                style={{
-                  width: 48,
-                  height: 32,
-                  borderRadius: 'var(--r-chip)',
-                  background: swatch,
-                  border: gradientIndex === index ? '2px solid var(--brand-deep)' : '1px solid var(--hairline)',
-                  cursor: 'pointer',
-                }}
-              />
-            ))}
+      {preview ? (
+        <Modal title={preview.title} size="lg" onClose={() => setPreview(null)}>
+          <img className="image-preview" src={preview.imageUrl} alt={preview.title} />
+          <div className="mt-3">
+            <KeyValue
+              rows={[
+                ['العنوان بالكردي', preview.titleKu || '—'],
+                ['عند الضغط', AD_ACTION[preview.actionType]],
+                ['الوجهة', preview.actionValue ?? '—'],
+                [
+                  'الاستهداف',
+                  preview.provinceId ? (preview.province?.name ?? 'محافظة') : 'كل المحافظات',
+                ],
+              ]}
+            />
           </div>
-        </Field>
-
-        <div className="grid grid-form">
-          <Field label="يبدأ في">
-            <TextInput type="date" value={startsAt} onChange={setStartsAt} />
-          </Field>
-          <Field label="ينتهي في">
-            <TextInput type="date" value={endsAt} onChange={setEndsAt} />
-          </Field>
-        </div>
-
-        <Switch checked={active} onChange={setActive} label="السلايد مفعّل" />
-      </div>
-    </Modal>
+        </Modal>
+      ) : null}
+    </CrudScreen>
   );
 }

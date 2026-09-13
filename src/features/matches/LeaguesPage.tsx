@@ -1,211 +1,249 @@
 /**
- * Leagues and their teams.
+ * Leagues and teams.
  *
- * Everything on this screen belongs to the fixtures feed. Nothing here adds,
- * edits or deletes a league or a team — a wrong team name is fixed upstream
- * and arrives on the next sync, not typed over locally, because a local edit
- * would be silently reverted the moment the feed disagreed.
+ * Both are mirrored from API-Football and neither is authored here, so the
+ * create button is hidden: a row added by hand would carry no `externalId` and
+ * the next sync would create the provider's own copy beside it. Editing is
+ * still allowed, but only the columns the console owns are worth touching —
+ * a league's display order and whether the app shows it at all.
  *
- * Exactly one control is ours: whether a league reaches the app at all. The
- * feed keeps sending a switched-off league's fixtures and the console keeps
- * mirroring them — customers just never see them.
+ * The sync itself lives on the API screen; this is where its result is read.
  */
 
 import { useState } from 'react';
-import { ClipboardList, RefreshCw, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Field, Notice, Pill, Select, Switch, TextInput } from '@/components/ui';
+import { useAsync } from '@/app/useAsync';
 import { useRepos } from '@/app/RepositoryContext';
-import { useAction, useAsync } from '@/app/useAsync';
-import { useToast } from '@/app/ToastContext';
-import { PageHeader } from '@/components/page';
-import {
-  AsyncBlock,
-  Button,
-  Card,
-  CardHead,
-  EmptyState,
-  Notice,
-  Pill,
-  SearchInput,
-  Switch,
-  TeamCrest,
-} from '@/components/ui';
-import type { Id, League } from '@/types';
-import { formatNumber, relativeAr } from '@/lib/format';
-import { matchesSearch } from '@/lib/utils';
+import type { Id, League, Team } from '@/types';
+import type { LeagueInput, TeamInput } from '@/data/repositories/types';
+import { Tabs } from '@/components/ui';
+import { CrudScreen } from '../shared/CrudScreen';
 
 export function LeaguesPage() {
-  const repos = useRepos();
-  const { toast } = useToast();
-
-  const [selectedLeagueId, setSelectedLeagueId] = useState<Id | null>(null);
-  const [search, setSearch] = useState('');
-  const [syncing, setSyncing] = useState(false);
-  const [run, action] = useAction();
-
-  const leagues = useAsync(() => repos.catalog.leagues(), []);
-  const teams = useAsync(() => repos.catalog.teams(), []);
-  const settings = useAsync(() => repos.admin.settings(), []);
-
-  // The first league stands in until the operator picks one.
-  const activeLeagueId = selectedLeagueId ?? leagues.data?.[0]?.id ?? null;
-  const activeLeague = leagues.data?.find((l) => l.id === activeLeagueId) ?? null;
-
-  const leagueTeams = (teams.data ?? [])
-    .filter((team) => team.leagueId === activeLeagueId)
-    .filter((team) => matchesSearch(team.nameAr, search));
-
-  const teamCount = (leagueId: Id) =>
-    (teams.data ?? []).filter((t) => t.leagueId === leagueId).length;
-
-  const toggleLeague = async (league: League, active: boolean) => {
-    const ok = await run(() => repos.catalog.setLeagueActive(league.id, active));
-    if (ok) {
-      toast(active ? `${league.nameAr} صار يظهر بالتطبيق` : `${league.nameAr} انخفى من التطبيق`);
-      leagues.reload();
-    }
-  };
-
-  const runSync = async () => {
-    setSyncing(true);
-    try {
-      await repos.matches.sync();
-      toast('انمزامنت الدوريات والفرق من المزوّد');
-      leagues.reload();
-      teams.reload();
-      settings.reload();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'تعذّرت المزامنة', 'error');
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const feed = settings.data?.matchFeed;
+  const [tab, setTab] = useState<'leagues' | 'teams'>('leagues');
 
   return (
     <>
-      <PageHeader
-        title="الدوريات والفرق"
-        subtitle="تجي جاهزة من مزوّد المباريات — للعرض فقط"
-        actions={
-          <Button
-            variant="primary"
-            icon={<RefreshCw size={16} />}
-            disabled={syncing}
-            onClick={() => void runSync()}
-          >
-            {syncing ? 'جاري المزامنة…' : 'مزامنة الآن'}
-          </Button>
-        }
-      />
-
-      <div className="page col" style={{ gap: 'var(--sp-4)' }}>
-        {feed ? (
-          <Notice tone={feed.lastSyncOk === false ? 'danger' : 'info'}>
-            الدوريات والفرق ما تنضاف ولا تنعدّل من هنا — تجي من{' '}
-            <span className="strong">{feed.providerName}</span>. أي اسم غلط ينصلّح عند المزوّد ويوصل
-            بالمزامنة الجاية.
-            {feed.lastSyncAt ? (
-              <>
-                {' '}آخر مزامنة <span className="num">{relativeAr(feed.lastSyncAt)}</span>.
-              </>
-            ) : null}
-          </Notice>
-        ) : null}
-
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
-
-        <div className="split split-rail">
-          <Card>
-            <CardHead title="الدوريات" subtitle={`${formatNumber(leagues.data?.length ?? 0)} دوري`} />
-            <AsyncBlock
-              state={leagues}
-              emptyWhen={(rows) => rows.length === 0}
-              empty={
-                <EmptyState
-                  title="ما بيها دوريات"
-                  hint="سوّي مزامنة لجلب الدوريات من المزوّد."
-                  icon={<ClipboardList size={22} />}
-                />
-              }
-            >
-              {(rows) => (
-                <div className="col">
-                  {rows.map((league) => (
-                    <button
-                      key={league.id}
-                      className={`nav-link${league.id === activeLeagueId ? ' active' : ''}`}
-                      style={{ width: '100%', textAlign: 'start' }}
-                      onClick={() => {
-                        setSelectedLeagueId(league.id);
-                        setSearch('');
-                      }}
-                    >
-                      <ClipboardList size={16} />
-                      <span className="grow truncate">{league.nameAr}</span>
-                      <span className="fs-11 dim num">{formatNumber(teamCount(league.id))}</span>
-                      {!league.active ? <Pill tone="muted">مخفي</Pill> : null}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </AsyncBlock>
-          </Card>
-
-          <Card>
-            <CardHead
-              title={activeLeague ? `فرق ${activeLeague.nameAr}` : 'الفرق'}
-              subtitle={activeLeague?.country}
-              actions={
-                activeLeague ? (
-                  <div className="row row-gap-3">
-                    <span className="fs-11 dim num" title="معرّف الدوري عند المزوّد">
-                      {activeLeague.externalId}
-                    </span>
-                    <Switch
-                      checked={activeLeague.active}
-                      disabled={action.pending}
-                      onChange={(next) => void toggleLeague(activeLeague, next)}
-                      label="يظهر بالتطبيق"
-                    />
-                  </div>
-                ) : null
-              }
-            />
-
-            <div className="card-pad col" style={{ gap: 'var(--sp-4)' }}>
-              <SearchInput value={search} onChange={setSearch} placeholder="بحث باسم الفريق…" />
-
-              <AsyncBlock state={teams}>
-                {() =>
-                  leagueTeams.length === 0 ? (
-                    <EmptyState
-                      title="ما بيها فرق بهذا الدوري"
-                      hint="الفرق توصل مع مزامنة المزوّد."
-                      icon={<Users size={22} />}
-                    />
-                  ) : (
-                    <div className="grid grid-2">
-                      {leagueTeams.map((team) => (
-                        <div key={team.id} className="row row-gap-3 card card-pad">
-                          <TeamCrest name={team.nameAr} seed={team.crestSeed} size={34} />
-                          <div className="col grow" style={{ lineHeight: 1.35, minWidth: 0 }}>
-                            <span className="fs-13 strong truncate">{team.nameAr}</span>
-                            <span className="fs-11 dim">{team.shortNameAr}</span>
-                          </div>
-                          <span className="fs-11 dim num" title="معرّف الفريق عند المزوّد">
-                            {team.externalId}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )
-                }
-              </AsyncBlock>
-            </div>
-          </Card>
-        </div>
+      <div className="page-wash" style={{ paddingBottom: 0 }}>
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: 'leagues', label: 'الدوريات' },
+            { value: 'teams', label: 'الفرق' },
+          ]}
+        />
       </div>
+      {tab === 'leagues' ? <LeaguesTab /> : <TeamsTab />}
     </>
+  );
+}
+
+/** Says, once per screen, that the rows come from the feed. */
+function MirroredNotice({ what }: { what: string }) {
+  return (
+    <Notice tone="info">
+      {what} تجي من مزوّد المباريات (API-Football) وتتحدّث بالمزامنة، فما ننشئها يدوياً.{' '}
+      <Link to="/api">شغّل مزامنة من شاشة الـ API</Link>.
+    </Notice>
+  );
+}
+
+function LeaguesTab() {
+  const repos = useRepos();
+  const countries = useAsync(() => repos.geo.countries.all(), []);
+  const countryOptions = (countries.data ?? []).map((row) => ({ value: row.id, label: row.name }));
+
+  const [countryId, setCountryId] = useState<Id>('');
+
+  return (
+    <CrudScreen<League, LeagueInput, { countryId?: Id }>
+      title="الدوريات"
+      subtitle="ترتيب الدوريات بالتطبيق وتفعيلها — مصدرها المزامنة"
+      repo={repos.matches.leagues}
+      searchable
+      readOnlyCreate
+      filter={countryId ? { countryId } : undefined}
+      filters={
+        <Select<Id>
+          value={countryId}
+          onChange={setCountryId}
+          options={[{ value: '', label: 'كل الدول' }, ...countryOptions]}
+        />
+      }
+      editTitle="تعديل الدوري"
+      rowKey={(row) => row.id}
+      labelOf={(row) => row.name}
+      columns={[
+        {
+          key: 'order',
+          header: 'الترتيب',
+          numeric: true,
+          width: 80,
+          render: (row) => <span className="num">{row.order}</span>,
+        },
+        {
+          key: 'name',
+          header: 'الدوري',
+          render: (row) => <span className="strong">{row.name}</span>,
+        },
+        {
+          key: 'country',
+          header: 'الدولة',
+          render: (row) => row.country?.name ?? '—',
+        },
+        {
+          key: 'external',
+          header: 'معرّف المزوّد',
+          numeric: true,
+          render: (row) =>
+            row.externalId === null ? (
+              <Pill tone="warning">يدوي</Pill>
+            ) : (
+              <span className="num dim">{row.externalId}</span>
+            ),
+        },
+        {
+          key: 'active',
+          header: 'الحالة',
+          width: 96,
+          render: (row) =>
+            row.isActive ? <Pill tone="success">فعّال</Pill> : <Pill tone="muted">مخفي</Pill>,
+        },
+      ]}
+      blank={() => ({ name: '', countryId: countryOptions[0]?.value ?? '', order: 0, isActive: true })}
+      toInput={(row) => ({
+        name: row.name,
+        countryId: row.countryId,
+        order: row.order,
+        isActive: row.isActive,
+      })}
+      validate={(draft) => (!draft.name.trim() ? 'اسم الدوري مطلوب' : null)}
+      form={(draft, set) => (
+        <>
+          <Field label="اسم الدوري">
+            <TextInput value={draft.name} onChange={(next) => set('name', next)} />
+          </Field>
+          <Field label="الدولة">
+            <Select<Id>
+              value={draft.countryId}
+              onChange={(next) => set('countryId', next)}
+              options={countryOptions}
+            />
+          </Field>
+          <Field label="الترتيب" hint="الأصغر يظهر أول بالتطبيق">
+            <TextInput
+              type="number"
+              value={draft.order ?? 0}
+              onChange={(next) => set('order', Number(next) || 0)}
+            />
+          </Field>
+          <Field label="الظهور" hint="الدوري المخفي ما تظهر مبارياته أبداً">
+            <Switch
+              checked={draft.isActive ?? true}
+              onChange={(next) => set('isActive', next)}
+              label="فعّال بالتطبيق"
+            />
+          </Field>
+        </>
+      )}
+    >
+      <MirroredNotice what="الدوريات" />
+    </CrudScreen>
+  );
+}
+
+function TeamsTab() {
+  const repos = useRepos();
+  const leagues = useAsync(() => repos.matches.leagues.all(), []);
+  const leagueOptions = (leagues.data ?? []).map((row) => ({ value: row.id, label: row.name }));
+
+  const [leagueId, setLeagueId] = useState<Id>('');
+
+  return (
+    <CrudScreen<Team, TeamInput, { leagueId?: Id }>
+      title="الفرق"
+      subtitle="فرق كل دوري وشعاراتها — مصدرها المزامنة"
+      repo={repos.matches.teams}
+      searchable
+      readOnlyCreate
+      filter={leagueId ? { leagueId } : undefined}
+      filters={
+        <Select<Id>
+          value={leagueId}
+          onChange={setLeagueId}
+          options={[{ value: '', label: 'كل الدوريات' }, ...leagueOptions]}
+        />
+      }
+      editTitle="تعديل الفريق"
+      rowKey={(row) => row.id}
+      labelOf={(row) => row.name}
+      columns={[
+        {
+          key: 'logo',
+          header: '',
+          width: 52,
+          render: (row) =>
+            row.logoUrl ? (
+              <img className="team-logo" src={row.logoUrl} alt="" loading="lazy" />
+            ) : (
+              <span className="dim">—</span>
+            ),
+        },
+        {
+          key: 'name',
+          header: 'الفريق',
+          render: (row) => <span className="strong">{row.name}</span>,
+        },
+        {
+          key: 'league',
+          header: 'الدوري',
+          render: (row) => row.league?.name ?? '—',
+        },
+        {
+          key: 'external',
+          header: 'معرّف المزوّد',
+          numeric: true,
+          render: (row) =>
+            row.externalId === null ? (
+              <Pill tone="warning">يدوي</Pill>
+            ) : (
+              <span className="num dim">{row.externalId}</span>
+            ),
+        },
+      ]}
+      blank={() => ({ name: '', leagueId: leagueId || leagueOptions[0]?.value || '', logo: '' })}
+      toInput={(row) => ({
+        name: row.name,
+        leagueId: row.leagueId,
+        logo: row.logoUrl ?? '',
+      })}
+      validate={(draft) => (!draft.name.trim() ? 'اسم الفريق مطلوب' : null)}
+      form={(draft, set) => (
+        <>
+          <Field label="اسم الفريق">
+            <TextInput value={draft.name} onChange={(next) => set('name', next)} />
+          </Field>
+          <Field label="الدوري">
+            <Select<Id>
+              value={draft.leagueId}
+              onChange={(next) => set('leagueId', next)}
+              options={leagueOptions}
+            />
+          </Field>
+          <Field label="رابط الشعار" className="span-2">
+            <TextInput
+              type="url"
+              value={draft.logo ?? ''}
+              onChange={(next) => set('logo', next)}
+              placeholder="https://…"
+            />
+          </Field>
+        </>
+      )}
+    >
+      <MirroredNotice what="الفرق" />
+    </CrudScreen>
   );
 }

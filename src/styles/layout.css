@@ -255,6 +255,16 @@
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+/**
+ * A field that takes the whole dialog width.
+ *
+ * Long-form inputs — an answer, a push body, a URL — read badly in a 200px
+ * column next to a number field, so they opt out of the auto-fit grid.
+ */
+.span-2 {
+  grid-column: 1 / -1;
+}
+
 .split {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);

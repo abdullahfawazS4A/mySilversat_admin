@@ -5,23 +5,18 @@
 
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { LogOut, Menu, RefreshCw, Satellite, Search, User } from 'lucide-react';
+import { LogOut, Menu, Satellite, Search, User } from 'lucide-react';
 import { useAuth } from '@/app/AuthContext';
-import { useRepos } from '@/app/RepositoryContext';
-import { useToast } from '@/app/ToastContext';
 import { NAV_GROUPS, titleForPath } from './navigation';
 import { CommandPalette } from './CommandPalette';
-import { Button, ConfirmDialog, Skeleton } from '@/components/ui';
+import { Button, Pill, Skeleton } from '@/components/ui';
+import { ADMIN_ROLE } from '@/lib/labels';
 import { cx } from '@/lib/utils';
 
 export function AdminShell() {
   const { status, session, signOut } = useAuth();
   const location = useLocation();
-  const repos = useRepos();
-  const { toast } = useToast();
   const [collapsed, setCollapsed] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Ctrl/⌘+K from anywhere, including from inside a text field — the shortcut
@@ -53,20 +48,6 @@ export function AdminShell() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  const runReset = async () => {
-    setResetting(true);
-    try {
-      await repos.admin.resetMockData();
-      toast('رجعت البيانات التجريبية للحالة الأصلية');
-      // A full reload is the honest way to drop every cached screen state.
-      window.location.reload();
-    } catch {
-      toast('تعذّرت إعادة التعيين', 'error');
-    } finally {
-      setResetting(false);
-      setConfirmReset(false);
-    }
-  };
 
   return (
     <div className={cx('shell', collapsed && 'collapsed')}>
@@ -132,22 +113,18 @@ export function AdminShell() {
             <kbd className="kbd">K</kbd>
           </button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<RefreshCw size={15} />}
-            title="إعادة تحميل البيانات التجريبية"
-            onClick={() => setConfirmReset(true)}
-          />
 
           <div className="row row-gap-2">
             <span className="chip-icon" style={{ width: 32, height: 32 }}>
               <User size={16} />
             </span>
             <div className="col" style={{ lineHeight: 1.3 }}>
-              <span className="fs-12 strong">{session.admin.fullName}</span>
-              <span className="fs-11 dim">{session.admin.username}</span>
+              <span className="fs-12 strong">{session.admin.name}</span>
+              <span className="fs-11 dim num">{session.admin.phone}</span>
             </div>
+            <Pill tone={ADMIN_ROLE[session.admin.role].tone}>
+              {ADMIN_ROLE[session.admin.role].label}
+            </Pill>
           </div>
         </header>
 
@@ -156,17 +133,6 @@ export function AdminShell() {
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
-      {confirmReset ? (
-        <ConfirmDialog
-          title="إعادة تحميل البيانات التجريبية"
-          message="كل التعديلات اللي سويتها بهذه الجلسة راح تنمسح وترجع البيانات لحالتها الأصلية. تريد تكمل؟"
-          confirmLabel="إعادة التعيين"
-          danger
-          pending={resetting}
-          onConfirm={() => void runReset()}
-          onCancel={() => setConfirmReset(false)}
-        />
-      ) : null}
     </div>
   );
 }

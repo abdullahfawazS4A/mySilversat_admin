@@ -1,14 +1,18 @@
 /**
  * Matches.
  *
- * Fixtures are mirrored from the upstream feed — nothing here creates or
- * deletes one — so this screen answers a single operator question: **out of
- * every fixture the feed gave us, which ones do we open for predictions?**
+ * Fixtures are mirrored from API-Football — nothing here creates or deletes
+ * one — so this screen answers a single operator question: **out of every
+ * fixture the feed gave us, which ones do we open for predictions?**
  *
  * The prediction switch is therefore in the table itself, not buried in a
  * dialog, and it works in bulk: a typical evening means opening five fixtures
  * at once. Everything else on the row is feed data shown read-only, with one
  * escape hatch — correcting a wrong score, because points are settled on it.
+ *
+ * Scoring is offered on every finished fixture rather than hidden once it has
+ * run. The API only pays out picks it has not paid out before, so pressing it
+ * twice is harmless — and there is no `settledAt` column to hide it by.
  */
 
 import { useMemo, useState } from 'react';
@@ -17,7 +21,6 @@ import {
   Flag,
   Lock,
   Pencil,
-  Pin,
   RefreshCw,
   Unlock,
   Users,
@@ -39,13 +42,20 @@ import {
   Switch,
   TeamCrest,
 } from '@/components/ui';
-import type { Id, MatchState, MatchView } from '@/types';
-import { MATCH_STATE } from '@/lib/labels';
-import { countdownAr, formatDateAr, formatTimeAr, relativeAr } from '@/lib/format';
+import type { Id, Match, MatchStatus } from '@/types';
+import { MATCH_STATUS } from '@/lib/labels';
+import { countdownAr, formatDateAr, formatTimeAr } from '@/lib/format';
 import { ScoreOverrideDialog } from './ScoreOverrideDialog';
 import { MatchPredictionsDialog } from './MatchPredictionsDialog';
 
 type PredictFilter = 'all' | 'open' | 'closed';
+
+/** A crest seed from the team id, so the same team always gets the same look. */
+function crestSeed(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return hash;
+}
 
 export function MatchesPage() {
   const repos = useRepos();
@@ -53,31 +63,30 @@ export function MatchesPage() {
 
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
-  const [state, setState] = useState<MatchState | 'all'>('all');
+  const [status, setStatus] = useState<MatchStatus | 'all'>('all');
   const [predictFilter, setPredictFilter] = useState<PredictFilter>('all');
   const [leagueId, setLeagueId] = useState<Id | 'all'>('all');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const [scoring, setScoring] = useState<MatchView | null>(null);
-  const [viewingPicks, setViewingPicks] = useState<MatchView | null>(null);
-  const [settling, setSettling] = useState<MatchView | null>(null);
+  const [scoring, setScoring] = useState<Match | null>(null);
+  const [viewingPicks, setViewingPicks] = useState<Match | null>(null);
+  const [settling, setSettling] = useState<Match | null>(null);
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
-  const leagues = useAsync(() => repos.catalog.leagues(), []);
-  const settings = useAsync(() => repos.admin.settings(), []);
+  const leagues = useAsync(() => repos.matches.leagues.all(), []);
   const matches = useAsync(
     () =>
-      repos.matches.list({
+      repos.matches.matches.list({
         search: debounced,
-        state,
-        predictFilter,
+        status: status === 'all' ? undefined : status,
         leagueId: leagueId === 'all' ? undefined : leagueId,
+        isOpenForPrediction: predictFilter === 'all' ? undefined : predictFilter === 'open',
         page,
         pageSize: 25,
       }),
-    [debounced, state, predictFilter, leagueId, page],
+    [debounced, status, predictFilter, leagueId, page],
   );
 
   const refresh = () => {
@@ -85,16 +94,21 @@ export function MatchesPage() {
     setSelected(new Set());
   };
 
+  /**
+   * Pulls fixtures, then live scores.
+   *
+   * Two calls because the feed splits them: the fixtures sync brings in new
+   * rows and their kickoff times, the live sync only updates scores on
+   * fixtures already in the table. Running them in that order means a fixture
+   * that appeared minutes ago still gets its current score.
+   */
   const runSync = async () => {
     setSyncing(true);
     try {
-      const result = await repos.matches.sync();
-      toast(
-        result.matchesUpdated > 0
-          ? `انمزامنت ${result.matchesUpdated} مباراة من المزوّد`
-          : 'المباريات محدّثة — ما بيها جديد',
-      );
-      settings.reload();
+      const fixtures = await repos.sync.syncFixtures();
+      await repos.sync.syncLive();
+      const changed = (fixtures.created ?? 0) + (fixtures.updated ?? 0);
+      toast(changed > 0 ? `انمزامنت ${changed} مباراة من المزوّد` : 'المباريات محدّثة — ما بيها جديد');
       refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : 'تعذّرت المزامنة', 'error');
@@ -103,12 +117,12 @@ export function MatchesPage() {
     }
   };
 
-  const toggleOpen = async (match: MatchView, open: boolean) => {
+  const toggleOpen = async (match: Match, open: boolean) => {
     try {
-      await repos.matches.setOpenForPredict(match.id, open);
+      await repos.matches.matches.setOpenForPrediction(match.id, open);
       toast(
         open
-          ? `انفتح التوقع على ${match.homeTeam.nameAr} ضد ${match.awayTeam.nameAr}`
+          ? `انفتح التوقع على ${match.homeTeam?.name ?? ''} ضد ${match.awayTeam?.name ?? ''}`
           : 'انغلق التوقع على المباراة',
       );
       refresh();
@@ -120,9 +134,11 @@ export function MatchesPage() {
   const bulkOpen = async (open: boolean) => {
     setBusy(true);
     try {
-      await repos.matches.bulkSetOpenForPredict([...selected], open);
+      await repos.matches.matches.bulkSetOpenForPrediction([...selected], open);
       toast(`${open ? 'انفتح' : 'انغلق'} التوقع على ${selected.size} مباراة`);
       refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'تعذّر التغيير', 'error');
     } finally {
       setBusy(false);
     }
@@ -132,8 +148,12 @@ export function MatchesPage() {
     if (!settling) return;
     setBusy(true);
     try {
-      const result = await repos.matches.settle(settling.id);
-      toast(`تم احتساب ${result.settled} توقع — ${result.pointsAwarded} نقطة`);
+      const result = await repos.predictions.scoreMatch(settling.id);
+      toast(
+        result.scored > 0
+          ? `انحسبت نقاط ${result.scored} توقع`
+          : 'ماكو توقعات جديدة تنحسب على هذي المباراة',
+      );
       setSettling(null);
       refresh();
     } catch (err) {
@@ -143,57 +163,56 @@ export function MatchesPage() {
     }
   };
 
-  const columns = useMemo<Column<MatchView>[]>(
+  const columns = useMemo<Column<Match>[]>(
     () => [
       {
         key: 'teams',
         header: 'المباراة',
         render: (match) => (
           <div className="row row-gap-3">
-            <TeamCrest name={match.homeTeam.nameAr} seed={match.homeTeam.crestSeed} />
+            <TeamCrest
+              name={match.homeTeam?.name ?? '—'}
+              seed={crestSeed(match.homeTeamId)}
+            />
             <div className="col" style={{ lineHeight: 1.35 }}>
               <span className="fs-13 strong">
-                {match.homeTeam.nameAr} <span className="dim">ضد</span> {match.awayTeam.nameAr}
+                {match.homeTeam?.name ?? '—'} <span className="dim">ضد</span>{' '}
+                {match.awayTeam?.name ?? '—'}
               </span>
-              <span className="fs-11 dim">{match.league.nameAr}</span>
+              <span className="fs-11 dim">{match.league?.name ?? ''}</span>
             </div>
-            <TeamCrest name={match.awayTeam.nameAr} seed={match.awayTeam.crestSeed} size={26} />
-            {match.featured ? <Pin size={13} style={{ color: 'var(--brand-primary)' }} /> : null}
+            <TeamCrest
+              name={match.awayTeam?.name ?? '—'}
+              seed={crestSeed(match.awayTeamId)}
+              size={26}
+            />
           </div>
         ),
       },
       {
-        key: 'kickoffAt',
+        key: 'matchAt',
         header: 'موعد الانطلاق',
-        sortable: true,
         render: (match) => (
           <div className="col" style={{ lineHeight: 1.35 }}>
-            <span className="fs-13">{formatDateAr(match.kickoffAt)}</span>
-            <span className="fs-11 dim num">{formatTimeAr(match.kickoffAt)}</span>
+            <span className="fs-13">{formatDateAr(match.matchAt)}</span>
+            <span className="fs-11 dim num">{formatTimeAr(match.matchAt)}</span>
           </div>
         ),
       },
       {
-        key: 'state',
+        key: 'status',
         header: 'الحالة',
         render: (match) => {
-          const meta = MATCH_STATE[match.state];
+          const meta = MATCH_STATUS[match.status];
           return (
-            <div className="col" style={{ gap: 3 }}>
-              <div className="row row-gap-2">
-                <Pill tone={meta.tone} dot={match.state === 'live'}>
-                  {meta.label}
-                </Pill>
-                {match.homeScore !== null && match.awayScore !== null ? (
-                  <span className="fs-13 strong num">
-                    {match.homeScore} – {match.awayScore}
-                    {match.liveMinute ? <span className="dim"> {match.liveMinute}</span> : null}
-                  </span>
-                ) : null}
-              </div>
-              {match.scoreOverridden ? (
-                <span className="fs-11" style={{ color: 'var(--tone-warning-fg, inherit)' }}>
-                  نتيجة مثبتة يدوياً
+            <div className="row row-gap-2">
+              <Pill tone={meta.tone} dot={match.status === 'live'}>
+                {meta.label}
+              </Pill>
+              {match.homeScore !== null && match.awayScore !== null ? (
+                <span className="fs-13 strong num">
+                  {match.homeScore} – {match.awayScore}
+                  {match.currentMinute ? <span className="dim"> {match.currentMinute}′</span> : null}
                 </span>
               ) : null}
             </div>
@@ -201,17 +220,17 @@ export function MatchesPage() {
         },
       },
       {
-        key: 'openForPredict',
+        key: 'isOpenForPrediction',
         header: 'مفتوحة للتوقع',
         width: 168,
         render: (match) => (
           <div className="col" style={{ gap: 3 }}>
             <Switch
-              checked={match.openForPredict}
-              disabled={!match.openForPredict && match.state !== 'scheduled'}
+              checked={match.isOpenForPrediction}
+              disabled={!match.isOpenForPrediction && match.status !== 'scheduled'}
               onChange={(next) => void toggleOpen(match, next)}
               title={
-                match.state !== 'scheduled' && !match.openForPredict
+                match.status !== 'scheduled' && !match.isOpenForPrediction
                   ? 'ما تنفتح إلا على مباراة مجدولة'
                   : undefined
               }
@@ -221,10 +240,10 @@ export function MatchesPage() {
               read as "يقفل بعد مغلق" on every finished fixture. Past and future
               are now two different sentences.
             */}
-            {match.openForPredict && match.predictionCloseAt ? (
-              new Date(match.predictionCloseAt).getTime() > Date.now() ? (
+            {match.isOpenForPrediction && match.predictionClosesAt ? (
+              new Date(match.predictionClosesAt).getTime() > Date.now() ? (
                 <span className="fs-11 dim">
-                  يقفل بعد <span className="num">{countdownAr(match.predictionCloseAt)}</span>
+                  يقفل بعد <span className="num">{countdownAr(match.predictionClosesAt)}</span>
                 </span>
               ) : (
                 <span className="fs-11 dim">انقفل التوقع</span>
@@ -234,35 +253,30 @@ export function MatchesPage() {
         ),
       },
       {
-        key: 'predictionCount',
+        key: 'predictions',
         header: 'التوقعات',
-        numeric: true,
-        sortable: true,
-        width: 96,
-        render: (match) =>
-          match.predictionCount > 0 ? (
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                setViewingPicks(match);
-              }}
-            >
-              <Users size={13} />
-              <span className="num">{match.predictionCount}</span>
-            </button>
-          ) : (
-            <span className="dim">—</span>
-          ),
+        width: 104,
+        render: (match) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Users size={13} />}
+            title="شوف توزيع التوقعات"
+            onClick={(event) => {
+              event.stopPropagation();
+              setViewingPicks(match);
+            }}
+          >
+            عرض
+          </Button>
+        ),
       },
       {
-        key: 'settled',
+        key: 'settle',
         header: 'النقاط',
         width: 120,
         render: (match) =>
-          match.settledAt ? (
-            <Pill tone="success">محتسبة</Pill>
-          ) : match.state === 'finished' && match.predictionCount > 0 ? (
+          match.status === 'finished' ? (
             <Button
               variant="subtle"
               size="sm"
@@ -293,9 +307,6 @@ export function MatchesPage() {
     [],
   );
 
-  const openCount = matches.data?.items.filter((m) => m.openForPredict).length ?? 0;
-  const feed = settings.data?.matchFeed;
-
   return (
     <>
       <PageHeader
@@ -313,21 +324,11 @@ export function MatchesPage() {
         }
       />
 
-      <div className="page col" style={{ gap: 'var(--sp-4)' }}>
-        {feed ? (
-          <Notice tone={feed.lastSyncOk === false ? 'danger' : 'info'}>
-            المباريات والفرق تجي من <span className="strong">{feed.providerName}</span> — ما تنضاف
-            يدوياً.{' '}
-            {feed.lastSyncAt ? (
-              <>
-                آخر مزامنة <span className="num">{relativeAr(feed.lastSyncAt)}</span>
-                {feed.lastSyncMessageAr ? ` — ${feed.lastSyncMessageAr}` : ''}.
-              </>
-            ) : (
-              'ما صارت مزامنة بعد.'
-            )}
-          </Notice>
-        ) : null}
+      <div className="page">
+        <Notice tone="info">
+          المباريات والفرق تجي من <span className="strong">API-Football</span> — ما تنضاف يدوياً.
+          المزامنة تجيب المباريات الجديدة وتحدّث نتائج المباريات المباشرة.
+        </Notice>
 
         <Card>
           <Toolbar>
@@ -341,23 +342,21 @@ export function MatchesPage() {
               }}
               options={[
                 { value: 'all' as const, label: 'كل الدوريات' },
-                ...(leagues.data ?? []).map((league) => ({ value: league.id, label: league.nameAr })),
+                ...(leagues.data ?? []).map((league) => ({ value: league.id, label: league.name })),
               ]}
             />
 
             <Select
-              value={state}
+              value={status}
               onChange={(next) => {
-                setState(next);
+                setStatus(next);
                 setPage(1);
               }}
               options={[
                 { value: 'all' as const, label: 'كل الحالات' },
-                { value: 'scheduled' as const, label: 'مجدولة' },
-                { value: 'live' as const, label: 'مباشر' },
-                { value: 'finished' as const, label: 'منتهية' },
-                { value: 'postponed' as const, label: 'مؤجلة' },
-                { value: 'cancelled' as const, label: 'ملغاة' },
+                { value: 'scheduled' as const, label: MATCH_STATUS.scheduled.label },
+                { value: 'live' as const, label: MATCH_STATUS.live.label },
+                { value: 'finished' as const, label: MATCH_STATUS.finished.label },
               ]}
             />
           </Toolbar>
@@ -371,7 +370,7 @@ export function MatchesPage() {
               }}
               items={[
                 { value: 'all', label: 'الكل' },
-                { value: 'open', label: 'مفتوحة للتوقع', count: openCount },
+                { value: 'open', label: 'مفتوحة للتوقع' },
                 { value: 'closed', label: 'مغلقة' },
               ]}
             />
@@ -462,9 +461,12 @@ export function MatchesPage() {
           title="احتساب نقاط المباراة"
           message={
             <>
-              راح تنحسب النقاط لـ <span className="num strong">{settling.predictionCount}</span> توقع على
-              نتيجة <span className="num strong">{settling.homeScore} – {settling.awayScore}</span>، وتنضاف
-              لسجل نقاط كل مشترك. تكدر تتراجع عنها لاحقاً إذا طلعت النتيجة غلط.
+              راح تنحسب نقاط التوقعات على نتيجة{' '}
+              <span className="num strong">
+                {settling.homeScore} – {settling.awayScore}
+              </span>
+              ، وتنضاف لرصيد كل مشترك. التوقعات المحتسبة سابقاً ما تتأثر، فإذا النتيجة غلط صحّحها
+              الأول.
             </>
           }
           confirmLabel="احتساب النقاط"

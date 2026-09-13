@@ -1,334 +1,231 @@
 /**
- * Dashboard.
+ * The dashboard.
  *
- * Answers, in order: is money coming in, are subscriptions healthy, is the
- * prediction game running, and what changed today. Anything that needs a
- * decision links straight to the screen that makes it.
+ * One `summary()` call backs the whole screen. There is no summary endpoint on
+ * the API, so the repository composes it out of list routes — which means this
+ * screen should ask for it once and never fan out reads of its own.
+ *
+ * The one figure worth reading carefully is revenue: it is sold codes valued at
+ * their category's current list price, not money collected, because the API has
+ * no ledger. The tile says so rather than implying a number it cannot support.
  */
 
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
-  Banknote,
-  BellRing,
   Boxes,
-  CalendarClock,
-  CircleDot,
+  CircleDollarSign,
   Radio,
+  ServerCog,
   Target,
-  Ticket,
   Tv,
-  UserPlus,
   Users,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAsync } from '@/app/useAsync';
 import { PageHeader } from '@/components/page';
-import { AsyncBlock, Button, Card, CardHead, Pill, Skeleton } from '@/components/ui';
+import { AsyncBlock, Card, CardHead, EmptyState, Notice, Pill, Tabs } from '@/components/ui';
 import { BarList, SplitBar, StatTile, TrendChart } from '@/components/charts';
-import { deltaPercent, formatIqd, formatIqdCompact, formatNumber, relativeAr } from '@/lib/format';
-import { AUDIT_ACTION } from '@/lib/labels';
-
-type TrendMode = 'revenue' | 'renewals';
+import { formatIqd, formatIqdCompact, formatNumber } from '@/lib/format';
+import type { DashboardSummary } from '@/types';
 
 export function DashboardPage() {
   const repos = useRepos();
-  const summary = useAsync(() => repos.admin.dashboard(), []);
-  const audit = useAsync(() => repos.admin.audit({ pageSize: 8 }), []);
-  const levels = useAsync(() => repos.stock.levels(), []);
-  const governorates = useAsync(() => repos.catalog.governorates(), []);
-  const [trendMode, setTrendMode] = useState<TrendMode>('revenue');
-
-  // Governorates that can still sell but have run out of at least one card
-  // length. Named rather than counted, because the first question is "which".
-  const soldOut = [
-    ...new Set(
-      (levels.data ?? [])
-        .filter((level) => level.available === 0)
-        .map((level) => governorates.data?.find((g) => g.id === level.governorateId))
-        .filter((governorate) => governorate?.active)
-        .map((governorate) => governorate!.nameAr),
-    ),
-  ];
+  const summary = useAsync(() => repos.dashboard.summary(), []);
 
   return (
     <>
       <PageHeader
         title="لوحة المعلومات"
-        subtitle="نظرة عامة على الاشتراكات والإيرادات ومسابقة توقع واربح"
+        subtitle="صورة سريعة عن المشتركين والمخزن والمبيعات والتوقعات"
       />
 
       <div className="page">
-        <AsyncBlock
-          state={summary}
-          skeleton={
-            <div className="grid grid-kpi">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Card key={i} pad>
-                  <Skeleton h={12} w="60%" />
-                  <div className="mt-3">
-                    <Skeleton h={22} w="45%" />
-                  </div>
-                </Card>
-              ))}
-            </div>
-          }
-        >
-          {(data) => (
-            <>
-              {/* Anything needing action today comes before the numbers. */}
-              {data.expiringDevices > 0 || data.liveMatches > 0 || soldOut.length > 0 ? (
-                <div className="row wrap row-gap-3">
-                  {/*
-                    Stock leads the strip when a governorate has run dry: an
-                    expiring device is a lost opportunity, but an empty stock
-                    means renewals are failing at the counter right now.
-                  */}
-                  {soldOut.length > 0 ? (
-                    <Card pad className="row row-gap-3 grow">
-                      <span className="chip-icon chip-danger">
-                        <Boxes size={17} />
-                      </span>
-                      <div className="col grow">
-                        <span className="fs-13 strong">
-                          خلصت كارتات <span className="num">{soldOut.length}</span> محافظة
-                        </span>
-                        <span className="fs-12 muted truncate">
-                          {soldOut.slice(0, 3).join('، ')}
-                          {soldOut.length > 3 ? ` و${soldOut.length - 3} غيرها` : ''} — التجديد بيها
-                          ينرفض
-                        </span>
-                      </div>
-                      <Link to="/stock">
-                        <Button variant="subtle" size="sm" icon={<Boxes size={14} />}>
-                          عبّي المخزن
-                        </Button>
-                      </Link>
-                    </Card>
-                  ) : null}
+        <AsyncBlock state={summary}>{(data) => <Summary data={data} />}</AsyncBlock>
+      </div>
+    </>
+  );
+}
 
-                  {data.expiringDevices > 0 ? (
-                    <Card pad className="row row-gap-3 grow">
-                      <span className="chip-icon chip-warning">
-                        <AlertTriangle size={17} />
-                      </span>
-                      <div className="col grow">
-                        <span className="fs-13 strong">
-                          <span className="num">{data.expiringDevices}</span> جهاز اشتراكه قرب ينتهي
-                        </span>
-                        <span className="fs-12 muted">أرسل تذكير أو جدّد لهم قبل الانتهاء</span>
-                      </div>
-                      <Link to="/notifications">
-                        <Button variant="subtle" size="sm" icon={<BellRing size={14} />}>
-                          إشعار تذكير
-                        </Button>
-                      </Link>
-                    </Card>
-                  ) : null}
+function Summary({ data }: { data: DashboardSummary }) {
+  const [trend, setTrend] = useState<'sales' | 'revenue'>('sales');
 
-                  {data.liveMatches > 0 ? (
-                    <Card pad className="row row-gap-3 grow">
-                      <span className="chip-icon" style={{ background: 'var(--live-tint)', color: 'var(--live)' }}>
-                        <Radio size={17} />
-                      </span>
-                      <div className="col grow">
-                        <span className="fs-13 strong">
-                          <span className="num">{data.liveMatches}</span> مباراة تجري الآن
-                        </span>
-                        <span className="fs-12 muted">حدّث النتيجة المباشرة من شاشة المباريات</span>
-                      </div>
-                      <Link to="/matches">
-                        <Button variant="subtle" size="sm">
-                          فتح المباريات
-                        </Button>
-                      </Link>
-                    </Card>
-                  ) : null}
-                </div>
-              ) : null}
+  const regionsDown = data.totalRegions - data.activeRegions;
+  const lowStock = data.stockByCategory.filter(
+    (row) => row.threshold !== null && row.value <= row.threshold,
+  );
 
-              <div className="grid grid-kpi">
-                <StatTile
-                  label="إيرادات هذا الشهر"
-                  value={formatIqdCompact(data.revenueThisMonth)}
-                  hint={`الشهر الماضي ${formatIqdCompact(data.revenueLastMonth)}`}
-                  icon={<Banknote size={15} />}
-                  delta={deltaPercent(data.revenueThisMonth, data.revenueLastMonth)}
-                />
-                <StatTile
-                  label="تجديدات هذا الشهر"
-                  value={formatNumber(data.renewalsThisMonth)}
-                  hint="معاملة مكتملة"
-                  icon={<CalendarClock size={15} />}
-                />
-                <StatTile
-                  label="إجمالي المشتركين"
-                  value={formatNumber(data.totalUsers)}
-                  hint={`${formatNumber(data.activeUsers)} فعّال · ${formatNumber(data.blockedUsers)} محظور`}
-                  icon={<Users size={15} />}
-                />
-                <StatTile
-                  label="مشتركون جدد هذا الشهر"
-                  value={formatNumber(data.newUsersThisMonth)}
-                  icon={<UserPlus size={15} />}
-                />
-                <StatTile
-                  label="أجهزة فعّالة"
-                  value={formatNumber(data.activeDevices)}
-                  hint={`من أصل ${formatNumber(data.totalDevices)} جهاز`}
-                  icon={<Tv size={15} />}
-                  tone="success"
-                />
-                <StatTile
-                  label="قرب تنتهي"
-                  value={formatNumber(data.expiringDevices)}
-                  hint="خلال أيام الإنذار المحددة بالإعدادات"
-                  icon={<AlertTriangle size={15} />}
-                  tone="warning"
-                />
-                <StatTile
-                  label="اشتراكات منتهية"
-                  value={formatNumber(data.expiredDevices)}
-                  hint="فرصة لحملة استرجاع"
-                  icon={<CircleDot size={15} />}
-                  tone="danger"
-                />
-                <StatTile
-                  label="كوبونات سارية"
-                  value={formatNumber(data.couponsIssued)}
-                  hint={`${data.pendingDraws} سحب قيد الانتظار`}
-                  icon={<Ticket size={15} />}
-                  tone="gold"
-                />
-              </div>
+  return (
+    <>
+      {regionsDown > 0 ? (
+        <Notice tone="warning">
+          <span className="strong num">{regionsDown}</span> من{' '}
+          <span className="num">{data.totalRegions}</span> سيرفر سلفرسات متوقف — تفعيل الكارتات
+          للمنتجات المربوطة بيه ما راح يشتغل. <Link to="/api">افحص السيرفرات</Link>.
+        </Notice>
+      ) : null}
 
-              <div className="split">
-                <Card>
-                  <CardHead
-                    title={trendMode === 'revenue' ? 'الإيرادات آخر 12 شهر' : 'عدد التجديدات آخر 12 شهر'}
-                    subtitle="مؤشر واحد في كل مرة — مقياسان مختلفان ما ينعرضون على محور واحد"
-                    actions={
-                      <div className="tabs">
-                        <button
-                          className={`tab${trendMode === 'revenue' ? ' active' : ''}`}
-                          onClick={() => setTrendMode('revenue')}
-                        >
-                          إيرادات
-                        </button>
-                        <button
-                          className={`tab${trendMode === 'renewals' ? ' active' : ''}`}
-                          onClick={() => setTrendMode('renewals')}
-                        >
-                          تجديدات
-                        </button>
-                      </div>
-                    }
-                  />
-                  <div style={{ padding: 'var(--sp-4)' }}>
-                    <TrendChart
-                      points={trendMode === 'revenue' ? data.revenueTrend : data.renewalTrend}
-                      format={(v) => (trendMode === 'revenue' ? formatIqd(v) : `${formatNumber(v)} تجديد`)}
-                    />
-                  </div>
-                </Card>
+      {lowStock.length > 0 ? (
+        <Notice tone="danger" icon={<AlertTriangle size={16} />}>
+          <span className="strong num">{lowStock.length}</span> فئة وصلت حد التنبيه بالمخزن:{' '}
+          {lowStock
+            .slice(0, 3)
+            .map((row) => row.label)
+            .join('، ')}
+          {lowStock.length > 3 ? ' وغيرها' : ''}. <Link to="/stock">افتح المخزن</Link>.
+        </Notice>
+      ) : null}
 
-                <Card>
-                  <CardHead title="مسابقة توقع واربح" subtitle="حالة المسابقة الآن" />
-                  <div className="col card-pad" style={{ gap: 'var(--sp-4)' }}>
-                    <div className="row between">
-                      <span className="row row-gap-2 fs-13">
-                        <Target size={15} style={{ color: 'var(--brand-primary)' }} />
-                        مباريات مفتوحة للتوقع
-                      </span>
-                      <span className="fs-17 strong num">{data.openPredictionMatches}</span>
-                    </div>
-                    <div className="row between">
-                      <span className="row row-gap-2 fs-13">
-                        <Radio size={15} style={{ color: 'var(--live)' }} />
-                        مباريات مباشرة
-                      </span>
-                      <span className="fs-17 strong num">{data.liveMatches}</span>
-                    </div>
-                    <div className="row between">
-                      <span className="row row-gap-2 fs-13">
-                        <CalendarClock size={15} style={{ color: 'var(--brand-primary)' }} />
-                        توقعات هذا الأسبوع
-                      </span>
-                      <span className="fs-17 strong num">{formatNumber(data.predictionsThisWeek)}</span>
-                    </div>
-                    <Link to="/matches">
-                      <Button variant="primary" className="grow">
-                        اختيار المباريات المفتوحة
-                      </Button>
-                    </Link>
-                  </div>
-                </Card>
-              </div>
+      {/* الصف الأول: الحجم — كم مشترك وكم جهاز وكم كارت متاح وكم مبيعات الشهر */}
+      <div className="grid grid-kpi">
+        <StatTile
+          label="المشتركون"
+          value={formatNumber(data.totalUsers)}
+          icon={<Users size={15} />}
+          hint={`${formatNumber(data.newUsersThisMonth)} جديد هذا الشهر`}
+        />
+        <StatTile
+          label="الأجهزة"
+          value={formatNumber(data.totalDevices)}
+          icon={<Tv size={15} />}
+          hint={`${formatNumber(data.blockedUsers)} مشترك محظور`}
+        />
+        <StatTile
+          label="كارتات متاحة"
+          value={formatNumber(data.codesAvailable)}
+          icon={<Boxes size={15} />}
+          tone={lowStock.length > 0 ? 'warning' : undefined}
+          hint={`${formatNumber(data.codesSold)} مباع`}
+        />
+        <StatTile
+          label="مبيعات هذا الشهر"
+          value={formatNumber(data.soldThisMonth)}
+          icon={<CircleDollarSign size={15} />}
+          hint={formatIqd(data.revenueThisMonth)}
+        />
+      </div>
 
-              <div className="grid grid-2">
-                <Card>
-                  <CardHead title="المشتركون حسب المحافظة" subtitle="أعلى 8 محافظات" />
-                  <div className="card-pad">
-                    <BarList
-                      points={data.usersByGovernorate.map((row) => ({ label: row.label, value: row.value }))}
-                      limit={8}
-                    />
-                  </div>
-                </Card>
+      {/* الصف الثاني: النشاط — المباشر والتوقعات والإشعارات والسيرفرات */}
+      <div className="grid grid-kpi">
+        <StatTile
+          label="مباريات مباشرة"
+          value={formatNumber(data.liveMatches)}
+          icon={<Radio size={15} />}
+          hint={`${formatNumber(data.openForPrediction)} مفتوحة للتوقع`}
+        />
+        <StatTile
+          label="التوقعات"
+          value={formatNumber(data.totalPredictions)}
+          icon={<Target size={15} />}
+          tone={data.pendingScoring > 0 ? 'warning' : undefined}
+          hint={`${formatNumber(data.pendingScoring)} تنتظر الاحتساب`}
+        />
+        <StatTile
+          label="سيرفرات فعّالة"
+          value={`${formatNumber(data.activeRegions)} / ${formatNumber(data.totalRegions)}`}
+          icon={<ServerCog size={15} />}
+          tone={regionsDown > 0 ? 'danger' : 'success'}
+        />
+        <StatTile
+          label="إشعارات مرسلة"
+          value={formatNumber(data.notificationsSent)}
+          hint={`${formatNumber(data.totalProducts)} منتج و${formatNumber(data.totalCategories)} فئة`}
+        />
+      </div>
 
-                <div className="col" style={{ gap: 'var(--sp-4)' }}>
-                  <Card>
-                    <CardHead title="التجديدات حسب طريقة الدفع" />
-                    <div className="card-pad">
-                      <SplitBar points={data.renewalsByMethod} />
-                    </div>
-                  </Card>
-                  <Card>
-                    <CardHead title="التجديدات حسب الباقة" />
-                    <div className="card-pad">
-                      <SplitBar points={data.renewalsByPackage} />
-                    </div>
-                  </Card>
-                </div>
-              </div>
-            </>
-          )}
-        </AsyncBlock>
-
-        <Card>
+      <div className="split">
+        <Card pad>
           <CardHead
-            title="آخر العمليات"
-            subtitle="من غيّر ماذا ومتى"
+            title="الاتجاه الشهري"
+            subtitle="الكارتات المباعة وقيمتها بسعر الفئة"
             actions={
-              <Link to="/audit">
-                <Button variant="ghost" size="sm">
-                  السجل الكامل
-                </Button>
-              </Link>
+              <Tabs
+                value={trend}
+                onChange={setTrend}
+                items={[
+                  { value: 'sales', label: 'عدد المبيعات' },
+                  { value: 'revenue', label: 'القيمة' },
+                ]}
+              />
             }
           />
-          <AsyncBlock state={audit}>
-            {(page) => (
-              <div className="col">
-                {page.items.map((entry) => {
-                  const action = AUDIT_ACTION[entry.action] ?? { label: entry.action, tone: 'neutral' as const };
-                  return (
-                    <div
-                      key={entry.id}
-                      className="row row-gap-3"
-                      style={{ padding: '11px var(--sp-5)', borderBottom: '1px solid var(--divider)' }}
-                    >
-                      <Pill tone={action.tone}>{action.label}</Pill>
-                      <span className="fs-13 grow truncate">{entry.summaryAr}</span>
-                      <span className="fs-12 dim">{entry.adminName}</span>
-                      <span className="fs-12 dim">{relativeAr(entry.at)}</span>
-                    </div>
-                  );
-                })}
-              </div>
+          <div className="mt-4">
+            {(trend === 'sales' ? data.salesTrend : data.revenueTrend).length > 0 ? (
+              <TrendChart
+                points={trend === 'sales' ? data.salesTrend : data.revenueTrend}
+                format={trend === 'revenue' ? formatIqdCompact : formatNumber}
+              />
+            ) : (
+              <EmptyState title="ماكو بيانات كافية" hint="ما انباعت كارتات بالأشهر الماضية" />
             )}
-          </AsyncBlock>
+          </div>
+        </Card>
+
+        <Card pad>
+          <CardHead title="حالة الكارتات" subtitle="توزيع كل الكارتات بالمخزن" />
+          <div className="mt-4">
+            <SplitBar
+              points={[
+                { label: 'متاح', value: data.codesAvailable },
+                { label: 'مباع', value: data.codesSold },
+                { label: 'معطّل', value: data.codesDisabled },
+              ]}
+            />
+          </div>
+
+          <div className="mt-5">
+            <span className="fs-12 muted">إجمالي المبيعات منذ البداية</span>
+            <div className="fs-20 strong num">{formatIqd(data.revenueAllTime)}</div>
+            <span className="fs-11 dim">
+              محسوبة بسعر الفئة الحالي — مو مبالغ محصّلة فعلاً
+            </span>
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-3">
+        <Card pad>
+          <CardHead title="المشتركون حسب المحافظة" />
+          <div className="mt-4">
+            {data.usersByProvince.length > 0 ? (
+              <BarList points={data.usersByProvince} limit={7} />
+            ) : (
+              <EmptyState title="ماكو مشتركون" />
+            )}
+          </div>
+        </Card>
+
+        <Card pad>
+          <CardHead title="المبيعات حسب الفئة" />
+          <div className="mt-4">
+            {data.salesByCategory.length > 0 ? (
+              <BarList points={data.salesByCategory} limit={7} />
+            ) : (
+              <EmptyState title="ماكو مبيعات" />
+            )}
+          </div>
+        </Card>
+
+        <Card pad>
+          <CardHead title="طابور إعادة التجهيز" subtitle="أقل الفئات مخزوناً" />
+          <div className="mt-4 col row-gap-3">
+            {data.stockByCategory.length === 0 ? (
+              <EmptyState title="ماكو فئات" />
+            ) : (
+              data.stockByCategory.slice(0, 7).map((row) => (
+                <div key={row.label} className="row between row-gap-3">
+                  <span className="fs-12 truncate">{row.label}</span>
+                  <span className="row row-gap-2">
+                    <span className="num strong">{formatNumber(row.value)}</span>
+                    {row.threshold !== null && row.value <= row.threshold ? (
+                      <Pill tone="danger">تحت الحد</Pill>
+                    ) : null}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
         </Card>
       </div>
     </>

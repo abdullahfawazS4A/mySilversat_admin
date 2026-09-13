@@ -870,3 +870,53 @@
     display: none;
   }
 }
+
+/* ------------------------------------------------------------- imagery --- */
+
+/**
+ * Banner thumbnails in a table row.
+ *
+ * Content rows carry an image the operator has to be able to judge, but a row
+ * cannot afford the height. The thumbnail is a button so the full-size preview
+ * is one click away rather than a separate screen.
+ */
+.thumb-button {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-chip);
+  background: var(--bg-app);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.thumb-button:hover {
+  border-color: var(--brand-primary);
+}
+
+.thumb {
+  display: block;
+  width: 64px;
+  height: 36px;
+  object-fit: cover;
+}
+
+/** The same image at a size worth judging — inside a dialog. */
+.image-preview {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-chip);
+  background: var(--bg-app);
+}
+
+/** Club crests in the fixtures and teams tables. */
+.team-logo {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}

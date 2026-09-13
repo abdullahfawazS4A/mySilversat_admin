@@ -1,30 +1,22 @@
 /**
- * Governorate APIs.
+ * The two upstreams this console depends on.
  *
- * Every governorate runs the same stack behind a different domain, so a
- * connection is four fields — domain, auth key, username, password — plus the
- * governorates it answers for. That sameness is the reason this is one screen
- * with a list rather than a per-governorate form: the operator adds a server
- * once and then points governorates at it.
+ * **سيرفرات سلفرسات** are the vendor endpoints that actually activate codes —
+ * one per region, each with its own credentials. A product points at one, so a
+ * region that stops answering takes a whole province's activations down with
+ * it. That is why the health check is on this screen and not buried in a menu.
  *
- * The invariant the screen is built around is that **a governorate answers to
- * exactly one connection**. Linking is therefore shown as a claim, not a
- * checkbox soup: a governorate already linked elsewhere says so, and picking
- * it moves it rather than silently double-booking a renewal.
+ * **مزوّد المباريات** is API-Football, where every league, team and fixture
+ * comes from. Its quota is the thing worth watching: a sync that runs out of
+ * requests half way leaves a partial table, so the counters are shown before
+ * the buttons that spend them.
+ *
+ * Credentials are write-only in practice — the API returns them on the admin
+ * list, but the form never displays a stored password back.
  */
 
-import { useMemo, useState } from 'react';
-import {
-  CheckCircle2,
-  Globe,
-  KeyRound,
-  Link2,
-  Pencil,
-  Plug,
-  PlugZap,
-  Trash2,
-  XCircle,
-} from 'lucide-react';
+import { useState } from 'react';
+import { Activity, PlugZap, RefreshCw } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAction, useAsync } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
@@ -34,322 +26,262 @@ import {
   Button,
   Card,
   CardHead,
-  ConfirmDialog,
-  EmptyState,
   Field,
+  KeyValue,
   Modal,
   Notice,
   Pill,
   Switch,
+  Tabs,
   TextInput,
 } from '@/components/ui';
 import { StatTile } from '@/components/charts';
-import type { ApiConnection, Governorate, Id } from '@/types';
-import { formatNumber, relativeAr } from '@/lib/format';
+import { formatNumber } from '@/lib/format';
+import type { Id, RegionCheckResult, SilversatRegion } from '@/types';
+import type { RegionInput } from '@/data/repositories/types';
 
 export function ApiPage() {
+  const [tab, setTab] = useState<'regions' | 'football'>('regions');
+
+  return (
+    <>
+      <div className="page-wash" style={{ paddingBottom: 0 }}>
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: 'regions', label: 'سيرفرات سلفرسات' },
+            { value: 'football', label: 'مزوّد المباريات' },
+          ]}
+        />
+      </div>
+      {tab === 'regions' ? <RegionsTab /> : <FootballTab />}
+    </>
+  );
+}
+
+// --------------------------------------------------------------- regions ---
+
+function RegionsTab() {
   const repos = useRepos();
   const { toast } = useToast();
 
-  const [editing, setEditing] = useState<ApiConnection | 'new' | null>(null);
-  const [linking, setLinking] = useState<ApiConnection | null>(null);
-  const [deleting, setDeleting] = useState<ApiConnection | null>(null);
-  const [testingId, setTestingId] = useState<Id | null>(null);
-  const [run, action] = useAction();
+  const regions = useAsync(() => repos.regions.all(), []);
+  const [health, setHealth] = useState<Record<Id, RegionCheckResult>>({});
+  const [checking, setChecking] = useState<Id | 'all' | null>(null);
+  const [editing, setEditing] = useState<{ region: SilversatRegion | null } | null>(null);
 
-  const connections = useAsync(() => repos.api.list(), []);
-  const governorates = useAsync(() => repos.catalog.governorates(), []);
-
-  const governorateById = useMemo(() => {
-    const map = new Map<Id, Governorate>();
-    for (const governorate of governorates.data ?? []) map.set(governorate.id, governorate);
-    return map;
-  }, [governorates.data]);
-
-  // Which governorates nothing points at. This is the number that actually
-  // breaks renewals, so it gets a tile of its own.
-  const linkedIds = new Set((connections.data ?? []).flatMap((c) => c.governorateIds));
-  const unlinked = (governorates.data ?? []).filter((g) => g.active && !linkedIds.has(g.id));
-
-  const runTest = async (connection: ApiConnection) => {
-    setTestingId(connection.id);
+  const checkOne = async (region: SilversatRegion) => {
+    setChecking(region.id);
     try {
-      const result = await repos.api.test(connection.id);
-      toast(result.messageAr, result.ok ? 'success' : 'error');
-      connections.reload();
+      const result = await repos.regions.check(region.id);
+      setHealth((current) => ({ ...current, [region.id]: { ...result, name: region.name } }));
+      toast(result.ok ? `${region.name}: يرد` : `${region.name}: ما يرد`, result.ok ? 'success' : 'error');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'تعذّر الاختبار', 'error');
+      toast(err instanceof Error ? err.message : 'تعذّر الفحص', 'error');
     } finally {
-      setTestingId(null);
+      setChecking(null);
     }
   };
 
-  const runDelete = async () => {
-    if (!deleting) return;
-    const ok = await run(() => repos.api.remove(deleting.id));
-    if (ok) {
-      toast('انحذف الاتصال');
-      setDeleting(null);
-      connections.reload();
+  /**
+   * Checks every region at once.
+   *
+   * `check-all` answers positionally — the rows come back in the order of the
+   * regions list without ids — so the results are zipped back onto that same
+   * list rather than looked up by id.
+   */
+  const checkAll = async () => {
+    setChecking('all');
+    try {
+      const results = await repos.regions.checkAll();
+      const rows = regions.data ?? [];
+      const next: Record<Id, RegionCheckResult> = {};
+      results.forEach((result, index) => {
+        const region = rows[index];
+        if (region) next[region.id] = { ...result, id: region.id, name: region.name };
+      });
+      setHealth(next);
+      const down = results.filter((result) => !result.ok).length;
+      toast(down === 0 ? 'كل السيرفرات ترد' : `${down} سيرفر ما يرد`, down === 0 ? 'success' : 'error');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'تعذّر الفحص', 'error');
+    } finally {
+      setChecking(null);
     }
   };
 
   return (
     <>
       <PageHeader
-        title="الـ API"
-        subtitle="سيرفر كل محافظة — نفس الهيكلية، يتغيّر بس الدومين والمفاتيح"
+        title="سيرفرات سلفرسات"
+        subtitle="السيرفر اللي يفعّل كارتات كل منتج — وبياناته السرّية"
         actions={
-          <Button variant="primary" icon={<Plug size={16} />} onClick={() => setEditing('new')}>
-            إضافة اتصال
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              icon={<Activity size={15} />}
+              disabled={checking !== null}
+              onClick={() => void checkAll()}
+            >
+              {checking === 'all' ? 'جاري الفحص…' : 'فحص الكل'}
+            </Button>
+            <Button variant="primary" onClick={() => setEditing({ region: null })}>
+              إضافة سيرفر
+            </Button>
+          </>
         }
       />
 
-      <div className="page col" style={{ gap: 'var(--sp-4)' }}>
-        <div className="grid grid-kpi-3">
-          <StatTile
-            label="اتصالات"
-            value={formatNumber(connections.data?.length ?? 0)}
-            icon={<Plug size={15} />}
-          />
-          <StatTile
-            label="محافظات مربوطة"
-            value={formatNumber(linkedIds.size)}
-            hint={`من ${formatNumber(governorates.data?.length ?? 0)}`}
-            icon={<Link2 size={15} />}
-          />
-          <StatTile
-            label="محافظات بلا API"
-            value={formatNumber(unlinked.length)}
-            hint="مفعّلة بس ما مربوطة بسيرفر"
-            tone={unlinked.length > 0 ? 'danger' : undefined}
-            icon={<XCircle size={15} />}
-          />
-        </div>
+      <div className="page">
+        <Notice tone="warning">
+          تغيير بيانات سيرفر يأثر فوراً على تفعيل كل الكارتات اللي منتجاتها مربوطة بيه. افحص بعد أي
+          تعديل.
+        </Notice>
 
-        {unlinked.length > 0 ? (
-          <Notice tone="danger">
-            <span className="strong">{unlinked.map((g) => g.nameAr).join('، ')}</span> — مفعّلة بس ما
-            مربوطة بأي API. التجديد بيها ما يوصل لسيرفر.
-          </Notice>
-        ) : null}
-
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
-
-        <AsyncBlock
-          state={connections}
-          emptyWhen={(rows) => rows.length === 0}
-          empty={
-            <Card>
-              <EmptyState
-                title="ما بيها اتصالات"
-                hint="أضف سيرفر أول محافظة، وبعدها اربط باقي المحافظات اللي عليه."
-                icon={<Plug size={22} />}
-                action={
-                  <Button variant="primary" size="sm" icon={<Plug size={14} />} onClick={() => setEditing('new')}>
-                    إضافة اتصال
-                  </Button>
-                }
-              />
-            </Card>
-          }
-        >
+        <AsyncBlock state={regions}>
           {(rows) => (
             <div className="grid grid-2">
-              {rows.map((connection) => (
-                <Card key={connection.id}>
-                  <CardHead
-                    title={connection.nameAr}
-                    subtitle={connection.baseUrl}
-                    actions={
-                      <>
-                        <Pill tone={connection.active ? 'success' : 'muted'}>
-                          {connection.active ? 'مفعّل' : 'معطّل'}
-                        </Pill>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          icon={<Pencil size={13} />}
-                          title="تعديل"
-                          onClick={() => setEditing(connection)}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          icon={<Trash2 size={13} />}
-                          title="حذف"
-                          onClick={() => setDeleting(connection)}
-                        />
-                      </>
-                    }
-                  />
-
-                  <div className="card-pad col" style={{ gap: 'var(--sp-4)' }}>
-                    <div className="col" style={{ gap: 6 }}>
-                      <div className="row row-gap-2">
-                        <Globe size={13} className="dim" />
-                        <span className="fs-12 dim num truncate">{connection.baseUrl}</span>
-                      </div>
-                      <div className="row row-gap-2">
-                        <KeyRound size={13} className="dim" />
-                        <span className="fs-12 dim num truncate">
-                          {connection.username} · {'•'.repeat(8)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="col" style={{ gap: 6 }}>
-                      <span className="fs-11 muted">المحافظات المربوطة</span>
-                      {connection.governorateIds.length > 0 ? (
-                        <div className="row row-gap-2 wrap">
-                          {connection.governorateIds.map((id) => (
-                            <Pill key={id} tone="neutral">
-                              {governorateById.get(id)?.nameAr ?? id}
-                            </Pill>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="fs-12 dim">ما بيه محافظات — هذا الاتصال ما يشتغل بعد</span>
-                      )}
-                    </div>
-
-                    {connection.lastCheckAt ? (
-                      <div className="row row-gap-2">
-                        {connection.lastCheckOk ? (
-                          <CheckCircle2 size={14} style={{ color: 'var(--success)' }} />
+              {rows.map((region) => {
+                const result = health[region.id];
+                return (
+                  <Card key={region.id} pad>
+                    <CardHead
+                      title={region.name}
+                      subtitle={region.baseUrl ?? '—'}
+                      actions={
+                        region.isActive ? (
+                          <Pill tone="success">فعّال</Pill>
                         ) : (
-                          <XCircle size={14} style={{ color: 'var(--danger)' }} />
-                        )}
-                        <span className="fs-12 dim truncate">
-                          {connection.lastCheckMessageAr} · {relativeAr(connection.lastCheckAt)}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="fs-12 dim">ما انختبر بعد</span>
-                    )}
+                          <Pill tone="muted">متوقف</Pill>
+                        )
+                      }
+                    />
 
-                    <div className="row row-gap-2 wrap">
+                    <div className="mt-3">
+                      <KeyValue
+                        rows={[
+                          ['المستخدم', region.userId ?? '—'],
+                          ['معرّف الجهاز', region.appDeviceId ?? '—'],
+                          [
+                            'آخر فحص',
+                            result ? (
+                              <span className="row row-gap-2">
+                                <Pill tone={result.ok ? 'success' : 'danger'}>
+                                  {result.ok ? 'يرد' : 'ما يرد'}
+                                </Pill>
+                                {result.latencyMs !== undefined ? (
+                                  <span className="num dim">{result.latencyMs}ms</span>
+                                ) : null}
+                              </span>
+                            ) : (
+                              <span className="dim">ما انفحص بهذه الجلسة</span>
+                            ),
+                          ],
+                        ]}
+                      />
+                    </div>
+
+                    {result && !result.ok && result.message ? (
+                      <div className="mt-3">
+                        <Notice tone="danger">{result.message}</Notice>
+                      </div>
+                    ) : null}
+
+                    <div className="row row-gap-2 mt-4">
                       <Button
                         variant="outline"
                         size="sm"
-                        icon={<PlugZap size={13} />}
-                        disabled={testingId === connection.id}
-                        onClick={() => void runTest(connection)}
+                        icon={<PlugZap size={14} />}
+                        disabled={checking !== null}
+                        onClick={() => void checkOne(region)}
                       >
-                        {testingId === connection.id ? 'جاري الاختبار…' : 'اختبار الاتصال'}
+                        {checking === region.id ? 'جاري…' : 'فحص'}
                       </Button>
-                      <Button
-                        variant="subtle"
-                        size="sm"
-                        icon={<Link2 size={13} />}
-                        onClick={() => setLinking(connection)}
-                      >
-                        ربط المحافظات
+                      <Button variant="ghost" size="sm" onClick={() => setEditing({ region })}>
+                        تعديل
                       </Button>
                     </div>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </AsyncBlock>
       </div>
 
       {editing ? (
-        <ConnectionDialog
-          connection={editing === 'new' ? null : editing}
+        <RegionDialog
+          region={editing.region}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
-            connections.reload();
+            regions.reload();
           }}
-        />
-      ) : null}
-
-      {linking ? (
-        <LinkDialog
-          connection={linking}
-          connections={connections.data ?? []}
-          governorates={governorates.data ?? []}
-          onClose={() => setLinking(null)}
-          onSaved={() => {
-            setLinking(null);
-            connections.reload();
-          }}
-        />
-      ) : null}
-
-      {deleting ? (
-        <ConfirmDialog
-          title={`حذف ${deleting.nameAr}`}
-          message={
-            deleting.governorateIds.length > 0 ? (
-              <>
-                هذا الاتصال مربوط بـ{' '}
-                <span className="num strong">{deleting.governorateIds.length}</span> محافظة. فك
-                الارتباط أول قبل الحذف.
-              </>
-            ) : (
-              <>راح ينحذف الاتصال ومفاتيحه نهائياً.</>
-            )
-          }
-          confirmLabel="حذف"
-          danger
-          pending={action.pending}
-          onConfirm={() => void runDelete()}
-          onCancel={() => setDeleting(null)}
         />
       ) : null}
     </>
   );
 }
 
-// --------------------------------------------------------------- dialogs ---
-
-/** The four fields plus the on/off switch. Nothing else differs per server. */
-function ConnectionDialog({
-  connection,
+/**
+ * Adding or editing a region.
+ *
+ * The password field starts empty even when editing, and an empty password on
+ * an edit is simply not sent — so saving a name change never blanks the
+ * credential that a whole province's activations run through.
+ */
+function RegionDialog({
+  region,
   onClose,
   onSaved,
 }: {
-  connection: ApiConnection | null;
+  region: SilversatRegion | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const repos = useRepos();
   const { toast } = useToast();
   const [run, action] = useAction();
+  const [invalid, setInvalid] = useState<string | null>(null);
 
-  const [nameAr, setNameAr] = useState(connection?.nameAr ?? '');
-  const [baseUrl, setBaseUrl] = useState(connection?.baseUrl ?? 'https://');
-  const [authKey, setAuthKey] = useState(connection?.authKey ?? '');
-  const [username, setUsername] = useState(connection?.username ?? '');
-  const [password, setPassword] = useState(connection?.password ?? '');
-  const [active, setActive] = useState(connection?.active ?? true);
+  const [draft, setDraft] = useState<RegionInput>({
+    name: region?.name ?? '',
+    baseUrl: region?.baseUrl ?? '',
+    authKey: region?.authKey ?? '',
+    userId: region?.userId ?? '',
+    password: '',
+    appDeviceId: region?.appDeviceId ?? '',
+    isActive: region?.isActive ?? true,
+  });
+  const set = <K extends keyof RegionInput>(key: K, value: RegionInput[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
 
   const submit = async () => {
-    const ok = await run(() =>
-      repos.api.save({
-        id: connection?.id,
-        nameAr,
-        baseUrl,
-        authKey,
-        username,
-        password,
-        active,
-        governorateIds: connection?.governorateIds ?? [],
-      }),
-    );
-    if (ok) {
-      toast(connection ? 'انحفظ الاتصال' : 'انضاف الاتصال — اربط عليه المحافظات الآن');
-      onSaved();
-    }
+    const problem = !draft.name.trim()
+      ? 'اسم السيرفر مطلوب'
+      : !draft.baseUrl.trim()
+        ? 'عنوان السيرفر مطلوب'
+        : !region && !draft.password.trim()
+          ? 'كلمة المرور مطلوبة للسيرفر الجديد'
+          : null;
+    setInvalid(problem);
+    if (problem) return;
+
+    const ok = await run(() => {
+      if (!region) return repos.regions.create(draft);
+      const { password, ...rest } = draft;
+      return repos.regions.update(region.id, password.trim() ? draft : rest);
+    });
+    if (!ok) return;
+    toast(region ? 'انحفظ السيرفر' : 'انضاف السيرفر');
+    onSaved();
   };
 
   return (
     <Modal
-      title={connection ? `تعديل ${connection.nameAr}` : 'إضافة اتصال'}
+      title={region ? `تعديل ${region.name}` : 'إضافة سيرفر'}
+      size="lg"
       onClose={onClose}
       footer={
         <>
@@ -362,159 +294,185 @@ function ConnectionDialog({
         </>
       }
     >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
-
-        <Field label="اسم الاتصال" hint="اسم تعرفه بيه، مثل «سيرفر بغداد»">
-          <TextInput value={nameAr} onChange={setNameAr} placeholder="سيرفر بغداد" />
+      <div className="grid grid-form">
+        <Field label="اسم السيرفر">
+          <TextInput value={draft.name} onChange={(next) => set('name', next)} />
         </Field>
-
-        <Field label="الدومين" hint="العنوان الأساسي بدون مسار — https://bgd.silversat.iq">
-          <TextInput type="url" value={baseUrl} onChange={setBaseUrl} placeholder="https://" />
+        <Field label="العنوان (Base URL)">
+          <TextInput
+            type="url"
+            value={draft.baseUrl}
+            onChange={(next) => set('baseUrl', next)}
+            placeholder="https://…"
+          />
         </Field>
-
-        <Field label="Auth Key" hint="المفتاح اللي ينرسل بترويسة كل طلب">
-          <TextInput value={authKey} onChange={setAuthKey} placeholder="ak_..." />
+        <Field label="مفتاح المصادقة (Auth Key)">
+          <TextInput value={draft.authKey} onChange={(next) => set('authKey', next)} />
         </Field>
-
-        <div className="grid grid-2">
-          <Field label="اسم المستخدم">
-            <TextInput value={username} onChange={setUsername} />
-          </Field>
-          <Field label="الرمز">
-            <TextInput type="password" value={password} onChange={setPassword} />
-          </Field>
-        </div>
-
-        <Switch checked={active} onChange={setActive} label="الاتصال مفعّل" />
-
-        {connection ? (
-          <Notice tone="info">
-            تغيير الدومين أو المفاتيح يلغي نتيجة آخر اختبار — اختبر الاتصال بعد الحفظ.
-          </Notice>
-        ) : null}
+        <Field label="المستخدم">
+          <TextInput value={draft.userId} onChange={(next) => set('userId', next)} />
+        </Field>
+        <Field
+          label="كلمة المرور"
+          hint={region ? 'اتركها فارغة إذا ما تريد تغيّرها' : undefined}
+        >
+          <TextInput
+            type="password"
+            value={draft.password}
+            onChange={(next) => set('password', next)}
+          />
+        </Field>
+        <Field label="معرّف الجهاز" hint="اختياري">
+          <TextInput
+            value={draft.appDeviceId ?? ''}
+            onChange={(next) => set('appDeviceId', next)}
+          />
+        </Field>
+        <Field label="التفعيل">
+          <Switch
+            checked={draft.isActive ?? true}
+            onChange={(next) => set('isActive', next)}
+            label="فعّال"
+          />
+        </Field>
       </div>
+
+      {invalid || action.error ? (
+        <div className="field-error mt-3">{invalid ?? action.error}</div>
+      ) : null}
     </Modal>
   );
 }
 
-/**
- * Claims governorates for one connection.
- *
- * Each row says where the governorate is *now*, so moving one off another
- * server is a visible decision rather than a surprise.
- */
-function LinkDialog({
-  connection,
-  connections,
-  governorates,
-  onClose,
-  onSaved,
-}: {
-  connection: ApiConnection;
-  connections: ApiConnection[];
-  governorates: Governorate[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
+// -------------------------------------------------------------- football ---
+
+function FootballTab() {
   const repos = useRepos();
   const { toast } = useToast();
-  const [run, action] = useAction();
-  const [chosen, setChosen] = useState<Set<Id>>(new Set(connection.governorateIds));
 
-  // Where each governorate currently lives, excluding this connection.
-  const ownerOf = useMemo(() => {
-    const map = new Map<Id, ApiConnection>();
-    for (const other of connections) {
-      if (other.id === connection.id) continue;
-      for (const id of other.governorateIds) map.set(id, other);
-    }
-    return map;
-  }, [connections, connection.id]);
+  const config = useAsync(() => repos.sync.config(), []);
+  const status = useAsync(() => repos.sync.status(), []);
+  const [running, setRunning] = useState<string | null>(null);
 
-  const moving = [...chosen].filter((id) => ownerOf.has(id));
-
-  const submit = async () => {
-    const ok = await run(() => repos.api.setGovernorates(connection.id, [...chosen]));
-    if (ok) {
-      toast(`انربطت ${chosen.size} محافظة بـ ${connection.nameAr}`);
-      onSaved();
+  const run = async (label: string, job: () => Promise<{ created?: number; updated?: number }>) => {
+    setRunning(label);
+    try {
+      const result = await job();
+      const created = result.created ?? 0;
+      const updated = result.updated ?? 0;
+      toast(
+        created + updated > 0
+          ? `${label}: ${created} جديد، ${updated} محدّث`
+          : `${label}: ما بيها جديد`,
+      );
+      status.reload();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'تعذّرت المزامنة', 'error');
+    } finally {
+      setRunning(null);
     }
   };
 
+  const requests = status.data?.requests;
+
   return (
-    <Modal
-      title={`ربط المحافظات بـ ${connection.nameAr}`}
-      size="lg"
-      onClose={onClose}
-      footer={
-        <>
-          <Button
-            variant="primary"
-            icon={<Link2 size={15} />}
-            disabled={action.pending}
-            onClick={() => void submit()}
-          >
-            {action.pending ? 'جاري الحفظ…' : `ربط ${chosen.size} محافظة`}
-          </Button>
-          <Button variant="ghost" onClick={onClose} disabled={action.pending}>
-            إلغاء
-          </Button>
-        </>
-      }
-    >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
+    <>
+      <PageHeader
+        title="مزوّد المباريات"
+        subtitle="API-Football — منه تجي الدوريات والفرق والمباريات"
+      />
 
-        <Notice tone="info">
-          المحافظة تنربط بسيرفر واحد بس. إذا اخترت محافظة مربوطة بسيرفر ثاني، راح تنتقل لهنا.
-        </Notice>
+      <div className="page">
+        <AsyncBlock state={config}>
+          {(data) => (
+            <>
+              {!data.enabled || !data.hasApiKey ? (
+                <Notice tone="danger">
+                  المزوّد {data.enabled ? 'مفعّل' : 'مطفي'} و
+                  {data.hasApiKey ? 'المفتاح موجود' : 'ماكو مفتاح API'} — المزامنة ما راح تشتغل لحد
+                  ما ينضبط من إعدادات السيرفر.
+                </Notice>
+              ) : null}
 
-        {moving.length > 0 ? (
-          <Notice tone="warning">
-            راح تنتقل{' '}
-            <span className="strong">
-              {moving.map((id) => governorates.find((g) => g.id === id)?.nameAr).join('، ')}
-            </span>{' '}
-            من سيرفرها الحالي إلى {connection.nameAr}.
-          </Notice>
-        ) : null}
-
-        <div className="col" style={{ gap: 'var(--sp-2)' }}>
-          {governorates.map((governorate) => {
-            const owner = ownerOf.get(governorate.id);
-            const checked = chosen.has(governorate.id);
-            return (
-              <label
-                key={governorate.id}
-                className="row row-gap-3 card card-pad"
-                style={{ alignItems: 'center', cursor: 'pointer' }}
-              >
-                <input
-                  type="checkbox"
-                  className="checkbox"
-                  checked={checked}
-                  onChange={() =>
-                    setChosen((current) => {
-                      const next = new Set(current);
-                      if (next.has(governorate.id)) next.delete(governorate.id);
-                      else next.add(governorate.id);
-                      return next;
-                    })
+              <div className="grid grid-kpi">
+                <StatTile label="الموسم" value={String(data.season)} />
+                <StatTile
+                  label="طلبات اليوم"
+                  value={
+                    requests?.current !== undefined
+                      ? `${formatNumber(requests.current)} / ${formatNumber(requests.limit_day ?? 0)}`
+                      : '—'
                   }
                 />
-                <div className="col grow" style={{ lineHeight: 1.35, minWidth: 0 }}>
-                  <span className="fs-13 strong truncate">{governorate.nameAr}</span>
-                  <span className="fs-11 dim truncate">
-                    {owner ? `مربوطة الآن بـ ${owner.nameAr}` : 'غير مربوطة'}
-                  </span>
+                <StatTile
+                  label="نافذة المباريات"
+                  value={`${data.fixtureDaysBack}− / ${data.fixtureDaysAhead}+ يوم`}
+                />
+                <StatTile
+                  label="الدوريات المزامَنة"
+                  value={data.syncAllIfQuotaAllows ? 'الكل (حسب الحصة)' : formatNumber(data.leagueIds.length)}
+                />
+              </div>
+
+              <Card pad>
+                <CardHead
+                  title="تشغيل المزامنة"
+                  subtitle="كل زر يصرف من حصة الطلبات — شغّل اللي تحتاجه بس"
+                />
+
+                <div className="row row-gap-2 wrap mt-3">
+                  <Button
+                    variant="outline"
+                    icon={<RefreshCw size={15} />}
+                    disabled={running !== null}
+                    onClick={() => void run('الدوريات', () => repos.sync.syncLeagues())}
+                  >
+                    {running === 'الدوريات' ? 'جاري…' : 'مزامنة الدوريات'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    icon={<RefreshCw size={15} />}
+                    disabled={running !== null}
+                    onClick={() => void run('الفرق', () => repos.sync.syncTeams())}
+                  >
+                    {running === 'الفرق' ? 'جاري…' : 'مزامنة الفرق'}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    icon={<RefreshCw size={15} />}
+                    disabled={running !== null}
+                    onClick={() => void run('المباريات', () => repos.sync.syncFixtures())}
+                  >
+                    {running === 'المباريات' ? 'جاري…' : 'مزامنة المباريات'}
+                  </Button>
+                  <Button
+                    variant="subtle"
+                    icon={<RefreshCw size={15} />}
+                    disabled={running !== null}
+                    onClick={() => void run('المباشر', () => repos.sync.syncLive())}
+                  >
+                    {running === 'المباشر' ? 'جاري…' : 'تحديث المباشر'}
+                  </Button>
                 </div>
-                {!governorate.active ? <Pill tone="muted">معطّلة</Pill> : null}
-              </label>
-            );
-          })}
-        </div>
+
+                <div className="mt-4">
+                  <KeyValue
+                    rows={[
+                      ['عنوان المزوّد', <code className="num">{data.baseUrl}</code>],
+                      ['مفتاح API', data.hasApiKey ? 'مضبوط' : 'ماكو'],
+                      ['احتياطي الحصة', <span className="num">{data.quotaReserve}</span>],
+                      [
+                        'أقصى طلبات بالدقيقة',
+                        <span className="num">{data.maxRequestsPerMinute}</span>,
+                      ],
+                    ]}
+                  />
+                </div>
+              </Card>
+            </>
+          )}
+        </AsyncBlock>
       </div>
-    </Modal>
+    </>
   );
 }

@@ -1,58 +1,48 @@
 /**
  * THE WIRING POINT.
  *
- * This file is the only place that knows which implementation backs each
- * repository interface. Switching the console from mock data to a real API is
- * a change to this file and nothing else:
+ * The only file that knows which implementation backs each repository. Every
+ * screen reads its data through `useRepos()`, so pointing the console at a
+ * different backend — a staging API, a set of fakes in a test — is a change
+ * here and nowhere else.
  *
- *   export function createRepositories(): Repositories {
- *     const http = new HttpClient(import.meta.env.VITE_API_BASE);
- *     return {
- *       auth: new HttpAuthRepository(http),
- *       catalog: new HttpCatalogRepository(http),
- *       ...
- *     };
- *   }
- *
- * No screen, component or hook imports a Mock* class directly — they take the
- * repositories from React context. Keep it that way.
+ * The base URL comes from `VITE_API_BASE` (see `.env.example`); the HTTP
+ * client reads it once at module load.
  */
 
 import type { Repositories } from './types';
-import { MockAuthRepository } from './mock/auth';
-import { MockCatalogRepository } from './mock/catalog';
-import { MockUsersRepository } from './mock/users';
-import { MockDevicesRepository } from './mock/devices';
-import { MockRenewalsRepository } from './mock/renewals';
-import { MockMatchesRepository } from './mock/matches';
-import { MockStockRepository } from './mock/stock';
-import { MockApiRepository } from './mock/api';
-import { MockLeaderboardRepository } from './mock/leaderboard';
-import { MockDrawsRepository } from './mock/draws';
-import { MockContentRepository } from './mock/content';
-import {
-  MockAdminRepository,
-  MockAgentsRepository,
-  MockNotificationsRepository,
-} from './mock/misc';
+import { HttpAuthRepository } from './http/auth';
+import { HttpGeoRepository } from './http/geo';
+import { HttpRegionsRepository } from './http/regions';
+import { HttpCatalogRepository } from './http/catalog';
+import { HttpStockRepository } from './http/stock';
+import { HttpAppUsersRepository } from './http/appUsers';
+import { HttpDevicesRepository } from './http/devices';
+import { HttpMatchesRepository } from './http/matches';
+import { HttpPredictionsRepository } from './http/predictions';
+import { HttpSyncRepository } from './http/sync';
+import { HttpNotificationsRepository } from './http/notifications';
+import { HttpContentRepository } from './http/content';
+import { HttpSilversatRepository } from './http/silversat';
+import { HttpDashboardRepository } from './http/dashboard';
 
-/** Builds the repository bundle the whole app runs on. */
+/** Builds the repository bundle the whole console runs on. */
 export function createRepositories(): Repositories {
   return {
-    auth: new MockAuthRepository(),
-    catalog: new MockCatalogRepository(),
-    users: new MockUsersRepository(),
-    devices: new MockDevicesRepository(),
-    renewals: new MockRenewalsRepository(),
-    matches: new MockMatchesRepository(),
-    stock: new MockStockRepository(),
-    api: new MockApiRepository(),
-    leaderboard: new MockLeaderboardRepository(),
-    draws: new MockDrawsRepository(),
-    content: new MockContentRepository(),
-    notifications: new MockNotificationsRepository(),
-    agents: new MockAgentsRepository(),
-    admin: new MockAdminRepository(),
+    auth: new HttpAuthRepository(),
+    geo: new HttpGeoRepository(),
+    regions: new HttpRegionsRepository(),
+    catalog: new HttpCatalogRepository(),
+    stock: new HttpStockRepository(),
+    appUsers: new HttpAppUsersRepository(),
+    devices: new HttpDevicesRepository(),
+    matches: new HttpMatchesRepository(),
+    predictions: new HttpPredictionsRepository(),
+    sync: new HttpSyncRepository(),
+    notifications: new HttpNotificationsRepository(),
+    content: new HttpContentRepository(),
+    silversat: new HttpSilversatRepository(),
+    dashboard: new HttpDashboardRepository(),
   };
 }
 

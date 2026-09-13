@@ -12,6 +12,7 @@ import {
   useState,
   type ChangeEvent,
   type CSSProperties,
+  type MouseEvent,
   type ReactNode,
 } from 'react';
 import { ChevronLeft, ChevronRight, Inbox, Search, X } from 'lucide-react';
@@ -75,7 +76,11 @@ export function Button({
   className,
 }: {
   children?: ReactNode;
-  onClick?: () => void;
+  /**
+   * The event is passed through so a button inside a clickable table row can
+   * `stopPropagation()` — otherwise the row's own handler fires too.
+   */
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   variant?: ButtonVariant;
   type?: 'button' | 'submit';
   disabled?: boolean;

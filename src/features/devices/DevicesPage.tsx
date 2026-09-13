@@ -1,216 +1,144 @@
 /**
- * Every receiver in the fleet.
+ * Receivers.
  *
- * The row actions are the four things support actually does to a box: renew
- * it, grant it free time to settle a complaint, suspend it, or move it to
- * another account when a customer sells their receiver.
+ * Our database knows very little about a receiver — a label, a number and who
+ * owns it. Everything an operator is actually asked on the phone ("is he
+ * subscribed?", "until when?") lives in the vendor's system, so the useful
+ * actions on this screen are the three that reach out to it: read the
+ * subscription, re-send the authorisation signal, and recharge with a code.
+ *
+ * Those are live actions on real hardware with no local record, which is why
+ * they are per-row rather than bulk, and why the two that change something
+ * confirm first.
  */
 
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  ArrowLeftRight,
-  CalendarPlus,
-  Download,
-  Gift,
-  PauseCircle,
-  PlayCircle,
-  Tv,
-} from 'lucide-react';
+import { RadioTower, Search, Tv, Zap } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useRepos } from '@/app/RepositoryContext';
-import { useAsync, useAction, useDebounced } from '@/app/useAsync';
+import { useAction, useAsync, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import { PageHeader, DataTable, Toolbar, type Column } from '@/components/page';
+import { DataTable, PageHeader, Toolbar, type Column } from '@/components/page';
 import {
   AsyncBlock,
   Button,
   Card,
   ConfirmDialog,
-  Field,
-  FilterChips,
+  EmptyState,
   Modal,
   Notice,
-  Pill,
-  SearchInput,
   Select,
-  TextInput,
+  SearchInput,
 } from '@/components/ui';
-import type { DeviceStatus, Id } from '@/types';
-import type { DeviceRow } from '@/data/repositories/types';
-import { DEVICE_STATUS } from '@/lib/labels';
-import { daysUntil, formatDateAr, formatPhone } from '@/lib/format';
-import { downloadCsv } from '@/lib/utils';
+import { formatDateAr, formatPhone } from '@/lib/format';
+import type { Device, Id, SilversatRegion } from '@/types';
+import { VendorPayload } from '../shared/VendorPayload';
 import { RenewDialog } from './RenewDialog';
 
 export function DevicesPage() {
   const repos = useRepos();
-  const navigate = useNavigate();
   const { toast } = useToast();
-  const [params] = useSearchParams();
 
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
-  const [status, setStatus] = useState<DeviceStatus | 'all'>('all');
-  const [governorateId, setGovernorateId] = useState<Id | 'all'>('all');
+  const [provinceId, setProvinceId] = useState<Id | 'all'>('all');
   const [page, setPage] = useState(1);
 
-  const [renewing, setRenewing] = useState<DeviceRow | null>(null);
-  const [granting, setGranting] = useState<DeviceRow | null>(null);
-  const [transferring, setTransferring] = useState<DeviceRow | null>(null);
-  const [suspending, setSuspending] = useState<DeviceRow | null>(null);
-  const [busy, setBusy] = useState(false);
+  const provinces = useAsync(() => repos.geo.provinces.all(), []);
+  const regions = useAsync(() => repos.silversat.regions(), []);
 
-  const userId = params.get('user') ?? undefined;
-  const governorates = useAsync(() => repos.catalog.governorates(), []);
   const devices = useAsync(
     () =>
       repos.devices.list({
         search: debounced,
-        status,
-        userId,
-        governorateId: governorateId === 'all' ? undefined : governorateId,
+        provinceId: provinceId === 'all' ? undefined : provinceId,
         page,
         pageSize: 25,
       }),
-    [debounced, status, governorateId, userId, page],
+    [debounced, provinceId, page],
   );
 
-  const toggleSuspend = async (device: DeviceRow, reason?: string) => {
-    setBusy(true);
-    try {
-      await repos.devices.setSuspended(device.id, device.status !== 'suspended', reason);
-      toast(device.status === 'suspended' ? 'انفعّل الجهاز' : 'انعلّق الجهاز');
-      setSuspending(null);
-      devices.reload();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'تعذّر التغيير', 'error');
-    } finally {
-      setBusy(false);
-    }
+  const [inspecting, setInspecting] = useState<Device | null>(null);
+  const [signalling, setSignalling] = useState<Device | null>(null);
+  const [recharging, setRecharging] = useState<Device | null>(null);
+  const [run, action] = useAction();
+
+  // The vendor needs a region on every call, and a device does not carry one,
+  // so the operator picks it once for the screen rather than per action.
+  const [regionId, setRegionId] = useState<Id>('');
+  const activeRegion = regionId || regions.data?.[0]?.id || '';
+
+  const sendSignal = async () => {
+    if (!signalling) return;
+    const ok = await run(() => repos.silversat.sendSignal(activeRegion, signalling.deviceNumber));
+    if (!ok) return;
+    toast('انرسلت الإشارة للجهاز');
+    setSignalling(null);
   };
 
-  const exportCsv = async () => {
-    const all = await repos.devices.list({ search: debounced, status, pageSize: 100000 });
-    downloadCsv('devices.csv', [
-      ['رقم الجهاز', 'الاسم', 'المالك', 'الهاتف', 'الموديل', 'الحالة', 'تاريخ الانتهاء', 'الأيام المتبقية'],
-      ...all.items.map((d) => [
-        d.number,
-        d.name,
-        d.ownerName,
-        d.ownerPhone,
-        d.model,
-        DEVICE_STATUS[d.status].label,
-        formatDateAr(d.expiryAt),
-        daysUntil(d.expiryAt),
-      ]),
-    ]);
-    toast('تم تصدير الملف');
-  };
-
-  const columns: Column<DeviceRow>[] = [
+  const columns: Column<Device>[] = [
     {
-      key: 'number',
+      key: 'device',
       header: 'الجهاز',
-      sortable: true,
-      render: (device) => (
-        <div className="row row-gap-3">
-          <span className="chip-icon" style={{ width: 30, height: 30 }}>
-            <Tv size={15} />
-          </span>
-          <div className="col" style={{ lineHeight: 1.35 }}>
-            <span className="fs-13 strong num">{device.number}</span>
-            <span className="fs-11 dim">
-              {device.name} · {device.model}
-            </span>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'ownerName',
-      header: 'المالك',
-      sortable: true,
-      render: (device) => (
+      render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13">{device.ownerName}</span>
-          <span className="fs-11 dim num">{formatPhone(device.ownerPhone)}</span>
+          <span className="fs-13 strong">{row.name}</span>
+          <span className="fs-11 dim num">{row.deviceNumber}</span>
         </div>
       ),
     },
     {
-      key: 'governorate',
+      key: 'owner',
+      header: 'المشترك',
+      render: (row) =>
+        row.appUser ? (
+          <Link className="col" to={`/users/${row.appUserId}`} style={{ lineHeight: 1.35 }}>
+            <span className="fs-13">{row.appUser.name}</span>
+            <span className="fs-11 dim num">{formatPhone(row.appUser.phone)}</span>
+          </Link>
+        ) : (
+          <span className="dim">—</span>
+        ),
+    },
+    {
+      key: 'province',
       header: 'المحافظة',
-      render: (device) => (
-        <span className="fs-12 muted">
-          {governorates.data?.find((g) => g.id === device.governorateId)?.nameAr ?? '—'}
-        </span>
-      ),
+      render: (row) => row.appUser?.province?.name ?? '—',
     },
     {
-      key: 'status',
-      header: 'الحالة',
-      render: (device) => {
-        const meta = DEVICE_STATUS[device.status];
-        return <Pill tone={meta.tone}>{meta.label}</Pill>;
-      },
-    },
-    {
-      key: 'expiryAt',
-      header: 'ينتهي في',
-      sortable: true,
-      render: (device) => {
-        const left = daysUntil(device.expiryAt);
-        return (
-          <div className="col" style={{ lineHeight: 1.35 }}>
-            <span className="fs-13">{formatDateAr(device.expiryAt)}</span>
-            <span
-              className="fs-11 num"
-              style={{ color: left < 0 ? 'var(--danger)' : left <= 7 ? 'var(--warning)' : 'var(--text-tertiary)' }}
-            >
-              {left >= 0 ? `باقي ${left} يوم` : `منتهي من ${Math.abs(left)} يوم`}
-            </span>
-          </div>
-        );
-      },
+      key: 'added',
+      header: 'تاريخ الإضافة',
+      render: (row) => <span className="fs-12">{formatDateAr(row.createdAt)}</span>,
     },
     {
       key: 'actions',
       header: '',
-      width: 160,
-      render: (device) => (
+      width: 140,
+      render: (row) => (
         <div className="row row-gap-1">
           <Button
             variant="ghost"
             size="sm"
-            icon={<CalendarPlus size={14} />}
-            title="تسجيل تجديد"
-            onClick={() => setRenewing(device)}
+            icon={<Search size={14} />}
+            title="استعلام عن الاشتراك"
+            onClick={() => setInspecting(row)}
           />
           <Button
             variant="ghost"
             size="sm"
-            icon={<Gift size={14} />}
-            title="منح أشهر مجانية"
-            onClick={() => setGranting(device)}
+            icon={<RadioTower size={14} />}
+            title="إرسال إشارة"
+            onClick={() => setSignalling(row)}
           />
           <Button
             variant="ghost"
             size="sm"
-            icon={<ArrowLeftRight size={14} />}
-            title="نقل لمشترك آخر"
-            onClick={() => setTransferring(device)}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={device.status === 'suspended' ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
-            title={device.status === 'suspended' ? 'إعادة تفعيل' : 'تعليق'}
-            onClick={() =>
-              device.status === 'suspended' ? void toggleSuspend(device) : setSuspending(device)
-            }
+            icon={<Zap size={14} />}
+            title="شحن أو تجديد"
+            onClick={() => setRecharging(row)}
           />
         </div>
-        ),
+      ),
     },
   ];
 
@@ -218,54 +146,43 @@ export function DevicesPage() {
     <>
       <PageHeader
         title="الأجهزة"
-        subtitle="كل أجهزة الاستقبال، حالتها ومواعيد انتهاء اشتراكاتها"
-        actions={
-          <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportCsv()}>
-            تصدير CSV
-          </Button>
-        }
+        subtitle="رسيفرات المشتركين — والاستعلام والشحن يروحون مباشرة لسيرفر سلفرسات"
       />
 
       <div className="page">
-        {userId ? (
-          <Notice tone="info">
-            معروضة أجهزة مشترك واحد فقط.{' '}
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/devices')}>
-              عرض كل الأجهزة
-            </button>
-          </Notice>
-        ) : null}
+        <Notice tone="warning">
+          الاستعلام وإرسال الإشارة والشحن كلها إجراءات مباشرة على سيرفر سلفرسات — ما ننحفظ عدنا أي
+          سجل إلها. اختر السيرفر الصحيح قبل ما تنفّذ.
+        </Notice>
 
         <Card>
           <Toolbar>
-            <SearchInput value={search} onChange={setSearch} placeholder="رقم الجهاز، الاسم، أو المالك…" />
-            <Select
-              value={governorateId}
+            <SearchInput
+              value={search}
               onChange={(next) => {
-                setGovernorateId(next);
+                setSearch(next);
+                setPage(1);
+              }}
+              placeholder="ابحث برقم الجهاز أو الاسم…"
+            />
+            <Select
+              value={provinceId}
+              onChange={(next) => {
+                setProvinceId(next);
                 setPage(1);
               }}
               options={[
                 { value: 'all' as const, label: 'كل المحافظات' },
-                ...(governorates.data ?? []).map((g) => ({ value: g.id, label: g.nameAr })),
+                ...(provinces.data ?? []).map((row) => ({ value: row.id, label: row.name })),
               ]}
             />
-          </Toolbar>
-
-          <Toolbar>
-            <FilterChips
-              value={status}
-              onChange={(next) => {
-                setStatus(next);
-                setPage(1);
-              }}
-              items={[
-                { value: 'all', label: 'الكل' },
-                { value: 'active', label: 'فعّال' },
-                { value: 'expiring', label: 'قرب ينتهي' },
-                { value: 'expired', label: 'منتهي' },
-                { value: 'suspended', label: 'معلّق' },
-              ]}
+            <Select<Id>
+              value={activeRegion}
+              onChange={setRegionId}
+              options={(regions.data ?? []).map((row: SilversatRegion) => ({
+                value: row.id,
+                label: `سيرفر: ${row.name}`,
+              }))}
             />
           </Toolbar>
 
@@ -274,238 +191,91 @@ export function DevicesPage() {
               <DataTable
                 columns={columns}
                 rows={data.items}
-                rowKey={(device) => device.id}
-                onRowClick={(device) => navigate(`/users/${device.userId}`)}
+                rowKey={(row) => row.id}
                 page={data.page}
                 pageSize={data.pageSize}
                 total={data.total}
                 onPage={setPage}
+                empty={
+                  <EmptyState
+                    icon={<Tv size={20} />}
+                    title="ماكو أجهزة"
+                    hint="ما ينربط أي رسيفر بهذه الفلاتر"
+                  />
+                }
               />
             )}
           </AsyncBlock>
         </Card>
       </div>
 
-      {renewing ? (
-        <RenewDialog
-          deviceId={renewing.id}
-          onClose={() => setRenewing(null)}
-          onSaved={() => {
-            setRenewing(null);
-            devices.reload();
-          }}
+      {inspecting ? (
+        <SubscriptionDialog
+          device={inspecting}
+          regionId={activeRegion}
+          onClose={() => setInspecting(null)}
         />
       ) : null}
 
-      {granting ? (
-        <GrantDialog
-          device={granting}
-          onClose={() => setGranting(null)}
-          onSaved={() => {
-            setGranting(null);
-            devices.reload();
-          }}
+      {signalling ? (
+        <ConfirmDialog
+          title="إرسال إشارة للجهاز"
+          confirmLabel="إرسال"
+          pending={action.pending}
+          message={
+            <>
+              راح تنرسل إشارة تفويض للجهاز{' '}
+              <span className="strong num">{signalling.deviceNumber}</span> حتى يحدّث اشتراكه.
+              الإجراء يروح مباشرة للسيرفر.
+              {action.error ? <div className="field-error mt-2">{action.error}</div> : null}
+            </>
+          }
+          onConfirm={() => void sendSignal()}
+          onCancel={() => setSignalling(null)}
         />
       ) : null}
 
-      {transferring ? (
-        <TransferDialog
-          device={transferring}
-          onClose={() => setTransferring(null)}
-          onSaved={() => {
-            setTransferring(null);
-            devices.reload();
-          }}
-        />
-      ) : null}
-
-      {suspending ? (
-        <SuspendDialog
-          device={suspending}
-          pending={busy}
-          onCancel={() => setSuspending(null)}
-          onConfirm={(reason) => void toggleSuspend(suspending, reason)}
-        />
+      {recharging ? (
+        <RenewDialog device={recharging} onClose={() => setRecharging(null)} />
       ) : null}
     </>
   );
 }
 
-/** Free months — a goodwill gesture, recorded as a zero-value renewal. */
-function GrantDialog({
+/**
+ * Reads the subscription straight from the vendor.
+ *
+ * The answer's shape belongs to the vendor, not to us, so it is rendered as
+ * received rather than mapped onto fields we have invented — a made-up label
+ * over a field that turns out to mean something else is worse than raw keys.
+ */
+function SubscriptionDialog({
   device,
+  regionId,
   onClose,
-  onSaved,
 }: {
-  device: DeviceRow;
+  device: Device;
+  regionId: Id;
   onClose: () => void;
-  onSaved: () => void;
 }) {
   const repos = useRepos();
-  const { toast } = useToast();
-  const [run, action] = useAction();
-  const [months, setMonths] = useState('1');
-  const [reason, setReason] = useState('');
-
-  const save = async () => {
-    if (!reason.trim()) {
-      toast('اكتب سبب المنح — ينسجل في سجل العمليات', 'error');
-      return;
-    }
-    const ok = await run(() => repos.devices.grantMonths(device.id, Number(months), reason.trim()));
-    if (ok) {
-      toast('انمنحت الأشهر المجانية');
-      onSaved();
-    }
-  };
+  const state = useAsync(
+    () => repos.silversat.subscription(regionId, device.deviceNumber),
+    [regionId, device.id],
+  );
 
   return (
     <Modal
-      title="منح أشهر مجانية"
+      title={`اشتراك الجهاز ${device.deviceNumber}`}
+      size="lg"
       onClose={onClose}
       footer={
-        <>
-          <Button variant="primary" onClick={() => void save()} disabled={action.pending}>
-            منح
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            إلغاء
-          </Button>
-        </>
+        <Button variant="ghost" onClick={onClose}>
+          إغلاق
+        </Button>
       }
     >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
-        <span className="fs-13 muted">
-          الجهاز <span className="num strong">{device.number}</span> — {device.ownerName}
-        </span>
-        <Field label="عدد الأشهر">
-          <TextInput type="number" min={1} max={12} value={months} onChange={setMonths} />
-        </Field>
-        <Field label="السبب" hint="ينسجل كتجديد بقيمة صفر ويظهر في سجل الجهاز">
-          <TextInput value={reason} onChange={setReason} placeholder="مثلاً: تعويض عن انقطاع خدمة" />
-        </Field>
-      </div>
+      <AsyncBlock state={state}>{(data) => <VendorPayload data={data} />}</AsyncBlock>
     </Modal>
-  );
-}
-
-/** Move a receiver to another account, keeping its payment history. */
-function TransferDialog({
-  device,
-  onClose,
-  onSaved,
-}: {
-  device: DeviceRow;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const repos = useRepos();
-  const { toast } = useToast();
-  const [run, action] = useAction();
-  const [search, setSearch] = useState('');
-  const debounced = useDebounced(search);
-  const [targetId, setTargetId] = useState<Id>('');
-
-  const candidates = useAsync(
-    () => repos.users.list({ search: debounced, pageSize: 12 }),
-    [debounced],
-  );
-
-  const save = async () => {
-    if (!targetId) {
-      toast('اختر المشترك الجديد', 'error');
-      return;
-    }
-    const ok = await run(() => repos.devices.transfer(device.id, targetId));
-    if (ok) {
-      toast('انتقل الجهاز للمشترك الجديد');
-      onSaved();
-    }
-  };
-
-  return (
-    <Modal
-      title="نقل الجهاز لمشترك آخر"
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="primary" onClick={() => void save()} disabled={action.pending || !targetId}>
-            نقل الجهاز
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            إلغاء
-          </Button>
-        </>
-      }
-    >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
-
-        <Notice tone="warning">
-          سجل التجديدات والكوبونات ينتقل مع الجهاز، لأنه مرتبط بالرسيفر مو بالحساب.
-        </Notice>
-
-        <div className="col" style={{ gap: 4 }}>
-          <span className="fs-12 muted">المالك الحالي</span>
-          <span className="fs-13 strong">{device.ownerName}</span>
-        </div>
-
-        <Field label="ابحث عن المشترك الجديد">
-          <SearchInput value={search} onChange={setSearch} placeholder="اسم أو رقم هاتف…" />
-        </Field>
-
-        <div className="col" style={{ gap: 4, maxHeight: 240, overflowY: 'auto' }}>
-          {(candidates.data?.items ?? [])
-            .filter((user) => user.id !== device.userId)
-            .map((user) => (
-              <button
-                key={user.id}
-                className={`chip${targetId === user.id ? ' active' : ''}`}
-                style={{ height: 'auto', padding: '9px 12px', justifyContent: 'flex-start' }}
-                onClick={() => setTargetId(user.id)}
-              >
-                <span className="strong">{user.fullName}</span>
-                <span className="dim num">{formatPhone(user.phone)}</span>
-              </button>
-            ))}
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function SuspendDialog({
-  device,
-  pending,
-  onCancel,
-  onConfirm,
-}: {
-  device: DeviceRow;
-  pending: boolean;
-  onCancel: () => void;
-  onConfirm: (reason: string) => void;
-}) {
-  const [reason, setReason] = useState('');
-  return (
-    <ConfirmDialog
-      title="تعليق الجهاز"
-      danger
-      pending={pending}
-      confirmLabel="تعليق"
-      onCancel={onCancel}
-      onConfirm={() => onConfirm(reason || 'بدون سبب مذكور')}
-      message={
-        <div className="col" style={{ gap: 'var(--sp-3)' }}>
-          <span>
-            الجهاز <span className="num strong">{device.number}</span> راح يتوقف عن الاستقبال لحد ما
-            ترفع التعليق. تاريخ الانتهاء ما يتأثر.
-          </span>
-          <Field label="سبب التعليق">
-            <TextInput value={reason} onChange={setReason} placeholder="مثلاً: بلاغ إساءة استخدام" />
-          </Field>
-        </div>
-      }
-    />
   );
 }

@@ -1,240 +1,428 @@
 /**
- * Subscription packages — the price list the renew screen renders.
+ * The price list: products and the categories under them.
  *
- * Two product rules are enforced here rather than left to the operator:
- * exactly one package may be featured (the renew screen highlights one), and a
- * package that has ever been sold is deactivated rather than deleted so old
- * receipts still resolve.
+ * These two are one screen because a category is meaningless alone — it is a
+ * price tier *of* a product, and the product decides the province and which
+ * upstream activates its codes. Editing a price without seeing which product
+ * and province it belongs to is how the wrong province gets repriced.
+ *
+ * Four prices ride on every category: what the code costs us, what the app
+ * charges, and the two reseller tiers. They are `decimal` columns, so the API
+ * sends them as strings — `toAmount` reads them at the point of render.
  */
 
 import { useState } from 'react';
-import { Package, Pencil, Plus, Star, Trash2 } from 'lucide-react';
+import { Field, Pill, Select, Switch, TextInput } from '@/components/ui';
+import { useAsync } from '@/app/useAsync';
 import { useRepos } from '@/app/RepositoryContext';
-import { useAsync, useAction } from '@/app/useAsync';
-import { useToast } from '@/app/ToastContext';
-import { PageHeader } from '@/components/page';
-import {
-  AsyncBlock,
-  Button,
-  Card,
-  ConfirmDialog,
-  Field,
-  Modal,
-  Notice,
-  Pill,
-  Switch,
-  TextInput,
-} from '@/components/ui';
-import type { SubscriptionPackage } from '@/types';
-import { formatIqd, formatNumber, monthsAr } from '@/lib/format';
+import { formatIqd } from '@/lib/format';
+import { ACTIVATION_API } from '@/lib/labels';
+import { toAmount, type ActivationApi, type Category, type Id, type Product } from '@/types';
+import type { CategoryInput, ProductInput } from '@/data/repositories/types';
+import { Tabs } from '@/components/ui';
+import { CrudScreen } from '../shared/CrudScreen';
 
 export function PackagesPage() {
-  const repos = useRepos();
-  const { toast } = useToast();
-  const [editing, setEditing] = useState<SubscriptionPackage | 'new' | null>(null);
-  const [deleting, setDeleting] = useState<SubscriptionPackage | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const packages = useAsync(() => repos.catalog.packages(), []);
-
-  const runDelete = async () => {
-    if (!deleting) return;
-    setBusy(true);
-    try {
-      await repos.catalog.deletePackage(deleting.id);
-      toast('انحذفت الباقة');
-      setDeleting(null);
-      packages.reload();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'تعذّر الحذف', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const [tab, setTab] = useState<'categories' | 'products'>('categories');
 
   return (
     <>
-      <PageHeader
-        title="الباقات والأسعار"
-        subtitle="مدد الاشتراك المعروضة في شاشة التجديد داخل التطبيق"
-        actions={
-          <Button variant="primary" icon={<Plus size={16} />} onClick={() => setEditing('new')}>
-            إضافة باقة
-          </Button>
-        }
-      />
-
-      <div className="page">
-        <AsyncBlock state={packages}>
-          {(rows) => (
-            <div className="grid grid-3">
-              {rows.map((pkg) => (
-                <Card key={pkg.id} pad className="col" style={{ gap: 'var(--sp-3)' }}>
-                  <div className="row between">
-                    <span className="chip-icon">
-                      <Package size={17} />
-                    </span>
-                    <div className="row row-gap-1">
-                      {pkg.featured ? (
-                        <Pill tone="gold">
-                          <Star size={11} />
-                          مميزة
-                        </Pill>
-                      ) : null}
-                      <Pill tone={pkg.active ? 'success' : 'muted'}>
-                        {pkg.active ? 'مفعّلة' : 'معطّلة'}
-                      </Pill>
-                    </div>
-                  </div>
-
-                  <div className="col">
-                    <span className="fs-20 strong">{monthsAr(pkg.months)}</span>
-                    <span className="fs-17 strong num" style={{ color: 'var(--brand-primary)' }}>
-                      {formatIqd(pkg.price)}
-                    </span>
-                  </div>
-
-                  <div className="col fs-12 muted" style={{ gap: 3 }}>
-                    <span>
-                      سعر الشهر الواحد:{' '}
-                      <span className="num">{formatNumber(Math.round(pkg.price / pkg.months))} د.ع</span>
-                    </span>
-                    {pkg.save > 0 ? (
-                      <span style={{ color: 'var(--success)' }}>
-                        توفير <span className="num">{formatNumber(pkg.save)}</span> د.ع
-                      </span>
-                    ) : null}
-                    {pkg.bonus ? <span style={{ color: 'var(--gold)' }}>+ شهر مجاني إضافي</span> : null}
-                  </div>
-
-                  <div className="row row-gap-2">
-                    <Button variant="outline" size="sm" icon={<Pencil size={13} />} onClick={() => setEditing(pkg)}>
-                      تعديل
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<Trash2 size={13} />}
-                      title="حذف"
-                      onClick={() => setDeleting(pkg)}
-                    />
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-        </AsyncBlock>
-
-        <Notice tone="info">
-          الباقة المميزة وحدة فقط — لمّا تميّز باقة جديدة، القديمة تنشال تلقائياً. أي باقة انباعت
-          سابقاً ما تنحذف؛ عطّلها بدل الحذف حتى تبقى الفواتير القديمة مقروءة.
-        </Notice>
+      <div className="page-wash" style={{ paddingBottom: 0 }}>
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: 'categories', label: 'الباقات والأسعار' },
+            { value: 'products', label: 'المنتجات' },
+          ]}
+        />
       </div>
-
-      {editing ? (
-        <PackageDialog
-          pkg={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            packages.reload();
-          }}
-        />
-      ) : null}
-
-      {deleting ? (
-        <ConfirmDialog
-          title="حذف الباقة"
-          message={`راح تنحذف باقة ${monthsAr(deleting.months)} نهائياً.`}
-          confirmLabel="حذف"
-          danger
-          pending={busy}
-          onConfirm={() => void runDelete()}
-          onCancel={() => setDeleting(null)}
-        />
-      ) : null}
+      {tab === 'categories' ? <CategoriesTab /> : <ProductsTab />}
     </>
   );
 }
 
-function PackageDialog({
-  pkg,
-  onClose,
-  onSaved,
-}: {
-  pkg: SubscriptionPackage | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
+// ------------------------------------------------------------ categories ---
+
+function CategoriesTab() {
   const repos = useRepos();
-  const { toast } = useToast();
-  const [run, action] = useAction();
+  const products = useAsync(() => repos.catalog.products.all(), []);
+  const productOptions = (products.data ?? []).map((row) => ({
+    value: row.id,
+    // The province is part of the identity: the same service exists once per
+    // province, so the bare display name does not identify a product.
+    label: row.province ? `${row.displayName} — ${row.province.name}` : row.displayName,
+  }));
 
-  const [months, setMonths] = useState(String(pkg?.months ?? 3));
-  const [price, setPrice] = useState(String(pkg?.price ?? 15000));
-  const [save, setSave] = useState(String(pkg?.save ?? 0));
-  const [bonus, setBonus] = useState(pkg?.bonus ?? false);
-  const [featured, setFeatured] = useState(pkg?.featured ?? false);
-  const [active, setActive] = useState(pkg?.active ?? true);
-
-  const submit = async () => {
-    if (Number(months) < 1 || Number(price) < 1) {
-      toast('المدة والسعر لازم يكونون أكبر من صفر', 'error');
-      return;
-    }
-    const ok = await run(() =>
-      repos.catalog.savePackage({
-        id: pkg?.id,
-        months: Number(months),
-        price: Number(price),
-        save: Number(save),
-        bonus,
-        featured,
-        active,
-        sortOrder: pkg?.sortOrder ?? 0,
-      }),
-    );
-    if (ok) {
-      toast(pkg ? 'انحفظت الباقة' : 'انضافت الباقة');
-      onSaved();
-    }
-  };
+  const [productId, setProductId] = useState<Id>('');
 
   return (
-    <Modal
-      title={pkg ? 'تعديل الباقة' : 'إضافة باقة'}
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="primary" onClick={() => void submit()} disabled={action.pending}>
-            حفظ
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            إلغاء
-          </Button>
-        </>
+    <CrudScreen<Category, CategoryInput, { productId?: Id }>
+      title="الباقات والأسعار"
+      subtitle="فئات كل منتج وأسعارها — سعر الكلفة، سعر التطبيق، وسعري الوكيل الرئيسي والفرعي"
+      repo={repos.catalog.categories}
+      searchable
+      filter={productId ? { productId } : undefined}
+      filters={
+        <Select<Id>
+          value={productId}
+          onChange={setProductId}
+          options={[{ value: '', label: 'كل المنتجات' }, ...productOptions]}
+        />
       }
-    >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
-
-        <div className="grid grid-form">
-          <Field label="عدد الأشهر">
-            <TextInput type="number" min={1} max={36} value={months} onChange={setMonths} />
+      createLabel="إضافة فئة"
+      createTitle="إضافة فئة"
+      editTitle="تعديل الفئة"
+      dialogSize="xl"
+      rowKey={(row) => row.id}
+      labelOf={(row) => row.name}
+      columns={[
+        {
+          key: 'name',
+          header: 'الفئة',
+          render: (row) => (
+            <div className="col">
+              <span className="strong">{row.name}</span>
+              <span className="fs-12 dim">{row.nameKu || '—'}</span>
+            </div>
+          ),
+        },
+        {
+          key: 'product',
+          header: 'المنتج',
+          render: (row) => (
+            <div className="col">
+              <span className="fs-13">{row.product?.displayName ?? '—'}</span>
+              <span className="fs-11 dim">{row.product?.province?.name ?? ''}</span>
+            </div>
+          ),
+        },
+        {
+          key: 'cost',
+          header: 'الكلفة',
+          numeric: true,
+          render: (row) => <span className="num">{formatIqd(toAmount(row.costPrice))}</span>,
+        },
+        {
+          key: 'unit',
+          header: 'سعر التطبيق',
+          numeric: true,
+          render: (row) => (
+            <span className="num strong">{formatIqd(toAmount(row.unitPrice))}</span>
+          ),
+        },
+        {
+          key: 'agents',
+          header: 'الوكيل (رئيسي / فرعي)',
+          numeric: true,
+          render: (row) => (
+            <span className="num">
+              {formatIqd(toAmount(row.mainPrice))} / {formatIqd(toAmount(row.subPrice))}
+            </span>
+          ),
+        },
+        {
+          key: 'flags',
+          header: 'الحالة',
+          render: (row) => (
+            <div className="row row-gap-1 wrap">
+              {row.isDisabled ? (
+                <Pill tone="danger">معطّلة</Pill>
+              ) : row.isDisplay ? (
+                <Pill tone="success">معروضة</Pill>
+              ) : (
+                <Pill tone="muted">مخفية</Pill>
+              )}
+              {row.hasSecondaryCode ? <Pill tone="neutral">كود ثانوي</Pill> : null}
+            </div>
+          ),
+        },
+        {
+          key: 'threshold',
+          header: 'حد التنبيه',
+          numeric: true,
+          width: 96,
+          render: (row) => (
+            <span className="num dim">
+              {row.lowStockThreshold === null ? '—' : row.lowStockThreshold}
+            </span>
+          ),
+        },
+      ]}
+      blank={() => ({
+        productId: productId || productOptions[0]?.value || '',
+        name: '',
+        nameKu: '',
+        costPrice: 0,
+        unitPrice: 0,
+        mainPrice: 0,
+        subPrice: 0,
+        hasSecondaryCode: false,
+        lowStockThreshold: null,
+        isDisabled: false,
+        isDisplay: true,
+        sortOrder: 0,
+      })}
+      toInput={(row) => ({
+        productId: row.productId,
+        name: row.name,
+        nameKu: row.nameKu,
+        costPrice: toAmount(row.costPrice),
+        unitPrice: toAmount(row.unitPrice),
+        mainPrice: toAmount(row.mainPrice),
+        subPrice: toAmount(row.subPrice),
+        hasSecondaryCode: row.hasSecondaryCode,
+        lowStockThreshold: row.lowStockThreshold,
+        isDisabled: row.isDisabled,
+        isDisplay: row.isDisplay,
+        sortOrder: row.sortOrder,
+      })}
+      validate={(draft) =>
+        !draft.productId
+          ? 'اختر المنتج'
+          : !draft.name.trim()
+            ? 'اسم الفئة مطلوب'
+            : draft.unitPrice <= 0
+              ? 'سعر التطبيق لازم يكون أكبر من صفر'
+              : null
+      }
+      form={(draft, set) => (
+        <>
+          <Field label="المنتج" className="span-2">
+            <Select<Id>
+              value={draft.productId}
+              onChange={(next) => set('productId', next)}
+              options={productOptions}
+            />
           </Field>
-          <Field label="السعر (د.ع)">
-            <TextInput type="number" min={0} step={500} value={price} onChange={setPrice} />
+
+          <Field label="اسم الفئة بالعربي">
+            <TextInput
+              value={draft.name}
+              onChange={(next) => set('name', next)}
+              placeholder="اشتراك 12 شهر"
+            />
           </Field>
-        </div>
+          <Field label="اسم الفئة بالكردي">
+            <TextInput value={draft.nameKu} onChange={(next) => set('nameKu', next)} />
+          </Field>
 
-        <Field label="قيمة التوفير المعروضة (د.ع)" hint="اتركها صفر إذا ما بيها توفير">
-          <TextInput type="number" min={0} step={500} value={save} onChange={setSave} />
-        </Field>
+          <Field label="سعر الكلفة" hint="شكد يكلّفنا الكارت">
+            <TextInput
+              type="number"
+              min={0}
+              value={draft.costPrice}
+              onChange={(next) => set('costPrice', Number(next) || 0)}
+            />
+          </Field>
+          <Field label="سعر التطبيق" hint="السعر اللي يشوفه المشترك">
+            <TextInput
+              type="number"
+              min={0}
+              value={draft.unitPrice}
+              onChange={(next) => set('unitPrice', Number(next) || 0)}
+            />
+          </Field>
+          <Field label="سعر الوكيل الرئيسي">
+            <TextInput
+              type="number"
+              min={0}
+              value={draft.mainPrice}
+              onChange={(next) => set('mainPrice', Number(next) || 0)}
+            />
+          </Field>
+          <Field label="سعر الوكيل الفرعي">
+            <TextInput
+              type="number"
+              min={0}
+              value={draft.subPrice}
+              onChange={(next) => set('subPrice', Number(next) || 0)}
+            />
+          </Field>
 
-        <Switch checked={bonus} onChange={setBonus} label="تمنح شهر مجاني إضافي عند التجديد" />
-        <Switch checked={featured} onChange={setFeatured} label="اعرضها كباقة مميزة في التطبيق" />
-        <Switch checked={active} onChange={setActive} label="مفعّلة ومعروضة للبيع" />
-      </div>
-    </Modal>
+          <Field label="حد التنبيه للمخزون" hint="خلّيها فارغة حتى تطفي التنبيه">
+            <TextInput
+              type="number"
+              min={0}
+              value={draft.lowStockThreshold ?? ''}
+              onChange={(next) => set('lowStockThreshold', next === '' ? null : Number(next) || 0)}
+            />
+          </Field>
+          <Field label="الترتيب">
+            <TextInput
+              type="number"
+              value={draft.sortOrder ?? 0}
+              onChange={(next) => set('sortOrder', Number(next) || 0)}
+            />
+          </Field>
+
+          <Field label="كود ثانوي" hint="فعّلها إذا الكارت يجي بقيمتين">
+            <Switch
+              checked={draft.hasSecondaryCode ?? false}
+              onChange={(next) => set('hasSecondaryCode', next)}
+              label="الكارت يحمل قيمة ثانية"
+            />
+          </Field>
+          <Field label="العرض بالتطبيق">
+            <Switch
+              checked={draft.isDisplay ?? true}
+              onChange={(next) => set('isDisplay', next)}
+              label="تنعرض بالتطبيق"
+            />
+          </Field>
+          <Field label="التعطيل" hint="الفئة المعطّلة ما تنباع أبداً">
+            <Switch
+              checked={draft.isDisabled ?? false}
+              onChange={(next) => set('isDisabled', next)}
+              label="معطّلة"
+            />
+          </Field>
+        </>
+      )}
+    />
+  );
+}
+
+// -------------------------------------------------------------- products ---
+
+function ProductsTab() {
+  const repos = useRepos();
+  const provinces = useAsync(() => repos.geo.provinces.all(), []);
+  const regions = useAsync(() => repos.regions.all(), []);
+
+  const provinceOptions = (provinces.data ?? []).map((row) => ({ value: row.id, label: row.name }));
+  const regionOptions = (regions.data ?? []).map((row) => ({ value: row.id, label: row.name }));
+
+  return (
+    <CrudScreen<Product, ProductInput>
+      title="المنتجات"
+      subtitle="الخدمة المباعة بكل محافظة — وأي سيرفر سلفرسات يفعّل كارتاتها"
+      repo={repos.catalog.products}
+      searchable
+      createLabel="إضافة منتج"
+      createTitle="إضافة منتج"
+      editTitle="تعديل المنتج"
+      dialogSize="lg"
+      rowKey={(row) => row.id}
+      labelOf={(row) => row.displayName}
+      columns={[
+        {
+          key: 'name',
+          header: 'المنتج',
+          render: (row) => (
+            <div className="col">
+              <span className="strong">{row.displayName}</span>
+              <span className="fs-12 dim">{row.name}</span>
+            </div>
+          ),
+        },
+        {
+          key: 'province',
+          header: 'المحافظة',
+          render: (row) => row.province?.name ?? '—',
+        },
+        {
+          key: 'api',
+          header: 'التفعيل',
+          render: (row) => (
+            <Pill tone={row.activationApi === 'silvers' ? 'neutral' : 'muted'}>
+              {ACTIVATION_API[row.activationApi]}
+            </Pill>
+          ),
+        },
+        {
+          key: 'region',
+          header: 'السيرفر',
+          render: (row) =>
+            row.silversatRegion ? (
+              <span className="fs-13">{row.silversatRegion.name}</span>
+            ) : (
+              <span className="dim">—</span>
+            ),
+        },
+      ]}
+      blank={() => ({
+        name: '',
+        displayName: '',
+        provinceId: provinceOptions[0]?.value ?? '',
+        activationApi: 'silvers',
+        silversatRegionId: null,
+      })}
+      toInput={(row) => ({
+        name: row.name,
+        displayName: row.displayName,
+        provinceId: row.provinceId,
+        activationApi: row.activationApi,
+        silversatRegionId: row.silversatRegionId,
+        image: row.imageUrl ?? undefined,
+      })}
+      validate={(draft) =>
+        !draft.displayName.trim()
+          ? 'الاسم المعروض مطلوب'
+          : !draft.provinceId
+            ? 'اختر المحافظة'
+            : draft.activationApi === 'silvers' && !draft.silversatRegionId
+              ? 'منتج التفعيل عبر سلفرسات لازم يرتبط بسيرفر'
+              : null
+      }
+      form={(draft, set) => (
+        <>
+          <Field label="الاسم المعروض" hint="اللي يشوفه المشترك بالتطبيق">
+            <TextInput
+              value={draft.displayName}
+              onChange={(next) => set('displayName', next)}
+              placeholder="سلفرسات نينوى"
+            />
+          </Field>
+          <Field label="الاسم الداخلي" hint="للتمييز باللوحة">
+            <TextInput value={draft.name} onChange={(next) => set('name', next)} />
+          </Field>
+
+          <Field label="المحافظة">
+            <Select<Id>
+              value={draft.provinceId}
+              onChange={(next) => set('provinceId', next)}
+              options={provinceOptions}
+            />
+          </Field>
+          <Field label="جهة التفعيل">
+            <Select<ActivationApi>
+              value={draft.activationApi ?? 'silvers'}
+              onChange={(next) => {
+                set('activationApi', next);
+                // A non-silvers product has nothing to point a region at.
+                if (next === 'other') set('silversatRegionId', null);
+              }}
+              options={(Object.keys(ACTIVATION_API) as ActivationApi[]).map((value) => ({
+                value,
+                label: ACTIVATION_API[value],
+              }))}
+            />
+          </Field>
+
+          <Field
+            label="سيرفر سلفرسات"
+            hint="السيرفر اللي راح ينشحن عليه كارت هذا المنتج"
+            className="span-2"
+          >
+            <Select<Id>
+              value={draft.silversatRegionId ?? ''}
+              onChange={(next) => set('silversatRegionId', next || null)}
+              options={[{ value: '', label: 'بدون سيرفر' }, ...regionOptions]}
+              disabled={(draft.activationApi ?? 'silvers') !== 'silvers'}
+            />
+          </Field>
+
+          <Field label="رابط الصورة" className="span-2">
+            <TextInput
+              type="url"
+              value={draft.image ?? ''}
+              onChange={(next) => set('image', next)}
+              placeholder="https://…"
+            />
+          </Field>
+        </>
+      )}
+    />
   );
 }

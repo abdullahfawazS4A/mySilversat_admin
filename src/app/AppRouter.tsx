@@ -18,19 +18,19 @@ import { LeaderboardPage } from '@/features/predictions/LeaderboardPage';
 import { UsersPage } from '@/features/users/UsersPage';
 import { UserDetailPage } from '@/features/users/UserDetailPage';
 import { DevicesPage } from '@/features/devices/DevicesPage';
-import { RenewalsPage } from '@/features/billing/RenewalsPage';
+import { SalesPage } from '@/features/billing/SalesPage';
 import { PackagesPage } from '@/features/billing/PackagesPage';
 import { AgentsPage } from '@/features/billing/AgentsPage';
 import { StockPage } from '@/features/stock/StockPage';
 import { DrawsPage } from '@/features/draws/DrawsPage';
 import { CouponsPage } from '@/features/draws/CouponsPage';
-import { OffersPage } from '@/features/content/OffersPage';
 import { SlidesPage } from '@/features/content/SlidesPage';
 import { VideosPage } from '@/features/content/VideosPage';
 import { FaqPage } from '@/features/content/FaqPage';
 import { TowersPage } from '@/features/content/TowersPage';
+import { ContactPage } from '@/features/content/ContactPage';
 import { NotificationsPage } from '@/features/notifications/NotificationsPage';
-import { GovernoratesPage } from '@/features/system/GovernoratesPage';
+import { ProvincesPage } from '@/features/system/ProvincesPage';
 import { ApiPage } from '@/features/system/ApiPage';
 import { AuditPage } from '@/features/system/AuditPage';
 import { SettingsPage } from '@/features/system/SettingsPage';
@@ -54,7 +54,7 @@ export function AppRouter() {
           <Route path="users" element={<UsersPage />} />
           <Route path="users/:userId" element={<UserDetailPage />} />
           <Route path="devices" element={<DevicesPage />} />
-          <Route path="renewals" element={<RenewalsPage />} />
+          <Route path="sales" element={<SalesPage />} />
           <Route path="packages" element={<PackagesPage />} />
           <Route path="agents" element={<AgentsPage />} />
           <Route path="stock" element={<StockPage />} />
@@ -62,18 +62,23 @@ export function AppRouter() {
           <Route path="draws" element={<DrawsPage />} />
           <Route path="coupons" element={<CouponsPage />} />
 
-          <Route path="offers" element={<OffersPage />} />
           <Route path="slides" element={<SlidesPage />} />
           <Route path="videos" element={<VideosPage />} />
           <Route path="faq" element={<FaqPage />} />
           <Route path="towers" element={<TowersPage />} />
+          <Route path="contact" element={<ContactPage />} />
 
           <Route path="notifications" element={<NotificationsPage />} />
 
-          <Route path="governorates" element={<GovernoratesPage />} />
+          <Route path="provinces" element={<ProvincesPage />} />
           <Route path="api" element={<ApiPage />} />
           <Route path="audit" element={<AuditPage />} />
           <Route path="settings" element={<SettingsPage />} />
+
+          {/* Screens that were renamed when the API wiring landed. */}
+          <Route path="renewals" element={<Navigate to="/sales" replace />} />
+          <Route path="governorates" element={<Navigate to="/provinces" replace />} />
+          <Route path="offers" element={<Navigate to="/slides" replace />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

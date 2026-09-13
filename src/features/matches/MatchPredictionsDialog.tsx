@@ -14,33 +14,28 @@ import { useToast } from '@/app/ToastContext';
 import { AsyncBlock, Button, Modal, Pill, SearchInput } from '@/components/ui';
 import { DataTable, type Column } from '@/components/page';
 import { SentimentMeter } from '@/components/charts';
-import type { MatchView, PredictionView } from '@/types';
+import { outcomeOf, type Match, type Prediction } from '@/types';
 import { PREDICTION_OUTCOME } from '@/lib/labels';
 import { downloadCsv } from '@/lib/utils';
+import { collectAll } from '@/lib/paging';
 import { formatDateTimeAr, formatPhone } from '@/lib/format';
 
-export function MatchPredictionsDialog({
-  match,
-  onClose,
-}: {
-  match: MatchView;
-  onClose: () => void;
-}) {
+export function MatchPredictionsDialog({ match, onClose }: { match: Match; onClose: () => void }) {
   const repos = useRepos();
   const { toast } = useToast();
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
   const [page, setPage] = useState(1);
 
-  const stats = useAsync(() => repos.matches.predictionStats(match.id), [match.id]);
+  const stats = useAsync(() => repos.predictions.stats(match.id), [match.id]);
   const picks = useAsync(
-    () => repos.matches.predictions(match.id, { search: debounced, page, pageSize: 12 }),
+    () => repos.predictions.list({ matchId: match.id, search: debounced, page, pageSize: 12 }),
     [match.id, debounced, page],
   );
 
-  const removePick = async (prediction: PredictionView) => {
+  const removePick = async (prediction: Prediction) => {
     try {
-      await repos.matches.deletePrediction(prediction.id);
+      await repos.predictions.remove(prediction.id);
       toast('انحذف التوقع');
       picks.reload();
       stats.reload();
@@ -51,29 +46,33 @@ export function MatchPredictionsDialog({
 
   const exportCsv = async () => {
     // Export the whole set, not just the visible page.
-    const all = await repos.matches.predictions(match.id, { pageSize: 100000 });
+    const rows = await collectAll((paging) =>
+      repos.predictions.list({ matchId: match.id, ...paging }),
+    );
     downloadCsv(`predictions-${match.id}.csv`, [
       ['الاسم', 'الهاتف', 'التوقع', 'النتيجة', 'النقاط', 'وقت التوقع'],
-      ...all.items.map((p) => [
-        p.userName,
-        p.userPhone,
-        `${p.homePick}-${p.awayPick}`,
-        PREDICTION_OUTCOME[p.outcome].label,
-        p.pointsAwarded ?? '',
-        formatDateTimeAr(p.createdAt),
+      ...rows.map((row) => [
+        row.appUser?.name ?? '',
+        row.appUser?.phone ?? '',
+        `${row.predictedHomeScore}-${row.predictedAwayScore}`,
+        PREDICTION_OUTCOME[outcomeOf(row)].label,
+        row.pointsEarned ?? '',
+        formatDateTimeAr(row.createdAt),
       ]),
     ]);
     toast('تم تصدير الملف');
   };
 
-  const columns: Column<PredictionView>[] = [
+  const columns: Column<Prediction>[] = [
     {
       key: 'user',
       header: 'المشترك',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13">{row.userName}</span>
-          <span className="fs-11 dim num">{formatPhone(row.userPhone)}</span>
+          <span className="fs-13">{row.appUser?.name ?? '—'}</span>
+          <span className="fs-11 dim num">
+            {row.appUser ? formatPhone(row.appUser.phone) : ''}
+          </span>
         </div>
       ),
     },
@@ -83,7 +82,7 @@ export function MatchPredictionsDialog({
       numeric: true,
       render: (row) => (
         <span className="fs-13 strong num">
-          {row.homePick} – {row.awayPick}
+          {row.predictedHomeScore} – {row.predictedAwayScore}
         </span>
       ),
     },
@@ -91,18 +90,21 @@ export function MatchPredictionsDialog({
       key: 'outcome',
       header: 'النتيجة',
       render: (row) => {
-        const meta = PREDICTION_OUTCOME[row.outcome];
+        const meta = PREDICTION_OUTCOME[outcomeOf(row)];
         return <Pill tone={meta.tone}>{meta.label}</Pill>;
       },
     },
     {
-      key: 'pointsAwarded',
+      key: 'points',
       header: 'النقاط',
       numeric: true,
-      sortable: true,
       width: 80,
       render: (row) =>
-        row.pointsAwarded === null ? <span className="dim">—</span> : <span className="strong num">{row.pointsAwarded}</span>,
+        row.pointsEarned === null ? (
+          <span className="dim">—</span>
+        ) : (
+          <span className="strong num">{row.pointsEarned}</span>
+        ),
     },
     {
       key: 'actions',
@@ -116,13 +118,16 @@ export function MatchPredictionsDialog({
           title="حذف التوقع"
           onClick={() => void removePick(row)}
         />
-        ),
+      ),
     },
   ];
 
+  const home = match.homeTeam?.name ?? '—';
+  const away = match.awayTeam?.name ?? '—';
+
   return (
     <Modal
-      title={`توقعات ${match.homeTeam.nameAr} ضد ${match.awayTeam.nameAr}`}
+      title={`توقعات ${home} ضد ${away}`}
       onClose={onClose}
       size="xl"
       footer={
@@ -147,12 +152,13 @@ export function MatchPredictionsDialog({
                 </span>
               </div>
 
+              {/* The meter renders shares, so counts are divided here. */}
               <SentimentMeter
-                homeLabel={`فوز ${match.homeTeam.nameAr}`}
-                awayLabel={`فوز ${match.awayTeam.nameAr}`}
-                homeWin={data.homeWin}
-                draw={data.draw}
-                awayWin={data.awayWin}
+                homeLabel={`فوز ${home}`}
+                awayLabel={`فوز ${away}`}
+                homeWin={data.total ? data.homeWin / data.total : 0}
+                draw={data.total ? data.draw / data.total : 0}
+                awayWin={data.total ? data.awayWin / data.total : 0}
               />
 
               {data.topScorelines.length > 0 ? (

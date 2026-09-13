@@ -1,12 +1,16 @@
 /**
  * Admin session.
  *
- * Mirrors the app's AuthController: status walks
- * `unknown -> unauthenticated | authenticated`, and the router redirects on
- * that status rather than on the presence of a user object.
+ * Status walks `unknown -> unauthenticated | authenticated`, and the router
+ * redirects on that status rather than on the presence of a user object — a
+ * screen never checks the session itself.
  *
- * The console has a single admin account, so there is nothing to gate on — a
- * real backend still has to authenticate every request server-side.
+ * Sign-in is two steps because the API makes it two: the password buys an SMS
+ * challenge, the code buys the token. Only `verifyOtp` produces a session.
+ *
+ * The provider also listens for a token cleared by a 401 anywhere in the app,
+ * so an expired session drops straight back to the login screen instead of
+ * leaving the operator on a page that will not load.
  */
 
 import {
@@ -18,7 +22,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { AdminSession } from '@/types';
+import type { AdminSession, OtpChallenge } from '@/types';
+import { onSessionCleared } from '@/data/http/session';
 import { useRepos } from './RepositoryContext';
 
 export type AuthStatus = 'unknown' | 'unauthenticated' | 'authenticated';
@@ -26,7 +31,11 @@ export type AuthStatus = 'unknown' | 'unauthenticated' | 'authenticated';
 interface AuthContextValue {
   status: AuthStatus;
   session: AdminSession | null;
-  signIn: (username: string, password: string) => Promise<void>;
+  /** Step 1 — returns the challenge the OTP panel needs. */
+  signIn: (phone: string, password: string) => Promise<OtpChallenge>;
+  /** Step 2 — on success the app is authenticated. */
+  verifyOtp: (challengeToken: string, code: string) => Promise<void>;
+  resendOtp: (challengeToken: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -54,12 +63,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [repos]);
 
+  // A 401 on any request clears the token; the UI has to follow it down.
+  useEffect(
+    () =>
+      onSessionCleared(() => {
+        setSession(null);
+        setStatus('unauthenticated');
+      }),
+    [],
+  );
+
   const signIn = useCallback(
-    async (username: string, password: string) => {
-      const next = await repos.auth.signIn(username, password);
+    (phone: string, password: string) => repos.auth.signIn(phone, password),
+    [repos],
+  );
+
+  const verifyOtp = useCallback(
+    async (challengeToken: string, code: string) => {
+      const next = await repos.auth.verifyOtp(challengeToken, code);
       setSession(next);
       setStatus('authenticated');
     },
+    [repos],
+  );
+
+  const resendOtp = useCallback(
+    (challengeToken: string) => repos.auth.resendOtp(challengeToken),
     [repos],
   );
 
@@ -70,8 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [repos]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, session, signIn, signOut }),
-    [status, session, signIn, signOut],
+    () => ({ status, session, signIn, verifyOtp, resendOtp, signOut }),
+    [status, session, signIn, verifyOtp, resendOtp, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
