@@ -11,7 +11,7 @@
  * `error.message` straight into the UI.
  */
 
-import { clearToken, readToken } from './session';
+import { clearToken, isTokenExpired, readToken } from './session';
 
 /** Base URL of the API, without a trailing slash. */
 export const API_BASE: string = (
@@ -187,7 +187,13 @@ async function send(path: string, options: RequestOptions = {}): Promise<Record<
   }
 
   if (!response.ok) {
-    if (response.status === 401) clearToken();
+    // A 401 is not always a dead session. This API answers 401 both for an
+    // expired token and for a route the operator's role cannot reach, and the
+    // two are indistinguishable from the status alone — so opening one screen
+    // that happens to be above your grade used to sign you out of the whole
+    // console. The token itself is the tie-breaker: if its own `exp` has not
+    // passed, the credential is still good and only this route was refused.
+    if (response.status === 401 && isTokenExpired()) clearToken();
     throw new ApiError(response.status, messageFrom(response.status, payload), payload);
   }
 

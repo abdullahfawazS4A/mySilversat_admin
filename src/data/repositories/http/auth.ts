@@ -10,8 +10,15 @@
  * HTTP client reads it from there rather than from React state.
  */
 
-import { api } from '@/data/http/client';
-import { clearToken, readToken, readUser, writeToken, writeUser } from '@/data/http/session';
+import { ApiError, api } from '@/data/http/client';
+import {
+  clearToken,
+  isTokenExpired,
+  readToken,
+  readUser,
+  writeToken,
+  writeUser,
+} from '@/data/http/session';
 import type { AdminSession, AdminUser, OtpChallenge } from '@/types';
 import type { AuthRepository } from '../types';
 
@@ -19,6 +26,16 @@ import type { AuthRepository } from '../types';
 interface VerifyResponse {
   access_token: string;
   user: Pick<AdminUser, 'id' | 'email' | 'name' | 'role'>;
+}
+
+/**
+ * Whether a failed `/auth/me` means the token was rejected.
+ *
+ * Only a 401 does. A network blip or a 500 says nothing about the credential,
+ * and signing out over one would turn a flaky minute into a re-login.
+ */
+function isRejectedToken(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401;
 }
 
 export class HttpAuthRepository implements AuthRepository {
@@ -33,19 +50,44 @@ export class HttpAuthRepository implements AuthRepository {
     const token = readToken();
     if (!token) return null;
 
+    // The token says itself that it is done; no point spending a round trip
+    // to be told so, and no point leaving it in storage to fail every later
+    // request.
+    if (isTokenExpired()) {
+      clearToken();
+      return null;
+    }
+
     const cached = readUser();
     if (cached) {
-      // Verify in the background; a 401 clears the token via the client.
-      void this.me().catch(() => undefined);
+      // Verify in the background so the shell paints from cache immediately.
+      void this.verifyToken();
       return { admin: cached, token };
     }
 
     try {
       const admin = await this.me();
       return { admin, token };
-    } catch {
-      clearToken();
+    } catch (err) {
+      if (isRejectedToken(err)) clearToken();
       return null;
+    }
+  }
+
+  /**
+   * Confirms the stored token is still one the server accepts.
+   *
+   * The client no longer treats every 401 as a dead session — it cannot tell a
+   * revoked token from a route the operator's role may not open. `/auth/me` is
+   * the exception: it asks nothing but "who is this token", so a 401 *here* is
+   * about the credential and nothing else, and is the one answer that earns a
+   * forced sign-out.
+   */
+  private async verifyToken(): Promise<void> {
+    try {
+      await this.me();
+    } catch (err) {
+      if (isRejectedToken(err)) clearToken();
     }
   }
 

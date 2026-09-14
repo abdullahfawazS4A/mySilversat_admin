@@ -66,3 +66,40 @@ export function onSessionCleared(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
+
+/**
+ * Seconds left on the stored token, or `null` when that cannot be known.
+ *
+ * The API issues a standard JWT, so its `exp` claim is readable without the
+ * signing key — we are not verifying the token here, only asking whether it
+ * has already run out. `null` means "no opinion": no token, a token that is
+ * not a JWT, or one without an `exp`. Callers must treat `null` as *not*
+ * expired, because guessing otherwise would sign a valid operator out.
+ */
+export function tokenSecondsLeft(): number | null {
+  const token = readToken();
+  if (!token) return null;
+
+  const payload = token.split('.')[1];
+  if (!payload) return null;
+
+  try {
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const exp = (JSON.parse(json) as { exp?: unknown }).exp;
+    if (typeof exp !== 'number') return null;
+    return exp - Date.now() / 1000;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether the stored token is provably past its `exp`.
+ *
+ * Only `true` when the token said so itself; anything unreadable answers
+ * `false`, so an unexpected token shape never costs the operator a session.
+ */
+export function isTokenExpired(): boolean {
+  const left = tokenSecondsLeft();
+  return left !== null && left <= 0;
+}
