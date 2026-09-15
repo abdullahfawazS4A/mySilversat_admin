@@ -48,8 +48,8 @@ export function NotificationsPage() {
       header: 'الإشعار',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13 strong">{row.titleAr}</span>
-          <span className="fs-11 dim truncate">{row.bodyAr}</span>
+          <span className="fs-body strong">{row.titleAr}</span>
+          <span className="fs-tiny dim truncate">{row.bodyAr}</span>
         </div>
       ),
     },
@@ -58,8 +58,8 @@ export function NotificationsPage() {
       header: 'الجمهور',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-12">{NOTIFICATION_TARGET[row.targetType]}</span>
-          <span className="fs-11 dim">
+          <span className="fs-small">{NOTIFICATION_TARGET[row.targetType]}</span>
+          <span className="fs-tiny dim">
             {row.targetProvince?.name ?? row.targetUser?.name ?? ''}
           </span>
         </div>
@@ -83,15 +83,15 @@ export function NotificationsPage() {
       header: 'المصدر',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-12">{row.source === 'admin' ? 'من اللوحة' : row.source}</span>
-          <span className="fs-11 dim">{row.createdByUser?.name ?? ''}</span>
+          <span className="fs-small">{row.source === 'admin' ? 'من اللوحة' : row.source}</span>
+          <span className="fs-tiny dim">{row.createdByUser?.name ?? ''}</span>
         </div>
       ),
     },
     {
       key: 'sentAt',
       header: 'وقت الإرسال',
-      render: (row) => <span className="fs-12">{formatDateTimeAr(row.createdAt)}</span>,
+      render: (row) => <span className="fs-small">{formatDateTimeAr(row.createdAt)}</span>,
     },
   ];
 
@@ -243,8 +243,8 @@ function ComposeDialog({ onClose, onSent }: { onClose: () => void; onSent: () =>
           </Notice>
 
           <div className="card card-pad col" style={{ gap: 4 }}>
-            <span className="fs-13 strong">{draft.titleAr}</span>
-            <span className="fs-12">{draft.bodyAr}</span>
+            <span className="fs-body strong">{draft.titleAr}</span>
+            <span className="fs-small">{draft.bodyAr}</span>
           </div>
 
           {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
@@ -325,7 +325,7 @@ function ComposeDialog({ onClose, onSent }: { onClose: () => void; onSent: () =>
         ) : null}
       </div>
 
-      <div className="mt-3 fs-12 muted">
+      <div className="mt-3 fs-small muted">
         الجمهور الحالي:{' '}
         <span className="num strong">
           {audience.loading ? '…' : formatNumber(audience.data ?? 0)}

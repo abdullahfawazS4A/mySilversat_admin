@@ -109,8 +109,8 @@ function BatchesTab() {
       header: 'الدفعة',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13 strong">{row.fileName}</span>
-          <span className="fs-11 dim">{row.notes ?? ''}</span>
+          <span className="fs-body strong">{row.fileName}</span>
+          <span className="fs-tiny dim">{row.notes ?? ''}</span>
         </div>
       ),
     },
@@ -119,8 +119,8 @@ function BatchesTab() {
       header: 'الفئة',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13">{row.category?.name ?? '—'}</span>
-          <span className="fs-11 dim">{row.category?.product?.displayName ?? ''}</span>
+          <span className="fs-body">{row.category?.name ?? '—'}</span>
+          <span className="fs-tiny dim">{row.category?.product?.displayName ?? ''}</span>
         </div>
       ),
     },
@@ -149,8 +149,8 @@ function BatchesTab() {
       header: 'رفعها',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-12">{row.uploadedByUser?.name ?? '—'}</span>
-          <span className="fs-11 dim">{formatDateAr(row.createdAt)}</span>
+          <span className="fs-small">{row.uploadedByUser?.name ?? '—'}</span>
+          <span className="fs-tiny dim">{formatDateAr(row.createdAt)}</span>
         </div>
       ),
     },
@@ -422,9 +422,9 @@ function CodesTab() {
       header: 'الكارت',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13 strong num">{row.primaryValue}</span>
+          <span className="fs-body strong num">{row.primaryValue}</span>
           {row.secondaryValue ? (
-            <span className="fs-11 dim num">{row.secondaryValue}</span>
+            <span className="fs-tiny dim num">{row.secondaryValue}</span>
           ) : null}
         </div>
       ),
@@ -434,22 +434,22 @@ function CodesTab() {
       header: 'الفئة',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13">{row.category?.name ?? '—'}</span>
-          <span className="fs-11 dim">{row.category?.product?.displayName ?? ''}</span>
+          <span className="fs-body">{row.category?.name ?? '—'}</span>
+          <span className="fs-tiny dim">{row.category?.product?.displayName ?? ''}</span>
         </div>
       ),
     },
     {
       key: 'batch',
       header: 'الدفعة',
-      render: (row) => <span className="fs-12">{row.batch?.fileName ?? '—'}</span>,
+      render: (row) => <span className="fs-small">{row.batch?.fileName ?? '—'}</span>,
     },
     {
       key: 'sold',
       header: 'البيع',
       render: (row) =>
         row.soldAt ? (
-          <span className="fs-12">{formatDateTimeAr(row.soldAt)}</span>
+          <span className="fs-small">{formatDateTimeAr(row.soldAt)}</span>
         ) : (
           <span className="dim">—</span>
         ),
@@ -516,7 +516,7 @@ function CodesTab() {
 
           {debounced.trim() ? (
             <div className="toolbar">
-              <span className="fs-12 muted">
+              <span className="fs-small muted">
                 البحث يستخدم <code className="num">/codes/lookup</code> ويتجاهل فلاتر الحالة والفئة.
               </span>
             </div>

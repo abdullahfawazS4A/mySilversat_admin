@@ -61,26 +61,26 @@ export function StatTile({
   return (
     <div className="card card-pad col" style={{ gap: 10, minWidth: 0 }}>
       <div className="row between row-gap-3">
-        <span className="fs-12 muted truncate">{label}</span>
+        <span className="fs-small muted truncate">{label}</span>
         {icon ? (
           <span className={`chip-icon${tone ? ` chip-${tone}` : ''}`} style={{ width: 30, height: 30 }}>
             {icon}
           </span>
         ) : null}
       </div>
-      <div className="fs-24 strong num" style={{ lineHeight: 1.25 }}>
+      <div className="fs-hero strong num" style={{ lineHeight: 1.25 }}>
         {value}
       </div>
       <div className="row row-gap-2">
         {typeof delta === 'number' ? (
           <span
-            className="fs-12 strong num"
+            className="fs-small strong num"
             style={{ color: delta >= 0 ? 'var(--success)' : 'var(--danger)' }}
           >
             {delta >= 0 ? '▲' : '▼'} {Math.abs(delta * 100).toFixed(1)}%
           </span>
         ) : null}
-        {hint ? <span className="fs-12 dim truncate">{hint}</span> : null}
+        {hint ? <span className="fs-small dim truncate">{hint}</span> : null}
       </div>
     </div>
   );
@@ -138,7 +138,7 @@ export function TrendChart({
         {ticks.map((tick, i) => (
           <g key={i}>
             <line x1={padX} x2={w - padX} y1={tick.y} y2={tick.y} stroke={GRID} strokeWidth="1" />
-            <text x={padX - 8} y={tick.y + 4} fill={AXIS} fontSize="10" textAnchor="end">
+            <text x={padX - 8} y={tick.y + 4} fill={AXIS} fontSize="11" textAnchor="end">
               {formatNumber(Math.round(tick.v))}
             </text>
           </g>
@@ -149,7 +149,7 @@ export function TrendChart({
 
         {points.map((point, i) => (
           <g key={i}>
-            <text x={x(i)} y={h - 8} fill={AXIS} fontSize="10" textAnchor="middle">
+            <text x={x(i)} y={h - 8} fill={AXIS} fontSize="11" textAnchor="middle">
               {point.label.slice(0, 6)}
             </text>
             {/* A wide invisible target so hovering never demands precision. */}
@@ -188,8 +188,8 @@ export function TrendChart({
             boxShadow: 'var(--shadow-raised)',
           }}
         >
-          <div className="fs-11 muted">{points[hover].label}</div>
-          <div className="fs-13 strong num">{format(points[hover].value)}</div>
+          <div className="fs-tiny muted">{points[hover].label}</div>
+          <div className="fs-body strong num">{format(points[hover].value)}</div>
         </div>
       ) : null}
     </div>
@@ -220,7 +220,7 @@ export function BarList({
     <div className="col" style={{ gap: 10 }}>
       {shown.map((point) => (
         <div key={point.label} className="col" style={{ gap: 5 }}>
-          <div className="row between fs-12">
+          <div className="row between fs-small">
             <span className="truncate">{point.label}</span>
             <span className="strong num">{format(point.value)}</span>
           </div>
@@ -320,7 +320,7 @@ export function SentimentMeter({
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   return (
     <div className="col" style={{ gap: 8 }}>
-      <div className="row between fs-12">
+      <div className="row between fs-small">
         <span className="truncate">{homeLabel}</span>
         <span className="dim">تعادل</span>
         <span className="truncate">{awayLabel}</span>
@@ -330,7 +330,7 @@ export function SentimentMeter({
         <div style={{ width: pct(draw), background: 'var(--text-tertiary)', borderRadius: 4, minWidth: 2 }} />
         <div style={{ width: pct(awayWin), background: SERIES_COLORS[3], borderRadius: 4, minWidth: 2 }} />
       </div>
-      <div className="row between fs-12 strong num">
+      <div className="row between fs-small strong num">
         <span>{pct(homeWin)}</span>
         <span className="dim">{pct(draw)}</span>
         <span>{pct(awayWin)}</span>

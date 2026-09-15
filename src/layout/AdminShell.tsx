@@ -119,8 +119,8 @@ export function AdminShell() {
               <User size={16} />
             </span>
             <div className="col" style={{ lineHeight: 1.3 }}>
-              <span className="fs-12 strong">{session.admin.name}</span>
-              <span className="fs-11 dim num">{session.admin.phone}</span>
+              <span className="fs-small strong">{session.admin.name}</span>
+              <span className="fs-tiny dim num">{session.admin.phone}</span>
             </div>
             <Pill tone={ADMIN_ROLE[session.admin.role].tone}>
               {ADMIN_ROLE[session.admin.role].label}

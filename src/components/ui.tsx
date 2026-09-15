@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ChevronLeft, ChevronRight, Inbox, Search, X } from 'lucide-react';
+import { MAX_PAGE_SIZE } from '@/data/http/client';
 import { cx } from '@/lib/utils';
 
 // ------------------------------------------------------------------ card ---
@@ -53,7 +54,7 @@ export function CardHead({
     <div className="card-head">
       <div className="col">
         <h3>{title}</h3>
-        {subtitle ? <span className="fs-12 muted">{subtitle}</span> : null}
+        {subtitle ? <span className="fs-small muted">{subtitle}</span> : null}
       </div>
       {actions ? <div className="row row-gap-2">{actions}</div> : null}
     </div>
@@ -409,7 +410,7 @@ export function EmptyState({
         <span className="strong" style={{ color: 'var(--text-primary)' }}>
           {title}
         </span>
-        {hint ? <span className="fs-12 mt-1">{hint}</span> : null}
+        {hint ? <span className="fs-small mt-1">{hint}</span> : null}
       </div>
       {action}
     </div>
@@ -584,7 +585,7 @@ export function ConfirmDialog({
         </>
       }
     >
-      <div className="fs-13" style={{ lineHeight: 1.7 }}>
+      <div className="fs-body" style={{ lineHeight: 1.7 }}>
         {message}
       </div>
     </Modal>
@@ -593,18 +594,38 @@ export function ConfirmDialog({
 
 // ------------------------------------------------------------ pagination ---
 
+/** The row counts offered before the operator types one. */
+const PAGE_SIZES = [25, 50, 100];
+
+/**
+ * Below this, the five page buttons already show every page there is, so a
+ * "go to page" box would only be a second way to press a button in reach.
+ */
+const JUMP_FROM_PAGES = 6;
+
 export function Pagination({
   page,
   pageSize,
   total,
   onPage,
+  onPageSize,
 }: {
   page: number;
   pageSize: number;
   total: number;
   onPage: (page: number) => void;
+  /** Presence of this adds the rows-per-page control. */
+  onPageSize?: (pageSize: number) => void;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  // Both boxes are typed into, so they hold their own text until it is
+  // committed — a controlled value reset on every keystroke makes "10" for
+  // "100" impossible to type, and clearing the field to retype would snap it
+  // back to the current page.
+  const [jump, setJump] = useState('');
+  const [size, setSize] = useState('');
+
   if (total === 0) return null;
 
   const from = (page - 1) * pageSize + 1;
@@ -614,12 +635,76 @@ export function Pagination({
   const start = Math.max(1, Math.min(page - 2, pages - 4));
   const windowed = Array.from({ length: Math.min(5, pages) }, (_, i) => start + i);
 
+  const goTo = () => {
+    const wanted = Number(jump);
+    setJump('');
+    if (!Number.isFinite(wanted) || wanted < 1) return;
+    onPage(Math.min(pages, Math.floor(wanted)));
+  };
+
+  const applySize = (raw: string) => {
+    const wanted = Number(raw);
+    setSize('');
+    if (!Number.isFinite(wanted) || wanted < 1) return;
+    // The API refuses a limit over 100 with a 400 rather than a clamped page,
+    // so a larger number is held here instead of being sent and failing.
+    onPageSize?.(Math.min(MAX_PAGE_SIZE, Math.floor(wanted)));
+  };
+
   return (
     <div className="pagination">
       <span>
         <span className="num">{from}</span>–<span className="num">{to}</span> من{' '}
         <span className="num strong">{total}</span>
       </span>
+
+      {onPageSize ? (
+        /*
+         * A span, not a label. A <label> forwards clicks to its first labelable
+         * descendant, so wrapping the select *and* the box next to it meant a
+         * click on either one was replayed onto the select — the dropdown
+         * opened and shut on the same click, and picking a size was a fight.
+         * The controls carry their own aria-labels instead.
+         */
+        <span className="page-tool">
+          <span aria-hidden="true">صفوف بالصفحة</span>
+          <select
+            aria-label="صفوف بالصفحة"
+            className="page-select"
+            /*
+             * A size typed by hand is not in the list, so it is added to it —
+             * otherwise the select would sit on whichever preset happens to be
+             * first and misreport what the table is actually showing.
+             */
+            value={pageSize}
+            onChange={(e) => onPageSize(Number(e.target.value))}
+          >
+            {(PAGE_SIZES.includes(pageSize) ? PAGE_SIZES : [...PAGE_SIZES, pageSize].sort((a, b) => a - b)).map(
+              (option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ),
+            )}
+          </select>
+          <input
+            className="page-input num"
+            type="number"
+            min={1}
+            max={MAX_PAGE_SIZE}
+            placeholder="أو اكتب"
+            title={`أي رقم من 1 إلى ${MAX_PAGE_SIZE} — الـ API ما يعطي أكثر من ${MAX_PAGE_SIZE} صف بالطلب الواحد`}
+            value={size}
+            onChange={(e) => setSize(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') applySize(size);
+            }}
+            onBlur={() => applySize(size)}
+            aria-label={`صفوف بالصفحة — رقم مخصص حتى ${MAX_PAGE_SIZE}`}
+          />
+        </span>
+      ) : null}
+
       <div className="page-btns">
         <button className="page-btn" disabled={page <= 1} onClick={() => onPage(page - 1)} title="السابق">
           <ChevronRight size={14} />
@@ -632,6 +717,28 @@ export function Pagination({
         <button className="page-btn" disabled={page >= pages} onClick={() => onPage(page + 1)} title="التالي">
           <ChevronLeft size={14} />
         </button>
+
+        {pages >= JUMP_FROM_PAGES ? (
+          <span className="page-tool">
+            <span aria-hidden="true">صفحة</span>
+            <input
+              aria-label={`اذهب لصفحة — من 1 إلى ${pages}`}
+              className="page-input num"
+              type="number"
+              min={1}
+              max={pages}
+              placeholder={String(page)}
+              title={`اكتب رقم الصفحة واضغط Enter — من 1 إلى ${pages}`}
+              value={jump}
+              onChange={(e) => setJump(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') goTo();
+              }}
+              onBlur={goTo}
+            />
+            من <span className="num">{pages}</span>
+          </span>
+        ) : null}
       </div>
     </div>
   );

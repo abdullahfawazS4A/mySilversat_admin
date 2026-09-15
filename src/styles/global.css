@@ -47,7 +47,7 @@ body {
   background: var(--bg-app);
   color: var(--text-primary);
   font-family: 'IBM Plex Sans Arabic', 'Segoe UI', system-ui, sans-serif;
-  font-size: 14px;
+  font-size: var(--fs-base);
   line-height: 1.6;
   letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
@@ -139,13 +139,18 @@ a {
 .between { justify-content: space-between; }
 .end { justify-content: flex-end; }
 
-.fs-11 { font-size: 11px; }
-.fs-12 { font-size: 12px; }
-.fs-13 { font-size: 13px; }
-.fs-15 { font-size: 15px; }
-.fs-17 { font-size: 17px; }
-.fs-20 { font-size: 20px; }
-.fs-24 { font-size: 24px; }
+/* Type utilities, named for the role they play — see the scale in tokens.css.
+   They used to be named for pixels (`fs-13`), which stopped being true the
+   first time the scale moved. */
+.fs-micro { font-size: var(--fs-micro); }
+.fs-tiny { font-size: var(--fs-tiny); }
+.fs-small { font-size: var(--fs-small); }
+.fs-body { font-size: var(--fs-body); }
+.fs-lead { font-size: var(--fs-lead); }
+.fs-title { font-size: var(--fs-title); }
+.fs-head { font-size: var(--fs-head); }
+.fs-stat { font-size: var(--fs-stat); }
+.fs-hero { font-size: var(--fs-hero); }
 
 .mt-1 { margin-top: var(--sp-1); }
 .mt-2 { margin-top: var(--sp-2); }

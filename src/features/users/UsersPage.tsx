@@ -136,7 +136,7 @@ export function UsersPage() {
               render: (row) => (
                 <div className="col">
                   <span className="strong">{row.name}</span>
-                  <span className="fs-12 dim num">{formatPhone(row.phone)}</span>
+                  <span className="fs-small dim num">{formatPhone(row.phone)}</span>
                 </div>
               ),
             },
@@ -155,7 +155,7 @@ export function UsersPage() {
             {
               key: 'joined',
               header: 'تاريخ الاشتراك',
-              render: (row) => <span className="fs-12">{formatDateAr(row.createdAt)}</span>,
+              render: (row) => <span className="fs-small">{formatDateAr(row.createdAt)}</span>,
             },
             {
               key: 'status',

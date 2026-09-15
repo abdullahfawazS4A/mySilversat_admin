@@ -66,7 +66,7 @@ export function ContactPage() {
           render: (row) => (
             <div className="col">
               <span className="strong">{row.label}</span>
-              <span className="fs-12 dim">{row.labelKu || '—'}</span>
+              <span className="fs-small dim">{row.labelKu || '—'}</span>
             </div>
           ),
         },
@@ -75,8 +75,8 @@ export function ContactPage() {
           header: 'القيمة',
           render: (row) => (
             <div className="col">
-              <span className="fs-12 num truncate">{row.value}</span>
-              {row.subLabel ? <span className="fs-11 dim">{row.subLabel}</span> : null}
+              <span className="fs-small num truncate">{row.value}</span>
+              {row.subLabel ? <span className="fs-tiny dim">{row.subLabel}</span> : null}
             </div>
           ),
         },

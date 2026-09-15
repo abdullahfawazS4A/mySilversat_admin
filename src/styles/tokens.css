@@ -55,6 +55,27 @@
   --shimmer-base: #e7ebf3;
   --shimmer-highlight: #f6f8fc;
 
+  /*
+   * Type scale.
+   *
+   * Every font-size in the console resolves to one of these — no stylesheet
+   * declares a raw px size — so the whole product is re-sized from this block
+   * rather than from forty scattered declarations that drift apart.
+   *
+   * The names are the *roles*, not the pixel values they happen to carry, so
+   * raising the scale does not leave `--fs-small` meaning 13px everywhere.
+   */
+  --fs-micro: 11px;   /* meta under a label, axis ticks */
+  --fs-tiny: 12px;    /* secondary line in a two-line cell */
+  --fs-small: 13px;   /* pills, chips, captions */
+  --fs-body: 14px;    /* table cells, form text */
+  --fs-base: 15px;    /* the document default */
+  --fs-lead: 16px;    /* card titles, emphasised rows */
+  --fs-title: 17px;   /* section and screen titles */
+  --fs-head: 18px;    /* page heading */
+  --fs-stat: 22px;    /* a number that is the point of its tile */
+  --fs-hero: 26px;    /* the largest number on the dashboard */
+
   /* Spacing scale — 4 / 8 / 12 / 16 / 20 / 24 */
   --sp-1: 4px;
   --sp-2: 8px;

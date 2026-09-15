@@ -352,6 +352,17 @@ export type MatchWindow = 'upcoming' | 'past' | 'all';
  */
 export interface MatchFilter {
   leagueId?: Id;
+  /**
+   * Restricts the list to a set of leagues rather than one or all of them.
+   *
+   * `/matches` takes a single `leagueId`, so this cannot be a query parameter:
+   * the repository reads each league and merges the rows. That is the whole
+   * reason it is a list of ids and not an `isActive` flag — the cost is one
+   * read per league, so it is meant for the handful the app shows, not the
+   * twelve hundred the feed mirrors. An empty list means no fixtures at all,
+   * which is not the same as no filter.
+   */
+  leagueIds?: Id[];
   status?: MatchStatus;
   isOpenForPrediction?: boolean;
   window?: MatchWindow;
@@ -361,6 +372,13 @@ export interface MatchesRepository {
   leagues: LeaguesRepository;
   teams: CrudRepository<Team, TeamInput, Partial<TeamInput>, { leagueId?: Id }>;
   matches: CrudRepository<Match, MatchInput, Partial<MatchInput>, MatchFilter> & {
+    /**
+     * Resolves fixture ids to fixtures a table can name, filling in clubs the
+     * fixture did not carry. `seeds` are fixtures the caller already holds,
+     * however incomplete, so a bare embedded one is completed rather than
+     * re-read. Memoised briefly; an id that cannot be read is simply absent.
+     */
+    byIds(ids: Id[], seeds?: (Match | undefined)[]): Promise<Map<Id, Match>>;
     /** The core operator action — put a fixture on the predict screen. */
     setOpenForPrediction(id: Id, open: boolean, closesAt?: string | null): Promise<Match>;
     /** Bulk version, for the multi-select toolbar. */

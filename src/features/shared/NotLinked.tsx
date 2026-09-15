@@ -40,14 +40,14 @@ export function NotLinked({ title, purpose, missing, insteadNote }: NotLinkedPro
 
           <div className="col row-gap-3 mt-4">
             <div className="col">
-              <span className="fs-12 muted">وظيفتها</span>
-              <span className="fs-13">{purpose}</span>
+              <span className="fs-small muted">وظيفتها</span>
+              <span className="fs-body">{purpose}</span>
             </div>
 
             <div className="col">
-              <span className="fs-12 muted">الـ endpoints المطلوبة حتى تشتغل</span>
+              <span className="fs-small muted">الـ endpoints المطلوبة حتى تشتغل</span>
               <ul
-                className="fs-13"
+                className="fs-body"
                 style={{ margin: '6px 0 0', paddingInlineStart: 18, lineHeight: 1.9 }}
               >
                 {missing.map((route) => (
@@ -60,8 +60,8 @@ export function NotLinked({ title, purpose, missing, insteadNote }: NotLinkedPro
 
             {insteadNote ? (
               <div className="col">
-                <span className="fs-12 muted">لحد ما ينربط</span>
-                <span className="fs-13">{insteadNote}</span>
+                <span className="fs-small muted">لحد ما ينربط</span>
+                <span className="fs-body">{insteadNote}</span>
               </div>
             ) : null}
           </div>

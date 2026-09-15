@@ -69,8 +69,8 @@ export function MatchPredictionsDialog({ match, onClose }: { match: Match; onClo
       header: 'المشترك',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13">{row.appUser?.name ?? '—'}</span>
-          <span className="fs-11 dim num">
+          <span className="fs-body">{row.appUser?.name ?? '—'}</span>
+          <span className="fs-tiny dim num">
             {row.appUser ? formatPhone(row.appUser.phone) : ''}
           </span>
         </div>
@@ -81,7 +81,7 @@ export function MatchPredictionsDialog({ match, onClose }: { match: Match; onClo
       header: 'التوقع',
       numeric: true,
       render: (row) => (
-        <span className="fs-13 strong num">
+        <span className="fs-body strong num">
           {row.predictedHomeScore} – {row.predictedAwayScore}
         </span>
       ),
@@ -146,8 +146,8 @@ export function MatchPredictionsDialog({ match, onClose }: { match: Match; onClo
           {(data) => (
             <div className="col" style={{ gap: 'var(--sp-4)' }}>
               <div className="row between">
-                <span className="fs-13 strong">توزيع التوقعات</span>
-                <span className="fs-12 muted">
+                <span className="fs-body strong">توزيع التوقعات</span>
+                <span className="fs-small muted">
                   <span className="num strong">{data.total}</span> توقع
                 </span>
               </div>
@@ -163,7 +163,7 @@ export function MatchPredictionsDialog({ match, onClose }: { match: Match; onClo
 
               {data.topScorelines.length > 0 ? (
                 <div className="col" style={{ gap: 'var(--sp-2)' }}>
-                  <span className="fs-12 muted">أكثر النتائج توقعاً</span>
+                  <span className="fs-small muted">أكثر النتائج توقعاً</span>
                   <div className="row wrap row-gap-2">
                     {data.topScorelines.map((line) => (
                       <span key={`${line.home}-${line.away}`} className="chip">

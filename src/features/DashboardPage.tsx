@@ -174,10 +174,16 @@ function Summary({ data }: { data: DashboardSummary }) {
             />
           </div>
 
-          <div className="mt-5">
-            <span className="fs-12 muted">إجمالي المبيعات منذ البداية</span>
-            <div className="fs-20 strong num">{formatIqd(data.revenueAllTime)}</div>
-            <span className="fs-11 dim">
+          {/*
+            A column, not three loose children in a block. Inline spans either
+            side of a block div collapse into anonymous boxes with no spacing
+            of their own, so the label ran straight into the number — "منذ
+            البداية0 د.ع" — with nothing between them.
+          */}
+          <div className="col mt-5" style={{ gap: 2 }}>
+            <span className="fs-small muted">إجمالي المبيعات منذ البداية</span>
+            <span className="fs-stat strong num">{formatIqd(data.revenueAllTime)}</span>
+            <span className="fs-tiny dim">
               محسوبة بسعر الفئة الحالي — مو مبالغ محصّلة فعلاً
             </span>
           </div>
@@ -215,7 +221,7 @@ function Summary({ data }: { data: DashboardSummary }) {
             ) : (
               data.stockByCategory.slice(0, 7).map((row) => (
                 <div key={row.label} className="row between row-gap-3">
-                  <span className="fs-12 truncate">{row.label}</span>
+                  <span className="fs-small truncate">{row.label}</span>
                   <span className="row row-gap-2">
                     <span className="num strong">{formatNumber(row.value)}</span>
                     {row.threshold !== null && row.value <= row.threshold ? (

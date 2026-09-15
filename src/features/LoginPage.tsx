@@ -172,7 +172,7 @@ export function LoginPage() {
                 {pending ? 'جاري الإرسال…' : 'إرسال رمز التحقّق'}
               </Button>
 
-              <span className="fs-11 dim">
+              <span className="fs-tiny dim">
                 الدخول بخطوتين: كلمة المرور تبعث رمز على هاتفك، والرمز يفتح اللوحة.
               </span>
             </form>
@@ -197,13 +197,13 @@ function Countdown({ seconds }: { seconds: number }) {
   }, [seconds]);
 
   if (left === 0) {
-    return <span className="fs-12" style={{ color: 'var(--danger)' }}>انتهت صلاحية الرمز — اطلب رمز جديد.</span>;
+    return <span className="fs-small" style={{ color: 'var(--danger)' }}>انتهت صلاحية الرمز — اطلب رمز جديد.</span>;
   }
 
   const mm = String(Math.floor(left / 60)).padStart(2, '0');
   const ss = String(left % 60).padStart(2, '0');
   return (
-    <span className="fs-12 muted">
+    <span className="fs-small muted">
       ينتهي الرمز خلال <span className="num strong">{mm}:{ss}</span>
     </span>
   );

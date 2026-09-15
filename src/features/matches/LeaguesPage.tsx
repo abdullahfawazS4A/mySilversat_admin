@@ -1,13 +1,19 @@
 /**
- * Leagues and teams.
+ * Leagues, teams and the whole fixture catalogue.
  *
- * Both are mirrored from API-Football and neither is authored here, so the
+ * All three are mirrored from API-Football and none is authored here, so the
  * create button is hidden: a row added by hand would carry no `externalId` and
  * the next sync would create the provider's own copy beside it. Editing is
  * still allowed, but only the columns the console owns are worth touching —
  * a league's display order and whether the app shows it at all.
  *
  * The sync itself lives on the API screen; this is where its result is read.
+ *
+ * The third tab is the catalogue view of the fixtures. «المباريات» in the
+ * sidebar is the operating screen and shows only the leagues the app is
+ * actually serving, so the unrestricted list — every league the feed mirrors,
+ * switched on or not — belongs here beside the leagues and teams it is the
+ * other half of. It is the same table component, opened on the wider scope.
  */
 
 import { useState } from 'react';
@@ -37,9 +43,12 @@ import type { Id, League, Team } from '@/types';
 import type { LeagueInput, TeamInput } from '@/data/repositories/types';
 import { leagueLabel } from '@/lib/labels';
 import { CrudScreen } from '../shared/CrudScreen';
+import { MatchesBoard } from './MatchesPage';
+
+type Tab = 'leagues' | 'teams' | 'matches';
 
 export function LeaguesPage() {
-  const [tab, setTab] = useState<'leagues' | 'teams'>('leagues');
+  const [tab, setTab] = useState<Tab>('leagues');
 
   return (
     <>
@@ -48,12 +57,15 @@ export function LeaguesPage() {
           value={tab}
           onChange={setTab}
           items={[
-            { value: 'leagues', label: 'الدوريات' },
-            { value: 'teams', label: 'الفرق' },
+            { value: 'leagues', label: 'كل الدوريات' },
+            { value: 'teams', label: 'كل الفرق' },
+            { value: 'matches', label: 'كل المباريات' },
           ]}
         />
       </div>
-      {tab === 'leagues' ? <LeaguesTab /> : <TeamsTab />}
+      {tab === 'leagues' ? <LeaguesTab /> : null}
+      {tab === 'teams' ? <TeamsTab /> : null}
+      {tab === 'matches' ? <MatchesBoard scope="all" /> : null}
     </>
   );
 }
@@ -140,7 +152,10 @@ function LeaguesTab() {
 
   return (
     <>
-      <PageHeader title="الدوريات" subtitle="اختار أي دوريات تظهر بالتطبيق — مصدرها المزامنة" />
+      <PageHeader
+        title="كل الدوريات"
+        subtitle="كل دوريات المزوّد — اختار منها أي وحدة تنضاف للتطبيق وتظهر مبارياتها"
+      />
 
       <div className="page">
         <MirroredNotice what="الدوريات" />
@@ -280,7 +295,7 @@ function LeaguesTab() {
                 empty={
                   <div className="empty">
                     <span className="strong">ما بيها دوريات بهذه الفلاتر</span>
-                    <span className="fs-12 muted">
+                    <span className="fs-small muted">
                       {active === 'active'
                         ? 'ماكو ولا دوري ظاهر بالتطبيق — شغّل وحدة من قائمة «الكل»'
                         : 'غيّر الفلاتر أو شغّل مزامنة من شاشة الـ API'}
@@ -401,8 +416,8 @@ function TeamsTab() {
 
   return (
     <CrudScreen<Team, TeamInput, { leagueId?: Id }>
-      title="الفرق"
-      subtitle="فرق كل دوري وشعاراتها — مصدرها المزامنة"
+      title="كل الفرق"
+      subtitle="فرق كل الدوريات وشعاراتها، حتى الدوريات غير المضافة للتطبيق — مصدرها المزامنة"
       repo={repos.matches.teams}
       searchable
       readOnlyCreate
@@ -411,7 +426,7 @@ function TeamsTab() {
         <Select<Id>
           value={leagueId}
           onChange={setLeagueId}
-          options={[{ value: '', label: 'كل الدوريات' }, ...leagueOptions]}
+          options={[{ value: '', label: 'كل الفرق — كل الدوريات' }, ...leagueOptions]}
         />
       }
       editTitle="تعديل الفريق"

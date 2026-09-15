@@ -95,15 +95,15 @@ export function SalesPage() {
     {
       key: 'code',
       header: 'الكارت',
-      render: (row) => <span className="fs-13 strong num">{row.primaryValue}</span>,
+      render: (row) => <span className="fs-body strong num">{row.primaryValue}</span>,
     },
     {
       key: 'category',
       header: 'الفئة',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13">{row.category?.name ?? '—'}</span>
-          <span className="fs-11 dim">{row.category?.product?.displayName ?? ''}</span>
+          <span className="fs-body">{row.category?.name ?? '—'}</span>
+          <span className="fs-tiny dim">{row.category?.product?.displayName ?? ''}</span>
         </div>
       ),
     },
@@ -117,7 +117,7 @@ export function SalesPage() {
       header: 'المشتري',
       render: (row) =>
         row.soldToAppUserId ? (
-          <Link className="fs-12" to={`/users/${row.soldToAppUserId}`}>
+          <Link className="fs-small" to={`/users/${row.soldToAppUserId}`}>
             فتح سجل المشترك
           </Link>
         ) : (
@@ -135,7 +135,7 @@ export function SalesPage() {
     {
       key: 'soldAt',
       header: 'تاريخ البيع',
-      render: (row) => <span className="fs-12">{formatDateTimeAr(row.soldAt)}</span>,
+      render: (row) => <span className="fs-small">{formatDateTimeAr(row.soldAt)}</span>,
     },
   ];
 

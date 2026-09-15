@@ -70,6 +70,7 @@ export function DataTable<T>({
   pageSize,
   total,
   onPage,
+  onPageSize,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -87,6 +88,8 @@ export function DataTable<T>({
   pageSize?: number;
   total?: number;
   onPage?: (page: number) => void;
+  /** Presence of this lets the pager change how many rows a page holds. */
+  onPageSize?: (pageSize: number) => void;
 }) {
   const selectable = Boolean(selectedIds && onToggleSelect);
   const allIds = rows.map(rowKey);
@@ -175,7 +178,13 @@ export function DataTable<T>({
       </div>
 
       {typeof page === 'number' && typeof pageSize === 'number' && typeof total === 'number' && onPage ? (
-        <Pagination page={page} pageSize={pageSize} total={total} onPage={onPage} />
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPage={onPage}
+          onPageSize={onPageSize}
+        />
       ) : null}
     </>
   );
@@ -190,7 +199,7 @@ export function Toolbar({ children }: { children: ReactNode }) {
 export function BulkBar({ count, children }: { count: number; children: ReactNode }) {
   return (
     <div className="bulkbar">
-      <span className="fs-13 strong">
+      <span className="fs-body strong">
         محدد <span className="num">{count}</span>
       </span>
       <div className="row row-gap-2 grow wrap">{children}</div>

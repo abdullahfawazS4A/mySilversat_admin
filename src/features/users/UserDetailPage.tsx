@@ -22,11 +22,13 @@ import {
   EmptyState,
   KeyValue,
   Pill,
+  Skeleton,
   Tabs,
 } from '@/components/ui';
 import { Column, DataTable, PageHeader } from '@/components/page';
 import { StatTile } from '@/components/charts';
 import { useAction, useAsync } from '@/app/useAsync';
+import { useMatchJoin } from '../shared/useMatchJoin';
 import { useRepos } from '@/app/RepositoryContext';
 import { useToast } from '@/app/ToastContext';
 import { formatDateAr, formatDateTimeAr, formatIqd, formatNumber, formatPhone } from '@/lib/format';
@@ -190,7 +192,7 @@ function DevicesTable({ rows }: { rows: Device[] }) {
     {
       key: 'added',
       header: 'تاريخ الإضافة',
-      render: (row) => <span className="fs-12">{formatDateAr(row.createdAt)}</span>,
+      render: (row) => <span className="fs-small">{formatDateAr(row.createdAt)}</span>,
     },
   ];
 
@@ -226,7 +228,7 @@ function PurchasesTable({ rows }: { rows: Code[] }) {
       render: (row) => (
         <div className="col">
           <span className="strong">{row.category?.name ?? '—'}</span>
-          <span className="fs-11 dim">{row.category?.product?.displayName ?? ''}</span>
+          <span className="fs-tiny dim">{row.category?.product?.displayName ?? ''}</span>
         </div>
       ),
     },
@@ -245,7 +247,7 @@ function PurchasesTable({ rows }: { rows: Code[] }) {
     {
       key: 'soldAt',
       header: 'تاريخ البيع',
-      render: (row) => <span className="fs-12">{formatDateTimeAr(row.soldAt)}</span>,
+      render: (row) => <span className="fs-small">{formatDateTimeAr(row.soldAt)}</span>,
     },
     {
       key: 'status',
@@ -268,18 +270,28 @@ function PurchasesTable({ rows }: { rows: Code[] }) {
 }
 
 function PredictionsTable({ rows }: { rows: Prediction[] }) {
+  // `/predictions` does not always join the fixture, and the row only ever
+  // carries its id; without this every match here read "— × —".
+  const matchOf = useMatchJoin(rows);
+
   const columns: Column<Prediction>[] = [
     {
       key: 'match',
       header: 'المباراة',
-      render: (row) => (
-        <div className="col">
-          <span className="strong">
-            {row.match?.homeTeam?.name ?? '—'} × {row.match?.awayTeam?.name ?? '—'}
-          </span>
-          <span className="fs-11 dim">{row.match?.league?.name ?? ''}</span>
-        </div>
-      ),
+      render: (row) => {
+        const match = matchOf(row);
+        // Still being fetched is a skeleton, not "—" — an em dash here would
+        // claim the prediction has no match, which is never true.
+        if (!match) return <Skeleton h={13} w={150} />;
+        return (
+          <div className="col">
+            <span className="strong">
+              {match.homeTeam?.name ?? '—'} × {match.awayTeam?.name ?? '—'}
+            </span>
+            <span className="fs-tiny dim">{match.league?.name ?? ''}</span>
+          </div>
+        );
+      },
     },
     {
       key: 'guess',
@@ -295,16 +307,18 @@ function PredictionsTable({ rows }: { rows: Prediction[] }) {
       key: 'actual',
       header: 'النتيجة',
       numeric: true,
-      render: (row) =>
-        row.match && row.match.homeScore !== null && row.match.awayScore !== null ? (
+      render: (row) => {
+        const match = matchOf(row);
+        return match && match.homeScore !== null && match.awayScore !== null ? (
           <span className="num">
-            {row.match.homeScore} - {row.match.awayScore}
+            {match.homeScore} - {match.awayScore}
           </span>
         ) : (
-          <Pill tone={MATCH_STATUS[row.match?.status ?? 'scheduled'].tone}>
-            {MATCH_STATUS[row.match?.status ?? 'scheduled'].label}
+          <Pill tone={MATCH_STATUS[match?.status ?? 'scheduled'].tone}>
+            {MATCH_STATUS[match?.status ?? 'scheduled'].label}
           </Pill>
-        ),
+        );
+      },
     },
     {
       key: 'points',

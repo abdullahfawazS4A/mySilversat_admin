@@ -27,7 +27,9 @@ import {
   Pill,
   SearchInput,
   Select,
+  Skeleton,
 } from '@/components/ui';
+import { useMatchJoin } from '../shared/useMatchJoin';
 import { formatDateTimeAr, formatPhone } from '@/lib/format';
 import { PREDICTION_OUTCOME } from '@/lib/labels';
 import { outcomeOf, SCORING, type Id, type Prediction, type PredictionOutcome } from '@/types';
@@ -62,6 +64,10 @@ export function PredictionsPage() {
       }),
     [matchId, debounced, page],
   );
+
+  // `/predictions` does not always join the fixture, and the row only ever
+  // carries its id; without this the whole column read "— ضد —".
+  const matchOf = useMatchJoin(predictions.data?.items);
 
   /**
    * The outcome filter is applied to the fetched page, not the query.
@@ -113,23 +119,29 @@ export function PredictionsPage() {
       header: 'المشترك',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13">{row.appUser?.name ?? '—'}</span>
-          <span className="fs-11 dim num">{row.appUser ? formatPhone(row.appUser.phone) : ''}</span>
+          <span className="fs-body">{row.appUser?.name ?? '—'}</span>
+          <span className="fs-tiny dim num">{row.appUser ? formatPhone(row.appUser.phone) : ''}</span>
         </div>
       ),
     },
     {
       key: 'match',
       header: 'المباراة',
-      render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13">
-            {row.match?.homeTeam?.name ?? '—'} <span className="dim">ضد</span>{' '}
-            {row.match?.awayTeam?.name ?? '—'}
-          </span>
-          <span className="fs-11 dim">{row.match?.league?.name ?? ''}</span>
-        </div>
-      ),
+      render: (row) => {
+        const match = matchOf(row);
+        // A fixture still being fetched is a skeleton, not "—": an em dash here
+        // reads as "this prediction has no match", which is never true.
+        if (!match) return <Skeleton h={13} w={150} />;
+        return (
+          <div className="col" style={{ lineHeight: 1.35 }}>
+            <span className="fs-body">
+              {match.homeTeam?.name ?? '—'} <span className="dim">ضد</span>{' '}
+              {match.awayTeam?.name ?? '—'}
+            </span>
+            <span className="fs-tiny dim">{match.league?.name ?? ''}</span>
+          </div>
+        );
+      },
     },
     {
       key: 'pick',
@@ -137,7 +149,7 @@ export function PredictionsPage() {
       numeric: true,
       width: 90,
       render: (row) => (
-        <span className="fs-13 strong num">
+        <span className="fs-body strong num">
           {row.predictedHomeScore} – {row.predictedAwayScore}
         </span>
       ),
@@ -147,14 +159,16 @@ export function PredictionsPage() {
       header: 'النتيجة',
       numeric: true,
       width: 90,
-      render: (row) =>
-        row.match && row.match.homeScore !== null && row.match.awayScore !== null ? (
+      render: (row) => {
+        const match = matchOf(row);
+        return match && match.homeScore !== null && match.awayScore !== null ? (
           <span className="num">
-            {row.match.homeScore} – {row.match.awayScore}
+            {match.homeScore} – {match.awayScore}
           </span>
         ) : (
           <span className="dim">—</span>
-        ),
+        );
+      },
     },
     {
       key: 'outcome',
@@ -179,7 +193,7 @@ export function PredictionsPage() {
     {
       key: 'createdAt',
       header: 'وقت التوقع',
-      render: (row) => <span className="fs-12">{formatDateTimeAr(row.createdAt)}</span>,
+      render: (row) => <span className="fs-small">{formatDateTimeAr(row.createdAt)}</span>,
     },
     {
       key: 'actions',

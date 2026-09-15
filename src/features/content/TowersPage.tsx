@@ -51,7 +51,7 @@ export function TowersPage() {
           render: (row) => (
             <div className="col">
               <span className="strong">{row.name}</span>
-              <span className="fs-12 dim">{row.nameKu || '—'}</span>
+              <span className="fs-small dim">{row.nameKu || '—'}</span>
             </div>
           ),
         },
@@ -76,7 +76,7 @@ export function TowersPage() {
           width: 72,
           render: (row) => (
             <a
-              className="fs-12"
+              className="fs-small"
               href={`https://www.google.com/maps?q=${row.latitude},${row.longitude}`}
               target="_blank"
               rel="noreferrer"

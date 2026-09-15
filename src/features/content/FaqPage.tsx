@@ -43,14 +43,14 @@ export function FaqPage() {
           render: (row) => (
             <div className="col">
               <span className="strong">{row.question}</span>
-              <span className="fs-12 dim truncate">{row.answer}</span>
+              <span className="fs-small dim truncate">{row.answer}</span>
             </div>
           ),
         },
         {
           key: 'ku',
           header: 'بالكردي',
-          render: (row) => <span className="fs-12">{row.questionKu || '—'}</span>,
+          render: (row) => <span className="fs-small">{row.questionKu || '—'}</span>,
         },
         {
           key: 'active',

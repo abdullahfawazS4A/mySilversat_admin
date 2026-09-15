@@ -5,6 +5,14 @@
  * one — so this screen answers a single operator question: **out of every
  * fixture the feed gave us, which ones do we open for predictions?**
  *
+ * The answer is only ever about the leagues the app actually shows, so that is
+ * all this screen lists. A fixture in a hidden league cannot reach a single
+ * user however it is switched, and the feed mirrors twelve hundred of those
+ * leagues against the handful that are on — leaving them in meant an operator
+ * scrolling an Icelandic third division to find tonight's match. The whole
+ * catalogue is still reachable, one screen over on «الدوريات والفرق», where
+ * deciding what the app shows is the actual job.
+ *
  * The prediction switch is therefore in the table itself, not buried in a
  * dialog, and it works in bulk: a typical evening means opening five fixtures
  * at once. Everything else on the row is feed data shown read-only, with one
@@ -16,6 +24,7 @@
  */
 
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   CheckCircle2,
   Flag,
@@ -51,6 +60,16 @@ import { MatchPredictionsDialog } from './MatchPredictionsDialog';
 
 type PredictFilter = 'all' | 'open' | 'closed';
 
+/**
+ * Which leagues a board covers.
+ *
+ * `app` is the operating screen: the leagues switched on for the app, and
+ * nothing else. `all` is the catalogue view that lives under «الدوريات
+ * والفرق» — every league the feed mirrors, for looking something up rather
+ * than running the evening.
+ */
+export type MatchesScope = 'app' | 'all';
+
 /** A crest seed from the team id, so the same team always gets the same look. */
 function crestSeed(id: string): number {
   let hash = 0;
@@ -58,9 +77,23 @@ function crestSeed(id: string): number {
   return hash;
 }
 
+/** The routed screen: fixtures of the leagues the app shows. */
 export function MatchesPage() {
+  return <MatchesBoard scope="app" />;
+}
+
+/**
+ * The fixtures table, over one scope or the other.
+ *
+ * Both scopes are the same screen — same columns, same switches, same bulk
+ * bar — so they are one component with two league sources rather than two
+ * copies that drift apart. What changes is the league list behind the picker
+ * and, with it, what «كل الدوريات» means.
+ */
+export function MatchesBoard({ scope }: { scope: MatchesScope }) {
   const repos = useRepos();
   const { toast } = useToast();
+  const appOnly = scope === 'app';
 
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
@@ -78,6 +111,15 @@ export function MatchesPage() {
    */
   const [timeWindow, setTimeWindow] = useState<MatchWindow>('upcoming');
   const [page, setPage] = useState(1);
+  /*
+   * Rows per page, chosen in the pager rather than fixed here.
+   *
+   * A night's fixtures are worked through in one pass, and twenty-five rows
+   * meant paging through an evening three times. The pager offers 25/50/100
+   * and takes a typed number too; 100 is the ceiling because that is what the
+   * API accepts on one request.
+   */
+  const [pageSize, setPageSize] = useState(25);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [scoring, setScoring] = useState<Match | null>(null);
@@ -86,31 +128,68 @@ export function MatchesPage() {
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
-  const leagues = useAsync(() => repos.matches.leagues.all(), []);
-  const matches = useAsync(
-    () =>
-      repos.matches.matches.list({
-        search: debounced,
-        status: status === 'all' ? undefined : status,
-        leagueId: leagueId === 'all' ? undefined : leagueId,
-        isOpenForPrediction: predictFilter === 'all' ? undefined : predictFilter === 'open',
-        window: timeWindow,
-        page,
-        pageSize: 25,
-      }),
-    [debounced, status, predictFilter, leagueId, timeWindow, page],
+  const leagues = useAsync(
+    () => repos.matches.leagues.all(appOnly ? { isActive: true } : undefined),
+    [appOnly],
   );
 
   /*
-   * Active leagues first, then every other one the feed mirrors.
+   * The ids the app scope is allowed to read, as a dependency-safe key.
    *
-   * Two of the 1,237 are switched on for the app, and alphabetical order buries
-   * them somewhere past "1a Divisão". The heading matters as much as the order:
-   * without it the jump from La Liga to "1. Deild — Faroe-Islands" just reads
-   * like a list that failed to sort.
+   * A fresh array every render would re-run the read on every render, so the
+   * effect watches the joined ids instead — they only change when the set
+   * genuinely does.
+   */
+  const scopeIds = useMemo(
+    () => (appOnly ? (leagues.data ?? []).map((league) => league.id) : null),
+    [appOnly, leagues.data],
+  );
+  const scopeKey = scopeIds?.join(',') ?? '';
+
+  const matches = useAsync(() => {
+    /*
+     * Nothing is read until the league set is known.
+     *
+     * In the app scope the set *is* the filter, and an unresolved one reads as
+     * "no leagues" — which would flash an empty table over a query that has not
+     * been asked yet. A promise that never settles leaves the skeleton up; the
+     * run is discarded as stale the moment the leagues land and the deps move.
+     */
+    if (appOnly && leagues.data === undefined) return new Promise<never>(() => {});
+
+    const single = leagueId === 'all' ? undefined : leagueId;
+    return repos.matches.matches.list({
+      search: debounced,
+      status: status === 'all' ? undefined : status,
+      // In the app scope even «كل الدوريات» is a list — the active ones — so
+      // the twelve hundred hidden leagues can never leak into the table.
+      ...(appOnly
+        ? { leagueIds: single ? [single] : (scopeIds ?? []) }
+        : { leagueId: single }),
+      isOpenForPrediction: predictFilter === 'all' ? undefined : predictFilter === 'open',
+      window: timeWindow,
+      page,
+      pageSize,
+    });
+  }, [appOnly, scopeKey, debounced, status, predictFilter, leagueId, timeWindow, page, pageSize]);
+
+  /*
+   * The picker's options, in the order the scope makes useful.
+   *
+   * In the app scope that is the app's own order — the same `order` column the
+   * app sorts by — because the list is short and an operator thinks of it the
+   * way the app presents it. In the catalogue scope the active ones come first
+   * under a heading, since alphabetical order buries the handful that matter
+   * somewhere past "1a Divisão", and without the heading the jump from La Liga
+   * to "1. Deild — Faroe-Islands" just reads like a list that failed to sort.
    */
   const leagueOptions = useMemo(() => {
-    const rows = [...(leagues.data ?? [])].sort(
+    const rows = [...(leagues.data ?? [])];
+    if (appOnly) {
+      rows.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+      return rows.map((league) => ({ value: league.id, label: leagueLabel(league) }));
+    }
+    rows.sort(
       (a, b) =>
         Number(b.isActive) - Number(a.isActive) ||
         a.name.localeCompare(b.name) ||
@@ -121,7 +200,10 @@ export function MatchesPage() {
       label: leagueLabel(league),
       group: league.isActive ? 'الدوريات الفعّالة بالتطبيق' : 'بقية الدوريات',
     }));
-  }, [leagues.data]);
+  }, [appOnly, leagues.data]);
+
+  /** No league is switched on, so there is nothing for this scope to show. */
+  const noAppLeagues = appOnly && leagues.data !== undefined && leagues.data.length === 0;
 
   const refresh = () => {
     matches.reload();
@@ -210,11 +292,11 @@ export function MatchesPage() {
               logoUrl={match.homeTeam?.logoUrl}
             />
             <div className="col" style={{ lineHeight: 1.35 }}>
-              <span className="fs-13 strong">
+              <span className="fs-body strong">
                 {match.homeTeam?.name ?? '—'} <span className="dim">ضد</span>{' '}
                 {match.awayTeam?.name ?? '—'}
               </span>
-              <span className="fs-11 dim">{match.league?.name ?? ''}</span>
+              <span className="fs-tiny dim">{match.league?.name ?? ''}</span>
             </div>
             <TeamCrest
               name={match.awayTeam?.name ?? '—'}
@@ -230,8 +312,8 @@ export function MatchesPage() {
         header: 'موعد الانطلاق',
         render: (match) => (
           <div className="col" style={{ lineHeight: 1.35 }}>
-            <span className="fs-13">{formatDateAr(match.matchAt)}</span>
-            <span className="fs-11 dim num">{formatTimeAr(match.matchAt)}</span>
+            <span className="fs-body">{formatDateAr(match.matchAt)}</span>
+            <span className="fs-tiny dim num">{formatTimeAr(match.matchAt)}</span>
           </div>
         ),
       },
@@ -246,7 +328,7 @@ export function MatchesPage() {
                 {meta.label}
               </Pill>
               {match.homeScore !== null && match.awayScore !== null ? (
-                <span className="fs-13 strong num">
+                <span className="fs-body strong num">
                   {match.homeScore} – {match.awayScore}
                   {match.currentMinute ? <span className="dim"> {match.currentMinute}′</span> : null}
                 </span>
@@ -278,11 +360,11 @@ export function MatchesPage() {
             */}
             {match.isOpenForPrediction && match.predictionClosesAt ? (
               new Date(match.predictionClosesAt).getTime() > Date.now() ? (
-                <span className="fs-11 dim">
+                <span className="fs-tiny dim">
                   يقفل بعد <span className="num">{countdownAr(match.predictionClosesAt)}</span>
                 </span>
               ) : (
-                <span className="fs-11 dim">انقفل التوقع</span>
+                <span className="fs-tiny dim">انقفل التوقع</span>
               )
             ) : null}
           </div>
@@ -346,28 +428,48 @@ export function MatchesPage() {
   return (
     <>
       <PageHeader
-        title="المباريات"
-        subtitle="المباريات تجي جاهزة من المزوّد — وهنا تختار أي وحدة تنفتح للتوقع داخل التطبيق"
+        title={appOnly ? 'المباريات' : 'كل المباريات'}
+        subtitle={
+          appOnly
+            ? 'مباريات الدوريات المضافة للتطبيق — اختار أي وحدة تنفتح للتوقع'
+            : 'كل مباريات المزوّد، حتى دوريات ما هي مضافة للتطبيق'
+        }
         actions={
-          <Button
-            variant="primary"
-            icon={<RefreshCw size={16} />}
-            disabled={syncing}
-            onClick={() => void runSync()}
-          >
-            {syncing ? 'جاري المزامنة…' : 'مزامنة الآن'}
-          </Button>
+          appOnly ? (
+            <Button
+              variant="primary"
+              icon={<RefreshCw size={16} />}
+              disabled={syncing}
+              onClick={() => void runSync()}
+            >
+              {syncing ? 'جاري المزامنة…' : 'مزامنة الآن'}
+            </Button>
+          ) : undefined
         }
       />
 
       <div className="page">
-        <Notice tone="info">
-          المباريات والفرق تجي من <span className="strong">API-Football</span> — ما تنضاف يدوياً.
-          المزامنة تجيب المباريات الجديدة وتحدّث نتائج المباريات المباشرة.
-          {timeWindow === 'upcoming' ? (
-            <> الجدول يبدي من مباريات اليوم وجاي — للمباريات القديمة اختار «السابقة».</>
-          ) : null}
-        </Notice>
+        {appOnly ? (
+          <Notice tone="info">
+            هنا بس الدوريات المضافة للتطبيق — مباريات الدوريات المخفية ما تظهر لأنها أصلاً ما توصل
+            للمستخدم. تشوف كل الدوريات وكل المباريات من <Link to="/leagues">الدوريات والفرق</Link>.
+            {timeWindow === 'upcoming' ? (
+              <> والجدول يبدي من مباريات اليوم وجاي — للقديمة اختار «السابقة».</>
+            ) : null}
+          </Notice>
+        ) : (
+          <Notice tone="warning">
+            هذا عرض للاطلاع على كل ما يجيه المزوّد. فتح التوقع على مباراة من دوري مخفي ما ينفع شي —
+            المستخدم ما يشوفها حتى يصير الدوري ظاهر بالتطبيق.
+          </Notice>
+        )}
+
+        {noAppLeagues ? (
+          <Notice tone="warning">
+            ماكو ولا دوري مضاف للتطبيق، فما بيها مباريات تنعرض. فعّل دوري من{' '}
+            <Link to="/leagues">شاشة الدوريات</Link> وارجع.
+          </Notice>
+        ) : null}
 
         <Card>
           <Toolbar>
@@ -379,7 +481,10 @@ export function MatchesPage() {
                 setLeagueId(next);
                 setPage(1);
               }}
-              options={[{ value: 'all' as const, label: 'كل الدوريات' }, ...leagueOptions]}
+              options={[
+                { value: 'all' as const, label: appOnly ? 'كل الدوريات المضافة' : 'كل الدوريات' },
+                ...leagueOptions,
+              ]}
             />
 
             <Select
@@ -471,20 +576,37 @@ export function MatchesPage() {
                     ids.every((id) => current.has(id)) ? new Set() : new Set(ids),
                   )
                 }
-                page={data.page}
-                pageSize={data.pageSize}
+                /*
+                 * The requested page and size, not the ones the last answer
+                 * came back with. Both are clamped identically on either side,
+                 * so they never actually disagree — but reading them off the
+                 * fetched page meant the control snapped back to the old value
+                 * until the request landed, which on a slow read looks exactly
+                 * like a click that did nothing.
+                 */
+                page={page}
+                pageSize={pageSize}
                 total={data.total}
                 onPage={setPage}
+                onPageSize={(next) => {
+                  // Row 30 is on page two at 25 a page and page one at 50, so
+                  // staying on the current number would land somewhere the
+                  // operator did not ask for — or past the end entirely.
+                  setPageSize(next);
+                  setPage(1);
+                }}
                 empty={
                   <div className="empty">
                     <span className="empty-icon">
                       <Flag size={22} />
                     </span>
                     <span className="strong">ما بيها مباريات بهذه الفلاتر</span>
-                    <span className="fs-12 muted">
-                      {timeWindow === 'upcoming'
-                        ? 'ماكو مباريات جاية — جرّب «السابقة» أو شغّل مزامنة'
-                        : 'جرّب مزامنة المزوّد أو غيّر الفلاتر'}
+                    <span className="fs-small muted">
+                      {noAppLeagues
+                        ? 'فعّل دوري من شاشة الدوريات حتى تظهر مبارياته هنا'
+                        : timeWindow === 'upcoming'
+                          ? 'ماكو مباريات جاية — جرّب «السابقة» أو شغّل مزامنة'
+                          : 'جرّب مزامنة المزوّد أو غيّر الفلاتر'}
                     </span>
                   </div>
                 }

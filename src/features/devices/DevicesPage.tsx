@@ -82,8 +82,8 @@ export function DevicesPage() {
       header: 'الجهاز',
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-13 strong">{row.name}</span>
-          <span className="fs-11 dim num">{row.deviceNumber}</span>
+          <span className="fs-body strong">{row.name}</span>
+          <span className="fs-tiny dim num">{row.deviceNumber}</span>
         </div>
       ),
     },
@@ -93,8 +93,8 @@ export function DevicesPage() {
       render: (row) =>
         row.appUser ? (
           <Link className="col" to={`/users/${row.appUserId}`} style={{ lineHeight: 1.35 }}>
-            <span className="fs-13">{row.appUser.name}</span>
-            <span className="fs-11 dim num">{formatPhone(row.appUser.phone)}</span>
+            <span className="fs-body">{row.appUser.name}</span>
+            <span className="fs-tiny dim num">{formatPhone(row.appUser.phone)}</span>
           </Link>
         ) : (
           <span className="dim">—</span>
@@ -108,7 +108,7 @@ export function DevicesPage() {
     {
       key: 'added',
       header: 'تاريخ الإضافة',
-      render: (row) => <span className="fs-12">{formatDateAr(row.createdAt)}</span>,
+      render: (row) => <span className="fs-small">{formatDateAr(row.createdAt)}</span>,
     },
     {
       key: 'actions',

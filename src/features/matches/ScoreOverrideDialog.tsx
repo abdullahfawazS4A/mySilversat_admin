@@ -45,7 +45,7 @@ function Stepper({
   return (
     <div className="col center" style={{ gap: 'var(--sp-3)', flex: 1 }}>
       <TeamCrest name={label} seed={seed} logoUrl={logoUrl} size={44} />
-      <span className="fs-13 truncate" style={{ maxWidth: 140, textAlign: 'center' }}>
+      <span className="fs-body truncate" style={{ maxWidth: 140, textAlign: 'center' }}>
         {label}
       </span>
       <div className="row row-gap-3">
@@ -56,7 +56,7 @@ function Stepper({
           onClick={() => onChange(Math.max(0, value - 1))}
           title="ناقص"
         />
-        <span className="fs-24 strong num" style={{ minWidth: 34, textAlign: 'center' }}>
+        <span className="fs-hero strong num" style={{ minWidth: 34, textAlign: 'center' }}>
           {value}
         </span>
         <Button
@@ -138,8 +138,8 @@ export function ScoreOverrideDialog({
         {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
 
         <div className="col" style={{ gap: 2 }}>
-          <span className="fs-12 muted">{match.league?.name ?? ''}</span>
-          <span className="fs-12 dim num">{formatDateTimeAr(match.matchAt)}</span>
+          <span className="fs-small muted">{match.league?.name ?? ''}</span>
+          <span className="fs-small dim num">{formatDateTimeAr(match.matchAt)}</span>
         </div>
 
         <Notice tone="warning">
@@ -155,7 +155,7 @@ export function ScoreOverrideDialog({
             value={home}
             onChange={setHome}
           />
-          <span className="fs-20 dim" style={{ alignSelf: 'center' }}>
+          <span className="fs-stat dim" style={{ alignSelf: 'center' }}>
             –
           </span>
           <Stepper

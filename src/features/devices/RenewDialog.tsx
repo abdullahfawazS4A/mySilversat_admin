@@ -110,7 +110,7 @@ export function RenewDialog({ device, onClose }: { device: Device; onClose: () =
 
         {result ? (
           <div className="col" style={{ gap: 'var(--sp-2)' }}>
-            <span className="fs-12 muted">رد السيرفر</span>
+            <span className="fs-small muted">رد السيرفر</span>
             <VendorPayload data={result} />
           </div>
         ) : null}

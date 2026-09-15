@@ -132,6 +132,60 @@ const BOUNDARY_PROBES = 8;
 /** How many rows the filters the API cannot apply will read before giving up. */
 const LOCAL_FILTER_CAP = 3000;
 
+/**
+ * Fixtures fetched one id at a time, and how long they may be reused.
+ *
+ * Short, because a fixture is not static reference data — its score and status
+ * move while it is being played, and these rows are read on screens that show
+ * both. The names and the crests, which are what the id is usually being
+ * resolved for, do not move at all.
+ */
+const MATCH_BY_ID_TTL_MS = 60_000;
+const matchById = new Map<Id, { at: number; row: Match }>();
+
+/**
+ * Teams fetched one id at a time, and how long they may be reused.
+ *
+ * Far longer than a fixture's, because a club's name and crest do not change
+ * during a matchday — and the same two teams are behind dozens of predictions,
+ * so a short window here would re-read the same rows all evening.
+ */
+const TEAM_BY_ID_TTL_MS = 10 * 60_000;
+const teamById = new Map<Id, { at: number; row: Team }>();
+
+/**
+ * Leagues fetched one id at a time. The longest window of the three: a league
+ * is the most repeated row on any fixture table and the least changeable.
+ */
+const LEAGUE_BY_ID_TTL_MS = 30 * 60_000;
+const leagueById = new Map<Id, { at: number; row: League }>();
+
+/** Whether an entry is still inside its window. */
+function fresh(at: number, ttl: number): boolean {
+  return Date.now() - at < ttl;
+}
+
+/**
+ * Whether a fixture carries enough to name itself.
+ *
+ * A fixture arrives in three states depending on which endpoint served it:
+ * absent, present but bare (ids only), or fully joined. The middle one is the
+ * trap — it is truthy, so a screen that only checks for the fixture renders
+ * "— ضد —" and looks like it has the data. This is the test that matters.
+ */
+export function isNamedMatch(match: Match | null | undefined): match is Match {
+  return !!match?.homeTeam?.name && !!match?.awayTeam?.name;
+}
+
+/**
+ * Fixtures fetched at once when resolving ids.
+ *
+ * Well under the fan-out the boundary search uses, because this runs on screens
+ * that are already reading a table — it should stay out of the way rather than
+ * race it for the rate limit.
+ */
+const BY_ID_CONCURRENCY = 4;
+
 /** A fixture list split in two at "now": `offset` rows behind, the rest ahead. */
 interface Boundary {
   offset: number;
@@ -151,10 +205,19 @@ class HttpMatchesCollection extends HttpCrudRepository<
     );
   }
 
-  /** Only `leagueId` and `status` reach the API; the rest are applied here. */
+  /**
+   * Only `leagueId` and `status` reach the API; the rest are applied here.
+   *
+   * Named rather than "everything except the ones we handle", because `list`
+   * hands its whole query in — paging included — and a leftover `pageSize` in
+   * here is not a harmless spare parameter. It rides along into `boundary`'s
+   * cache key, so changing the rows-per-page threw the memoised boundary away
+   * and re-ran a twenty-request binary search against a rate-limited API for
+   * an answer that had nothing to do with page size. The table sat on its old
+   * rows for seconds, and a single rate-limited probe failed the read outright.
+   */
   protected filterQuery(filter: MatchFilter | undefined): Query {
-    const { isOpenForPrediction: _open, window: _window, ...rest } = filter ?? {};
-    return clean(rest);
+    return clean({ leagueId: filter?.leagueId, status: filter?.status });
   }
 
   /**
@@ -260,16 +323,11 @@ class HttpMatchesCollection extends HttpCrudRepository<
     filter: Query,
     window: MatchWindow,
     range: Boundary | null,
+    cap = LOCAL_FILTER_CAP,
   ): Promise<Match[]> {
-    if (!range) return fetchAll<Match>('/matches', filter, LOCAL_FILTER_CAP);
+    if (!range) return fetchAll<Match>('/matches', filter, cap);
     if (window === 'upcoming') {
-      return fetchRange<Match>(
-        '/matches',
-        filter,
-        range.offset,
-        range.total - range.offset,
-        LOCAL_FILTER_CAP,
-      );
+      return fetchRange<Match>('/matches', filter, range.offset, range.total - range.offset, cap);
     }
     /*
      * Past fixtures read newest first, the same way their pages do below — and
@@ -278,15 +336,112 @@ class HttpMatchesCollection extends HttpCrudRepository<
      * oldest fixtures in the feed and never reach the ones a search is
      * actually looking for.
      */
-    const start = Math.max(0, range.offset - LOCAL_FILTER_CAP);
-    const rows = await fetchRange<Match>(
-      '/matches',
-      filter,
-      start,
-      range.offset - start,
-      LOCAL_FILTER_CAP,
-    );
+    const start = Math.max(0, range.offset - cap);
+    const rows = await fetchRange<Match>('/matches', filter, start, range.offset - start, cap);
     return rows.reverse();
+  }
+
+  /**
+   * Lists fixtures across several leagues at once.
+   *
+   * `/matches` takes one `leagueId` and has no list form, so a page spanning
+   * three leagues cannot be requested — each league is read on its own and the
+   * rows are merged here. Order has to be rebuilt on the merged rows: each
+   * league comes back sorted on its own, and interleaving two sorted lists
+   * does not keep either order.
+   *
+   * The leagues are read one after another rather than together on purpose.
+   * `boundary` already fans out `BOUNDARY_PROBES` requests per league, and
+   * running two of those searches side by side is exactly the burst the rate
+   * limiter refuses — a refused probe does not slow the search down, it fails
+   * the screen.
+   */
+  private async listAcross(ids: Id[], query: ListQuery & MatchFilter): Promise<Page<Match>> {
+    const { search, page, pageSize, isOpenForPrediction, status, window = 'all' } = query;
+    const windowed = window !== 'all' && status !== 'live';
+
+    // Past fixtures read newest first, the same way the single-league path
+    // hands them back; everything else keeps the feed's own ascending order.
+    const direction = window === 'past' ? -1 : 1;
+    const byTime = (a: Match, b: Match) =>
+      direction * (new Date(a.matchAt).getTime() - new Date(b.matchAt).getTime());
+
+    const slices: { filter: Query; range: Boundary | null }[] = [];
+    for (const leagueId of ids) {
+      const filter = this.filterQuery({ leagueId, status });
+      slices.push({ filter, range: windowed ? await this.boundary(filter) : null });
+    }
+
+    /*
+     * A filter the API cannot apply has to see every row of the window, the
+     * same way the single-league path does — a page of the wrong rows cannot
+     * be re-filtered into the right ones.
+     *
+     * The row budget is shared out rather than handed to each league whole, so
+     * this costs about what one league does instead of multiplying by the size
+     * of the set. The floor keeps a wide set from cutting every league down to
+     * a page or two.
+     */
+    if (search?.trim() || isOpenForPrediction !== undefined) {
+      const cap = Math.max(200, Math.ceil(LOCAL_FILTER_CAP / ids.length));
+      const rows: Match[] = [];
+      for (const { filter, range } of slices) {
+        rows.push(...(await this.windowRows(filter, window, range, cap)));
+      }
+      const filtered = rows
+        .filter(
+          (row) =>
+            isOpenForPrediction === undefined || row.isOpenForPrediction === isOpenForPrediction,
+        )
+        .sort(byTime);
+      return localPage(filtered, { search, page, pageSize }, (row) =>
+        `${row.homeTeam?.name ?? ''} ${row.awayTeam?.name ?? ''} ${row.league?.name ?? ''}`,
+      );
+    }
+
+    /*
+     * Nothing local to apply, so the merge only has to be deep enough to answer
+     * the page being asked for.
+     *
+     * The first `need` rows of the merged list can only come from the first
+     * `need` rows of each league, so that is all that is read — page one of two
+     * leagues is two small requests, not two whole seasons. Reading the full
+     * window here instead was the same answer for roughly twenty times the
+     * traffic, on the screen that gets opened most.
+     */
+    const size = clampPageSize(pageSize ?? DEFAULT_PAGE_SIZE);
+    const wanted = Math.max(1, page ?? 1);
+    const need = wanted * size;
+
+    const heads: Match[][] = [];
+    let total = 0;
+    for (const { filter, range } of slices) {
+      if (range && window === 'upcoming') {
+        total += range.total - range.offset;
+        heads.push(await fetchRange<Match>('/matches', filter, range.offset, need, need));
+        continue;
+      }
+      if (range) {
+        // The archive ends at the boundary, so its newest page is the slice
+        // that stops there — read forwards, then flipped.
+        total += range.offset;
+        const start = Math.max(0, range.offset - need);
+        const rows = await fetchRange<Match>('/matches', filter, start, range.offset - start, need);
+        heads.push(rows.reverse());
+        continue;
+      }
+      // No boundary — either the whole archive was asked for, or the league's
+      // list came back without a total to search over. Both read from the top.
+      const head = await api.page<Match>('/matches', { ...filter, limit: size, offset: 0 });
+      total += head.hasTotal ? head.total : head.items.length;
+      heads.push(
+        need <= size ? head.items : await fetchRange<Match>('/matches', filter, 0, need, need),
+      );
+    }
+
+    const merged = heads.flat().sort(byTime);
+    const offset = (wanted - 1) * size;
+    return toPage(merged.slice(offset, offset + size), total, { page, pageSize });
   }
 
   /**
@@ -301,6 +456,21 @@ class HttpMatchesCollection extends HttpCrudRepository<
    */
   async list(query?: ListQuery & MatchFilter): Promise<Page<Match>> {
     const { search, page, pageSize, isOpenForPrediction, status, window = 'all' } = query ?? {};
+
+    /*
+     * A set of leagues is not something the API can be asked for, so it is
+     * resolved before anything else: one id collapses back to the ordinary
+     * single-league path, several go through `listAcross`, and none at all is
+     * an empty table — dropping the filter instead would answer "the leagues
+     * the app shows" with every league in the feed.
+     */
+    if (query?.leagueIds) {
+      const ids = query.leagueIds;
+      if (ids.length === 0) return toPage<Match>([], 0, { page, pageSize });
+      if (ids.length > 1) return this.listAcross(ids, query);
+      return this.list({ ...query, leagueIds: undefined, leagueId: ids[0] });
+    }
+
     const filter = this.filterQuery(query);
 
     /*
@@ -361,6 +531,114 @@ class HttpMatchesCollection extends HttpCrudRepository<
     if (limit <= 0) return toPage<Match>([], count, { page, pageSize });
     const result = await api.page<Match>('/matches', { ...filter, limit, offset });
     return toPage(result.items.reverse(), count, { page, pageSize });
+  }
+
+  /** Runs `job` over `ids` a few at a time, keeping clear of the rate limit. */
+  private async inBatches<T>(
+    ids: Id[],
+    job: (id: Id) => Promise<T | null>,
+    onResult: (id: Id, result: T) => void,
+  ): Promise<void> {
+    for (let i = 0; i < ids.length; i += BY_ID_CONCURRENCY) {
+      const batch = ids.slice(i, i + BY_ID_CONCURRENCY);
+      const results = await Promise.all(batch.map((id) => job(id).catch(() => null)));
+      results.forEach((result, index) => {
+        if (result) onResult(batch[index], result);
+      });
+    }
+  }
+
+  /**
+   * Resolves fixture ids to fixtures a table can actually name.
+   *
+   * For screens that hold a `matchId` and need the fixture behind it. The
+   * obvious alternative — read every fixture once and look ids up in memory —
+   * is what the predictions screen does for its filter, and it is both far
+   * heavier and wrong: `all()` walks from the oldest row in the feed and stops
+   * at its cap, so the fixtures a recent prediction points at are exactly the
+   * ones missing from it.
+   *
+   * Two rounds, because a fixture from a nested join is not the fixture the
+   * list route returns. `/matches` joins both clubs; a `match` embedded in
+   * another resource, and a fixture read by its own id, may carry nothing but
+   * `homeTeamId`/`awayTeamId` — which is what left the predictions table
+   * reading "— ضد —" even once the fixture itself had been found. So whatever
+   * comes back is checked, and the clubs it is missing are read from `/teams`
+   * and attached.
+   *
+   * `seeds` are fixtures the caller already has, however incomplete. Seeding
+   * them means an embedded-but-bare fixture costs only the two club reads —
+   * shared across every prediction on that fixture — instead of re-reading the
+   * fixture first.
+   *
+   * Anything that cannot be read is left out rather than failing the call. One
+   * deleted row should cost its own cell, not the whole table.
+   */
+  async byIds(ids: Id[], seeds?: (Match | undefined)[]): Promise<Map<Id, Match>> {
+    const wanted = [...new Set(ids.filter(Boolean))];
+
+    for (const seed of seeds ?? []) {
+      if (!seed?.id) continue;
+      const hit = matchById.get(seed.id);
+      // A cached row may already have been completed; a bare seed must not
+      // undo that work.
+      if (hit && (isNamedMatch(hit.row) || !isNamedMatch(seed))) continue;
+      matchById.set(seed.id, { at: Date.now(), row: seed });
+    }
+
+    const missing = wanted.filter((id) => {
+      const hit = matchById.get(id);
+      return !hit || !fresh(hit.at, MATCH_BY_ID_TTL_MS);
+    });
+    await this.inBatches(
+      missing,
+      (id) => this.get(id),
+      (id, row) => matchById.set(id, { at: Date.now(), row }),
+    );
+
+    const rows = wanted
+      .map((id) => matchById.get(id)?.row)
+      .filter((row): row is Match => Boolean(row));
+
+    const needTeams = new Set<Id>();
+    const needLeagues = new Set<Id>();
+    for (const row of rows) {
+      if (!row.homeTeam?.name && row.homeTeamId) needTeams.add(row.homeTeamId);
+      if (!row.awayTeam?.name && row.awayTeamId) needTeams.add(row.awayTeamId);
+      // The league names the fixture's second line; a bare fixture leaves it
+      // blank, which is the same hole one line down.
+      if (!row.league?.name && row.leagueId) needLeagues.add(row.leagueId);
+    }
+
+    await Promise.all([
+      this.inBatches(
+        [...needTeams].filter((id) => {
+          const hit = teamById.get(id);
+          return !hit || !fresh(hit.at, TEAM_BY_ID_TTL_MS);
+        }),
+        (id) => api.get<Team>(`/teams/${id}`),
+        (id, row) => teamById.set(id, { at: Date.now(), row }),
+      ),
+      this.inBatches(
+        [...needLeagues].filter((id) => {
+          const hit = leagueById.get(id);
+          return !hit || !fresh(hit.at, LEAGUE_BY_ID_TTL_MS);
+        }),
+        (id) => api.get<League>(`/leagues/${id}`),
+        (id, row) => leagueById.set(id, { at: Date.now(), row }),
+      ),
+    ]);
+
+    const out = new Map<Id, Match>();
+    for (const row of rows) {
+      // Written back onto the cached fixture, so the next screen to ask for it
+      // gets the completed one and pays for neither round.
+      if (!row.homeTeam?.name) row.homeTeam = teamById.get(row.homeTeamId)?.row ?? row.homeTeam;
+      if (!row.awayTeam?.name) row.awayTeam = teamById.get(row.awayTeamId)?.row ?? row.awayTeam;
+      if (!row.league?.name) row.league = leagueById.get(row.leagueId)?.row ?? row.league;
+      out.set(row.id, row);
+    }
+    return out;
   }
 
   setOpenForPrediction(id: Id, open: boolean, closesAt?: string | null): Promise<Match> {

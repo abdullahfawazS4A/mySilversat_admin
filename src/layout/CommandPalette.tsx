@@ -122,10 +122,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                     <Icon size={15} />
                   </span>
                   <span className="col grow" style={{ minWidth: 0, lineHeight: 1.35 }}>
-                    <span className="fs-13 strong truncate">{hit.label}</span>
-                    <span className="fs-11 dim truncate">{hit.hint}</span>
+                    <span className="fs-body strong truncate">{hit.label}</span>
+                    <span className="fs-tiny dim truncate">{hit.hint}</span>
                   </span>
-                  <span className="fs-11 muted">{hit.group}</span>
+                  <span className="fs-tiny muted">{hit.group}</span>
                   {index === cursor ? <CornerDownLeft size={13} className="dim" /> : null}
                 </button>
               );

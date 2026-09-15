@@ -71,7 +71,7 @@ export function SlidesPage() {
           render: (row) => (
             <div className="col">
               <span className="strong">{row.title}</span>
-              <span className="fs-12 dim">{row.titleKu || '—'}</span>
+              <span className="fs-small dim">{row.titleKu || '—'}</span>
             </div>
           ),
         },
@@ -80,9 +80,9 @@ export function SlidesPage() {
           header: 'عند الضغط',
           render: (row) => (
             <div className="col">
-              <span className="fs-12">{AD_ACTION[row.actionType]}</span>
+              <span className="fs-small">{AD_ACTION[row.actionType]}</span>
               {row.actionValue ? (
-                <span className="fs-11 dim num truncate">{row.actionValue}</span>
+                <span className="fs-tiny dim num truncate">{row.actionValue}</span>
               ) : null}
             </div>
           ),

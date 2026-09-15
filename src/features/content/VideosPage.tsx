@@ -51,7 +51,7 @@ export function VideosPage() {
           render: (row) => (
             <div className="col">
               <span className="strong">{row.title}</span>
-              {row.subtitle ? <span className="fs-12 dim truncate">{row.subtitle}</span> : null}
+              {row.subtitle ? <span className="fs-small dim truncate">{row.subtitle}</span> : null}
             </div>
           ),
         },
@@ -59,7 +59,7 @@ export function VideosPage() {
           key: 'url',
           header: 'الرابط',
           render: (row) => (
-            <a className="fs-12 num truncate" href={row.videoUrl} target="_blank" rel="noreferrer">
+            <a className="fs-small num truncate" href={row.videoUrl} target="_blank" rel="noreferrer">
               {row.videoUrl}
             </a>
           ),

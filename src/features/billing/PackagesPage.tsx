@@ -83,7 +83,7 @@ function CategoriesTab() {
           render: (row) => (
             <div className="col">
               <span className="strong">{row.name}</span>
-              <span className="fs-12 dim">{row.nameKu || '—'}</span>
+              <span className="fs-small dim">{row.nameKu || '—'}</span>
             </div>
           ),
         },
@@ -92,8 +92,8 @@ function CategoriesTab() {
           header: 'المنتج',
           render: (row) => (
             <div className="col">
-              <span className="fs-13">{row.product?.displayName ?? '—'}</span>
-              <span className="fs-11 dim">{row.product?.province?.name ?? ''}</span>
+              <span className="fs-body">{row.product?.displayName ?? '—'}</span>
+              <span className="fs-tiny dim">{row.product?.province?.name ?? ''}</span>
             </div>
           ),
         },
@@ -312,7 +312,7 @@ function ProductsTab() {
           render: (row) => (
             <div className="col">
               <span className="strong">{row.displayName}</span>
-              <span className="fs-12 dim">{row.name}</span>
+              <span className="fs-small dim">{row.name}</span>
             </div>
           ),
         },
@@ -335,7 +335,7 @@ function ProductsTab() {
           header: 'السيرفر',
           render: (row) =>
             row.silversatRegion ? (
-              <span className="fs-13">{row.silversatRegion.name}</span>
+              <span className="fs-body">{row.silversatRegion.name}</span>
             ) : (
               <span className="dim">—</span>
             ),
