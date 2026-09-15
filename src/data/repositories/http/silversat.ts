@@ -10,15 +10,31 @@
  * `recharge` is the exception that takes no region: the API resolves it from
  * the code's own product, and refuses a code that is not already sold to the
  * app user who owns the receiver.
+ *
+ * `regionForProvince` exists so that the read-only calls resolve the server
+ * the same way `recharge` already does — from the catalogue — instead of from
+ * whatever the operator happened to leave selected in a dropdown. Querying the
+ * right receiver number against the wrong province's server answers
+ * confidently and wrongly, which is the worst failure a support tool has.
  */
 
 import { api } from '@/data/http/client';
 import type { Id, RechargeType, SilversatRegion, VendorResponse } from '@/types';
 import type { SilversatRepository } from '../types';
+import { catalogScope } from './scope';
 
 export class HttpSilversatRepository implements SilversatRepository {
   regions(): Promise<SilversatRegion[]> {
     return api.get<SilversatRegion[]>('/silversat/regions');
+  }
+
+  async regionForProvince(provinceId: Id): Promise<SilversatRegion | null> {
+    const [scope, regions] = await Promise.all([catalogScope(), this.regions()]);
+    // First wins when a province is misconfigured across two servers. The
+    // province screen is where that fault is surfaced; a support call still
+    // has to reach *a* server rather than refuse to run.
+    const [regionId] = scope.regionIdsOf(provinceId);
+    return regions.find((row) => row.id === regionId) ?? null;
   }
 
   checkCode(regionId: Id, code: string): Promise<VendorResponse> {

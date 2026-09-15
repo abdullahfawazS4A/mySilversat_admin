@@ -9,18 +9,38 @@
  * Four prices ride on every category: what the code costs us, what the app
  * charges, and the two reseller tiers. They are `decimal` columns, so the API
  * sends them as strings — `toAmount` reads them at the point of render.
+ *
+ * The two tabs answer different questions and are not two views of one table.
+ * **الباقات والأسعار** is the flat price list, for "what does the 12-month
+ * card cost". **المنتجات** is the setup view, where a product's province, its
+ * server and its whole set of tiers are one thing — which is why a product
+ * opens into a dialog rather than a row of five columns.
  */
 
 import { useState } from 'react';
-import { Field, Pill, Select, Switch, TextInput } from '@/components/ui';
+import { Layers } from 'lucide-react';
+import { Field, Pill, Select } from '@/components/ui';
 import { useAsync } from '@/app/useAsync';
 import { useRepos } from '@/app/RepositoryContext';
 import { formatIqd } from '@/lib/format';
 import { ACTIVATION_API } from '@/lib/labels';
-import { toAmount, type ActivationApi, type Category, type Id, type Product } from '@/types';
+import { toAmount, type Category, type Id, type Product } from '@/types';
 import type { CategoryInput, ProductInput } from '@/data/repositories/types';
-import { Tabs } from '@/components/ui';
+import { Button, Tabs } from '@/components/ui';
 import { CrudScreen } from '../shared/CrudScreen';
+import {
+  CategoryFields,
+  blankCategory,
+  categoryToInput,
+  validateCategory,
+} from '../shared/categoryForm';
+import {
+  ProductFields,
+  blankProduct,
+  productToInput,
+  validateProduct,
+} from '../shared/productForm';
+import { NewProductDialog, ProductDetailDialog } from './ProductDialogs';
 
 export function PackagesPage() {
   const [tab, setTab] = useState<'categories' | 'products'>('categories');
@@ -149,43 +169,9 @@ function CategoriesTab() {
           ),
         },
       ]}
-      blank={() => ({
-        productId: productId || productOptions[0]?.value || '',
-        name: '',
-        nameKu: '',
-        costPrice: 0,
-        unitPrice: 0,
-        mainPrice: 0,
-        subPrice: 0,
-        hasSecondaryCode: false,
-        lowStockThreshold: null,
-        isDisabled: false,
-        isDisplay: true,
-        sortOrder: 0,
-      })}
-      toInput={(row) => ({
-        productId: row.productId,
-        name: row.name,
-        nameKu: row.nameKu,
-        costPrice: toAmount(row.costPrice),
-        unitPrice: toAmount(row.unitPrice),
-        mainPrice: toAmount(row.mainPrice),
-        subPrice: toAmount(row.subPrice),
-        hasSecondaryCode: row.hasSecondaryCode,
-        lowStockThreshold: row.lowStockThreshold,
-        isDisabled: row.isDisabled,
-        isDisplay: row.isDisplay,
-        sortOrder: row.sortOrder,
-      })}
-      validate={(draft) =>
-        !draft.productId
-          ? 'اختر المنتج'
-          : !draft.name.trim()
-            ? 'اسم الفئة مطلوب'
-            : draft.unitPrice <= 0
-              ? 'سعر التطبيق لازم يكون أكبر من صفر'
-              : null
-      }
+      blank={() => blankCategory(productId || productOptions[0]?.value || '')}
+      toInput={categoryToInput}
+      validate={validateCategory}
       form={(draft, set) => (
         <>
           <Field label="المنتج" className="span-2">
@@ -195,88 +181,7 @@ function CategoriesTab() {
               options={productOptions}
             />
           </Field>
-
-          <Field label="اسم الفئة بالعربي">
-            <TextInput
-              value={draft.name}
-              onChange={(next) => set('name', next)}
-              placeholder="اشتراك 12 شهر"
-            />
-          </Field>
-          <Field label="اسم الفئة بالكردي">
-            <TextInput value={draft.nameKu} onChange={(next) => set('nameKu', next)} />
-          </Field>
-
-          <Field label="سعر الكلفة" hint="شكد يكلّفنا الكارت">
-            <TextInput
-              type="number"
-              min={0}
-              value={draft.costPrice}
-              onChange={(next) => set('costPrice', Number(next) || 0)}
-            />
-          </Field>
-          <Field label="سعر التطبيق" hint="السعر اللي يشوفه المشترك">
-            <TextInput
-              type="number"
-              min={0}
-              value={draft.unitPrice}
-              onChange={(next) => set('unitPrice', Number(next) || 0)}
-            />
-          </Field>
-          <Field label="سعر الوكيل الرئيسي">
-            <TextInput
-              type="number"
-              min={0}
-              value={draft.mainPrice}
-              onChange={(next) => set('mainPrice', Number(next) || 0)}
-            />
-          </Field>
-          <Field label="سعر الوكيل الفرعي">
-            <TextInput
-              type="number"
-              min={0}
-              value={draft.subPrice}
-              onChange={(next) => set('subPrice', Number(next) || 0)}
-            />
-          </Field>
-
-          <Field label="حد التنبيه للمخزون" hint="خلّيها فارغة حتى تطفي التنبيه">
-            <TextInput
-              type="number"
-              min={0}
-              value={draft.lowStockThreshold ?? ''}
-              onChange={(next) => set('lowStockThreshold', next === '' ? null : Number(next) || 0)}
-            />
-          </Field>
-          <Field label="الترتيب">
-            <TextInput
-              type="number"
-              value={draft.sortOrder ?? 0}
-              onChange={(next) => set('sortOrder', Number(next) || 0)}
-            />
-          </Field>
-
-          <Field label="كود ثانوي" hint="فعّلها إذا الكارت يجي بقيمتين">
-            <Switch
-              checked={draft.hasSecondaryCode ?? false}
-              onChange={(next) => set('hasSecondaryCode', next)}
-              label="الكارت يحمل قيمة ثانية"
-            />
-          </Field>
-          <Field label="العرض بالتطبيق">
-            <Switch
-              checked={draft.isDisplay ?? true}
-              onChange={(next) => set('isDisplay', next)}
-              label="تنعرض بالتطبيق"
-            />
-          </Field>
-          <Field label="التعطيل" hint="الفئة المعطّلة ما تنباع أبداً">
-            <Switch
-              checked={draft.isDisabled ?? false}
-              onChange={(next) => set('isDisabled', next)}
-              label="معطّلة"
-            />
-          </Field>
+          <CategoryFields draft={draft} set={set} />
         </>
       )}
     />
@@ -289,140 +194,147 @@ function ProductsTab() {
   const repos = useRepos();
   const provinces = useAsync(() => repos.geo.provinces.all(), []);
   const regions = useAsync(() => repos.regions.all(), []);
+  const categories = useAsync(() => repos.catalog.categories.all(), []);
 
   const provinceOptions = (provinces.data ?? []).map((row) => ({ value: row.id, label: row.name }));
   const regionOptions = (regions.data ?? []).map((row) => ({ value: row.id, label: row.name }));
 
+  // Counted rather than joined: the tier count is what says whether a product
+  // is sellable at all, and a product with none is the fault worth surfacing.
+  const tierCount = new Map<Id, number>();
+  for (const category of categories.data ?? []) {
+    tierCount.set(category.productId, (tierCount.get(category.productId) ?? 0) + 1);
+  }
+
+  const [opened, setOpened] = useState<Product | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [version, setVersion] = useState(0);
+
+  // A category write only changes the tier counts, so it reloads that read
+  // alone. Remounting the table for it would throw away the operator's search
+  // and page — which is exactly where they were before opening the product.
+  const onCategoryChange = () => categories.reload();
+
+  // A new product is a new row, and `CrudScreen` owns its own list state with
+  // no reload handle, so the remount is the honest way to show it.
+  const onProductCreated = () => {
+    categories.reload();
+    setVersion((n) => n + 1);
+  };
+
   return (
-    <CrudScreen<Product, ProductInput>
-      title="المنتجات"
-      subtitle="الخدمة المباعة بكل محافظة — وأي سيرفر سلفرسات يفعّل كارتاتها"
-      repo={repos.catalog.products}
-      searchable
-      createLabel="إضافة منتج"
-      createTitle="إضافة منتج"
-      editTitle="تعديل المنتج"
-      dialogSize="lg"
-      rowKey={(row) => row.id}
-      labelOf={(row) => row.displayName}
-      columns={[
-        {
-          key: 'name',
-          header: 'المنتج',
-          render: (row) => (
-            <div className="col">
-              <span className="strong">{row.displayName}</span>
-              <span className="fs-small dim">{row.name}</span>
-            </div>
-          ),
-        },
-        {
-          key: 'province',
-          header: 'المحافظة',
-          render: (row) => row.province?.name ?? '—',
-        },
-        {
-          key: 'api',
-          header: 'التفعيل',
-          render: (row) => (
-            <Pill tone={row.activationApi === 'silvers' ? 'neutral' : 'muted'}>
-              {ACTIVATION_API[row.activationApi]}
-            </Pill>
-          ),
-        },
-        {
-          key: 'region',
-          header: 'السيرفر',
-          render: (row) =>
-            row.silversatRegion ? (
-              <span className="fs-body">{row.silversatRegion.name}</span>
-            ) : (
-              <span className="dim">—</span>
+    <>
+      <CrudScreen<Product, ProductInput>
+        key={version}
+        title="المنتجات"
+        subtitle="الخدمة المباعة بكل محافظة — وأي سيرفر سلفرسات يفعّل كارتاتها"
+        repo={repos.catalog.products}
+        searchable
+        createLabel="إضافة منتج"
+        createTitle="إضافة منتج"
+        editTitle="تعديل المنتج"
+        dialogSize="lg"
+        headerActions={
+          <Button variant="outline" icon={<Layers size={15} />} onClick={() => setCreating(true)}>
+            منتج مع فئاته
+          </Button>
+        }
+        rowKey={(row) => row.id}
+        labelOf={(row) => row.displayName}
+        columns={[
+          {
+            key: 'name',
+            header: 'المنتج',
+            render: (row) => (
+              <div className="col">
+                <span className="strong">{row.displayName}</span>
+                <span className="fs-small dim">{row.name}</span>
+              </div>
             ),
-        },
-      ]}
-      blank={() => ({
-        name: '',
-        displayName: '',
-        provinceId: provinceOptions[0]?.value ?? '',
-        activationApi: 'silvers',
-        silversatRegionId: null,
-      })}
-      toInput={(row) => ({
-        name: row.name,
-        displayName: row.displayName,
-        provinceId: row.provinceId,
-        activationApi: row.activationApi,
-        silversatRegionId: row.silversatRegionId,
-        image: row.imageUrl ?? undefined,
-      })}
-      validate={(draft) =>
-        !draft.displayName.trim()
-          ? 'الاسم المعروض مطلوب'
-          : !draft.provinceId
-            ? 'اختر المحافظة'
-            : draft.activationApi === 'silvers' && !draft.silversatRegionId
-              ? 'منتج التفعيل عبر سلفرسات لازم يرتبط بسيرفر'
-              : null
-      }
-      form={(draft, set) => (
-        <>
-          <Field label="الاسم المعروض" hint="اللي يشوفه المشترك بالتطبيق">
-            <TextInput
-              value={draft.displayName}
-              onChange={(next) => set('displayName', next)}
-              placeholder="سلفرسات نينوى"
-            />
-          </Field>
-          <Field label="الاسم الداخلي" hint="للتمييز باللوحة">
-            <TextInput value={draft.name} onChange={(next) => set('name', next)} />
-          </Field>
+          },
+          {
+            key: 'province',
+            header: 'المحافظة',
+            render: (row) => row.province?.name ?? '—',
+          },
+          {
+            key: 'tiers',
+            header: 'الفئات',
+            numeric: true,
+            width: 110,
+            render: (row) => {
+              const count = tierCount.get(row.id) ?? 0;
+              return count === 0 ? (
+                <Pill tone="danger">ماكو فئات</Pill>
+              ) : (
+                <span className="num">{count}</span>
+              );
+            },
+          },
+          {
+            key: 'api',
+            header: 'التفعيل',
+            render: (row) => (
+              <Pill tone={row.activationApi === 'silvers' ? 'neutral' : 'muted'}>
+                {ACTIVATION_API[row.activationApi]}
+              </Pill>
+            ),
+          },
+          {
+            key: 'region',
+            header: 'السيرفر',
+            render: (row) =>
+              row.silversatRegion ? (
+                <span className="fs-body">{row.silversatRegion.name}</span>
+              ) : row.activationApi === 'silvers' ? (
+                <Pill tone="danger">غير مربوط</Pill>
+              ) : (
+                <span className="dim">—</span>
+              ),
+          },
+          {
+            key: 'open',
+            header: '',
+            width: 84,
+            render: (row) => (
+              <Button variant="ghost" size="sm" onClick={() => setOpened(row)}>
+                تفاصيل
+              </Button>
+            ),
+          },
+        ]}
+        blank={() => blankProduct(provinceOptions[0]?.value ?? '')}
+        toInput={productToInput}
+        validate={validateProduct}
+        form={(draft, set) => (
+          <ProductFields
+            draft={draft}
+            set={set}
+            provinceOptions={provinceOptions}
+            regionOptions={regionOptions}
+          />
+        )}
+      />
 
-          <Field label="المحافظة">
-            <Select<Id>
-              value={draft.provinceId}
-              onChange={(next) => set('provinceId', next)}
-              options={provinceOptions}
-            />
-          </Field>
-          <Field label="جهة التفعيل">
-            <Select<ActivationApi>
-              value={draft.activationApi ?? 'silvers'}
-              onChange={(next) => {
-                set('activationApi', next);
-                // A non-silvers product has nothing to point a region at.
-                if (next === 'other') set('silversatRegionId', null);
-              }}
-              options={(Object.keys(ACTIVATION_API) as ActivationApi[]).map((value) => ({
-                value,
-                label: ACTIVATION_API[value],
-              }))}
-            />
-          </Field>
+      {opened ? (
+        <ProductDetailDialog
+          product={opened}
+          onClose={() => setOpened(null)}
+          onChanged={onCategoryChange}
+        />
+      ) : null}
 
-          <Field
-            label="سيرفر سلفرسات"
-            hint="السيرفر اللي راح ينشحن عليه كارت هذا المنتج"
-            className="span-2"
-          >
-            <Select<Id>
-              value={draft.silversatRegionId ?? ''}
-              onChange={(next) => set('silversatRegionId', next || null)}
-              options={[{ value: '', label: 'بدون سيرفر' }, ...regionOptions]}
-              disabled={(draft.activationApi ?? 'silvers') !== 'silvers'}
-            />
-          </Field>
-
-          <Field label="رابط الصورة" className="span-2">
-            <TextInput
-              type="url"
-              value={draft.image ?? ''}
-              onChange={(next) => set('image', next)}
-              placeholder="https://…"
-            />
-          </Field>
-        </>
-      )}
-    />
+      {creating ? (
+        <NewProductDialog
+          provinceOptions={provinceOptions}
+          regionOptions={regionOptions}
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            onProductCreated();
+          }}
+        />
+      ) : null}
+    </>
   );
 }

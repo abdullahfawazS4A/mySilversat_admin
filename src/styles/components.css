@@ -968,3 +968,40 @@
   flex: none;
   object-fit: contain;
 }
+
+/* ---------------------------------------------------------- link button ---
+ * A button that reads as a link.
+ *
+ * The stock screen navigates by drilling into a row — the product name *is*
+ * the way into its categories — so those cells have to be activatable. They
+ * are buttons and not anchors because the level lives in a query parameter
+ * the router rewrites, not at an address a browser can be handed; styling
+ * them as buttons would put a control in every cell of the first column.
+ */
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.link-button:hover,
+.link-button:focus-visible {
+  color: var(--brand-deep);
+}
+
+.link-button:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+  border-radius: var(--r-xs, 4px);
+}
+
+/* A drill-down cell stacks a name over a hint, so it needs the column too. */
+.link-button.col {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}

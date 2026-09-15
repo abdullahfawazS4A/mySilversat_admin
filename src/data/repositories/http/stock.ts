@@ -1,19 +1,28 @@
 /**
  * Code stock — batches and the codes inside them.
  *
- * A batch is one import file; its counters (`codeAvailableCount` and friends)
- * are computed by the API, so the stock screen never scans `/codes` to draw a
- * level. Selling a code is what a renewal actually is, which makes
- * `status: 'sold'` the sales ledger of the whole system.
+ * A batch is one import file, and its counters (`codeAvailableCount` and
+ * friends) are computed by the API over its codes. That is what lets the stock
+ * screen draw every level of its tree — products, categories, batches — from a
+ * single read of `/batches` instead of scanning `/codes` per row. Selling a
+ * code is what a renewal actually is, which makes `status: 'sold'` the sales
+ * ledger of the whole system.
  *
  * `/codes` filters by status, category and batch server-side but has no text
  * search — `/codes/lookup` is the search, and it matches id, primary value and
  * secondary value at once.
+ *
+ * There is deliberately no province filter here. A code has no province: it
+ * belongs to a category, the category to a product, and only the product names
+ * one. The stock screen resolves that by *navigating* the chain rather than
+ * filtering across it, so the join stays where it is visible to the operator
+ * instead of hiding in a query that quietly reads the whole table.
  */
 
 import { api } from '@/data/http/client';
 import type { Batch, Code, Id, ListQuery, Page } from '@/types';
 import type {
+  BatchFilter,
   BatchInput,
   CodeFilter,
   CodeInput,
@@ -21,8 +30,6 @@ import type {
   StockRepository,
 } from '../types';
 import { HttpCrudRepository, toPage, toRange } from './crud';
-
-type BatchFilter = { categoryId?: Id; status?: 'active' | 'disabled'; fileName?: string };
 
 class HttpBatchesRepository extends HttpCrudRepository<
   Batch,
@@ -57,9 +64,9 @@ class HttpCodesRepository extends HttpCrudRepository<
 
   /**
    * Overridden because the code search is its own route rather than a `q`
-   * parameter on the list. A lookup ignores the status/category filters — it
-   * is the "customer read me this number" path and has to find the row
-   * wherever it sits.
+   * parameter on the list. A lookup ignores the status/batch filters — it is
+   * the "customer read me this number" path and has to find the row wherever
+   * it sits, including in a batch other than the one being viewed.
    */
   async list(query?: ListQuery & CodeFilter): Promise<Page<Code>> {
     const search = query?.search?.trim();

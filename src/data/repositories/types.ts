@@ -43,6 +43,7 @@ import type {
   Prediction,
   Product,
   Province,
+  ProvinceOverview,
   RechargeType,
   RegionCheckResult,
   SilversatRegion,
@@ -112,6 +113,13 @@ export interface ProvinceInput {
 export interface GeoRepository {
   countries: CrudRepository<Country, CountryInput>;
   provinces: CrudRepository<Province, ProvinceInput, Partial<ProvinceInput>, { countryId?: Id }>;
+  /**
+   * Every province with its server, its catalogue and its stock counted.
+   *
+   * Composed from five list routes, so it is one deliberate read rather than
+   * something to call per row. The province screen loads it once.
+   */
+  overview(): Promise<ProvinceOverview[]>;
 }
 
 // ---------------------------------------------------- silversat regions ----
@@ -188,19 +196,29 @@ export interface CodeInput {
   status?: CodeStatus;
 }
 
+/**
+ * How a codes list is narrowed. All three are server-side.
+ *
+ * There is no province here on purpose: a code has no province column — it
+ * belongs to a category, the category to a product, and only the product names
+ * one. The stock screen walks that chain as navigation rather than flattening
+ * it into a filter that would have to read the whole table to answer.
+ */
 export interface CodeFilter {
   status?: CodeStatus;
   categoryId?: Id;
   batchId?: Id;
 }
 
+/** How a batches list is narrowed. All server-side. */
+export interface BatchFilter {
+  categoryId?: Id;
+  status?: 'active' | 'disabled';
+  fileName?: string;
+}
+
 export interface StockRepository {
-  batches: CrudRepository<
-    Batch,
-    BatchInput,
-    Partial<BatchInput>,
-    { categoryId?: Id; status?: 'active' | 'disabled'; fileName?: string }
-  > & {
+  batches: CrudRepository<Batch, BatchInput, Partial<BatchInput>, BatchFilter> & {
     /**
      * Files a shipment: creates the batch and all of its codes in one request.
      * The API takes `uploadedBy` from the JWT, so the console never sends it.
@@ -517,6 +535,16 @@ export interface ContentRepository {
 export interface SilversatRepository {
   /** Active regions, as the vendor tools' picker sees them. */
   regions(): Promise<SilversatRegion[]>;
+  /**
+   * Which server a province's activations go to, or null when none is bound.
+   *
+   * Every vendor call below takes a region, and nothing an operator works
+   * from carries one: a receiver knows its owner, its owner knows a province,
+   * and only the province's products know the server. Making each screen redo
+   * that walk is how one of them ends up picking the wrong server and
+   * querying the right receiver number against the wrong province.
+   */
+  regionForProvince(provinceId: Id): Promise<SilversatRegion | null>;
   /** Validates a code against a region before anyone burns it. */
   checkCode(regionId: Id, code: string): Promise<VendorResponse>;
   /** Looks a subscription up by receiver number, within one region. */

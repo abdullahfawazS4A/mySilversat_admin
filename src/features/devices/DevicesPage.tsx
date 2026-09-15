@@ -10,9 +10,18 @@
  * Those are live actions on real hardware with no local record, which is why
  * they are per-row rather than bulk, and why the two that change something
  * confirm first.
+ *
+ * **The server is derived, not chosen.** A receiver has an owner, the owner
+ * has a province, and the province's products name the server that actually
+ * serves it — so the screen walks that chain per row instead of applying one
+ * dropdown to every device in the table. A query is only meaningful against
+ * the server the subscriber is on: the same receiver number asked of the wrong
+ * province answers, and answers wrongly, which is the failure a support tool
+ * can least afford. The override is still there for the case the chain cannot
+ * resolve, and it says what it is overriding.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { RadioTower, Search, Tv, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useRepos } from '@/app/RepositoryContext';
@@ -27,6 +36,7 @@ import {
   EmptyState,
   Modal,
   Notice,
+  Pill,
   Select,
   SearchInput,
 } from '@/components/ui';
@@ -34,6 +44,15 @@ import { formatDateAr, formatPhone } from '@/lib/format';
 import type { Device, Id, SilversatRegion } from '@/types';
 import { VendorPayload } from '../shared/VendorPayload';
 import { RenewDialog } from './RenewDialog';
+
+/** Which server a device's vendor calls go to, and how that was decided. */
+interface Routing {
+  region: SilversatRegion | null;
+  /** `derived` came from the owner's province; `manual` from the override. */
+  source: 'derived' | 'manual' | 'none';
+  /** Why a derivation failed, ready to render. */
+  problem?: string;
+}
 
 export function DevicesPage() {
   const repos = useRepos();
@@ -46,6 +65,28 @@ export function DevicesPage() {
 
   const provinces = useAsync(() => repos.geo.provinces.all(), []);
   const regions = useAsync(() => repos.silversat.regions(), []);
+
+  /**
+   * The province→server map, built once for the whole table.
+   *
+   * Deliberately *not* `geo.overview()`: that answers the stock question too,
+   * at the cost of reading every code in the system, and this screen needs
+   * only which server a province routes to. Products and the region list are
+   * two small reads, and the products one is already memoised.
+   */
+  const products = useAsync(() => repos.catalog.products.all(), []);
+  const serversByProvince = useMemo(() => {
+    const byId = new Map((regions.data ?? []).map((row) => [row.id, row]));
+    const map = new Map<Id, SilversatRegion[]>();
+    for (const product of products.data ?? []) {
+      const region = product.silversatRegionId ? byId.get(product.silversatRegionId) : undefined;
+      if (!region) continue;
+      const list = map.get(product.provinceId) ?? [];
+      if (!list.some((row) => row.id === region.id)) list.push(region);
+      map.set(product.provinceId, list);
+    }
+    return map;
+  }, [products.data, regions.data]);
 
   const devices = useAsync(
     () =>
@@ -63,14 +104,47 @@ export function DevicesPage() {
   const [recharging, setRecharging] = useState<Device | null>(null);
   const [run, action] = useAction();
 
-  // The vendor needs a region on every call, and a device does not carry one,
-  // so the operator picks it once for the screen rather than per action.
-  const [regionId, setRegionId] = useState<Id>('');
-  const activeRegion = regionId || regions.data?.[0]?.id || '';
+  /**
+   * The override, used only where the chain cannot answer.
+   *
+   * Empty means "use the owner's province", which is the right default — a
+   * sticky manual choice is exactly how the wrong server gets asked about the
+   * right receiver on the next call.
+   */
+  const [overrideRegion, setOverrideRegion] = useState<Id | ''>('');
+
+  const routeFor = (device: Device): Routing => {
+    if (overrideRegion) {
+      const region = (regions.data ?? []).find((row) => row.id === overrideRegion) ?? null;
+      return { region, source: 'manual' };
+    }
+
+    const province = device.appUser?.provinceId;
+    if (!province) {
+      return { region: null, source: 'none', problem: 'الجهاز ما إله مشترك أو محافظة' };
+    }
+
+    const servers = serversByProvince.get(province) ?? [];
+    if (servers.length === 0) {
+      return { region: null, source: 'none', problem: 'محافظة المشترك ما مربوطة بسيرفر' };
+    }
+    if (servers.length > 1) {
+      return {
+        region: servers[0],
+        source: 'derived',
+        problem: `محافظة المشترك موزّعة على ${servers.length} سيرفرات`,
+      };
+    }
+    return { region: servers[0], source: 'derived' };
+  };
 
   const sendSignal = async () => {
     if (!signalling) return;
-    const ok = await run(() => repos.silversat.sendSignal(activeRegion, signalling.deviceNumber));
+    const route = routeFor(signalling);
+    if (!route.region) return;
+    const ok = await run(() =>
+      repos.silversat.sendSignal(route.region!.id, signalling.deviceNumber),
+    );
     if (!ok) return;
     toast('انرسلت الإشارة للجهاز');
     setSignalling(null);
@@ -106,6 +180,28 @@ export function DevicesPage() {
       render: (row) => row.appUser?.province?.name ?? '—',
     },
     {
+      key: 'server',
+      header: 'السيرفر',
+      render: (row) => {
+        const route = routeFor(row);
+        if (!route.region) {
+          return (
+            <span title={route.problem}>
+              <Pill tone="danger">{route.problem ?? 'غير محدّد'}</Pill>
+            </span>
+          );
+        }
+        return (
+          <div className="col" style={{ lineHeight: 1.35 }}>
+            <span className="fs-small">{route.region.name}</span>
+            <span className="fs-tiny dim">
+              {route.source === 'manual' ? 'اختيار يدوي' : 'من محافظة المشترك'}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
       key: 'added',
       header: 'تاريخ الإضافة',
       render: (row) => <span className="fs-small">{formatDateAr(row.createdAt)}</span>,
@@ -114,46 +210,61 @@ export function DevicesPage() {
       key: 'actions',
       header: '',
       width: 140,
-      render: (row) => (
-        <div className="row row-gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Search size={14} />}
-            title="استعلام عن الاشتراك"
-            onClick={() => setInspecting(row)}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<RadioTower size={14} />}
-            title="إرسال إشارة"
-            onClick={() => setSignalling(row)}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Zap size={14} />}
-            title="شحن أو تجديد"
-            onClick={() => setRecharging(row)}
-          />
-        </div>
-      ),
+      render: (row) => {
+        const route = routeFor(row);
+        return (
+          <div className="row row-gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Search size={14} />}
+              title={route.region ? 'استعلام عن الاشتراك' : route.problem}
+              disabled={!route.region}
+              onClick={() => setInspecting(row)}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<RadioTower size={14} />}
+              title={route.region ? 'إرسال إشارة' : route.problem}
+              disabled={!route.region}
+              onClick={() => setSignalling(row)}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Zap size={14} />}
+              title="شحن أو تجديد"
+              onClick={() => setRecharging(row)}
+            />
+          </div>
+        );
+      },
     },
   ];
+
+  const unroutable = (devices.data?.items ?? []).filter((row) => !routeFor(row).region).length;
 
   return (
     <>
       <PageHeader
         title="الأجهزة"
-        subtitle="رسيفرات المشتركين — والاستعلام والشحن يروحون مباشرة لسيرفر سلفرسات"
+        subtitle="رسيفرات المشتركين — والاستعلام والشحن يروحون لسيرفر محافظة المشترك"
       />
 
       <div className="page">
         <Notice tone="warning">
           الاستعلام وإرسال الإشارة والشحن كلها إجراءات مباشرة على سيرفر سلفرسات — ما ننحفظ عدنا أي
-          سجل إلها. اختر السيرفر الصحيح قبل ما تنفّذ.
+          سجل إلها. السيرفر ينشتق من محافظة المشترك تلقائياً، فما تحتاج تنتخبه.
         </Notice>
+
+        {unroutable > 0 ? (
+          <Notice tone="danger">
+            <span className="strong num">{unroutable}</span> جهاز بهذي الصفحة ما ينلكى إله سيرفر —
+            محافظة صاحبه ما مربوطة بسيرفر سلفرسات. صلّح الربط من{' '}
+            <Link to="/provinces">المحافظات</Link>، أو انتخب سيرفر يدوياً من فوق.
+          </Notice>
+        ) : null}
 
         <Card>
           <Toolbar>
@@ -176,13 +287,16 @@ export function DevicesPage() {
                 ...(provinces.data ?? []).map((row) => ({ value: row.id, label: row.name })),
               ]}
             />
-            <Select<Id>
-              value={activeRegion}
-              onChange={setRegionId}
-              options={(regions.data ?? []).map((row: SilversatRegion) => ({
-                value: row.id,
-                label: `سيرفر: ${row.name}`,
-              }))}
+            <Select<Id | ''>
+              value={overrideRegion}
+              onChange={setOverrideRegion}
+              options={[
+                { value: '', label: 'السيرفر: من محافظة المشترك' },
+                ...(regions.data ?? []).map((row: SilversatRegion) => ({
+                  value: row.id,
+                  label: `تجاوز: ${row.name}`,
+                })),
+              ]}
             />
           </Toolbar>
 
@@ -212,7 +326,7 @@ export function DevicesPage() {
       {inspecting ? (
         <SubscriptionDialog
           device={inspecting}
-          regionId={activeRegion}
+          routing={routeFor(inspecting)}
           onClose={() => setInspecting(null)}
         />
       ) : null}
@@ -225,7 +339,8 @@ export function DevicesPage() {
           message={
             <>
               راح تنرسل إشارة تفويض للجهاز{' '}
-              <span className="strong num">{signalling.deviceNumber}</span> حتى يحدّث اشتراكه.
+              <span className="strong num">{signalling.deviceNumber}</span> حتى يحدّث اشتراكه، على
+              سيرفر <span className="strong">{routeFor(signalling).region?.name ?? '—'}</span>.
               الإجراء يروح مباشرة للسيرفر.
               {action.error ? <div className="field-error mt-2">{action.error}</div> : null}
             </>
@@ -236,7 +351,11 @@ export function DevicesPage() {
       ) : null}
 
       {recharging ? (
-        <RenewDialog device={recharging} onClose={() => setRecharging(null)} />
+        <RenewDialog
+          device={recharging}
+          region={routeFor(recharging).region}
+          onClose={() => setRecharging(null)}
+        />
       ) : null}
     </>
   );
@@ -248,17 +367,20 @@ export function DevicesPage() {
  * The answer's shape belongs to the vendor, not to us, so it is rendered as
  * received rather than mapped onto fields we have invented — a made-up label
  * over a field that turns out to mean something else is worse than raw keys.
+ * Which server answered is stated above it, because the same receiver number
+ * means different things on different servers.
  */
 function SubscriptionDialog({
   device,
-  regionId,
+  routing,
   onClose,
 }: {
   device: Device;
-  regionId: Id;
+  routing: Routing;
   onClose: () => void;
 }) {
   const repos = useRepos();
+  const regionId = routing.region?.id ?? '';
   const state = useAsync(
     () => repos.silversat.subscription(regionId, device.deviceNumber),
     [regionId, device.id],
@@ -275,7 +397,14 @@ function SubscriptionDialog({
         </Button>
       }
     >
-      <AsyncBlock state={state}>{(data) => <VendorPayload data={data} />}</AsyncBlock>
+      <div className="col" style={{ gap: 'var(--sp-3)' }}>
+        <Notice tone={routing.problem ? 'warning' : 'info'}>
+          الاستعلام راح لسيرفر <span className="strong">{routing.region?.name ?? '—'}</span>
+          {routing.source === 'manual' ? ' (اختيار يدوي)' : ' — سيرفر محافظة المشترك'}.
+          {routing.problem ? ` ${routing.problem}.` : ''}
+        </Notice>
+        <AsyncBlock state={state}>{(data) => <VendorPayload data={data} />}</AsyncBlock>
+      </div>
     </Modal>
   );
 }

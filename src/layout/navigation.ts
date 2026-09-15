@@ -115,9 +115,9 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         path: '/stock',
-        label: 'مخزن الكارتات',
+        label: 'المخزن',
         icon: Boxes,
-        hint: 'دفعات الكارتات والبحث عن كارت',
+        hint: 'المنتجات وفئاتها ورفعات الكارتات — والربط بالمحافظة وسيرفر الـ API',
       },
       {
         path: '/agents',

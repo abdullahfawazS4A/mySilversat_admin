@@ -7,8 +7,11 @@
  *
  *  - the code must already be **sold to the app user who owns this receiver**,
  *    so a code straight out of stock will be refused;
- *  - the region is resolved from the code's own product, so there is nothing
- *    to pick — a code from the wrong province simply will not work;
+ *  - the region is resolved by the API from the code's own product, so there
+ *    is nothing to pick — a code from the wrong province simply will not work.
+ *    The console shows which server the receiver's province routes to anyway,
+ *    because "this code is not for this box" is the most common refusal here
+ *    and it reads as a bug until the two servers are named side by side;
  *  - `0` renews an existing subscription and `1` activates a new device. They
  *    are different operations upstream, so the choice is explicit rather than
  *    guessed from whether we think the box is active.
@@ -23,7 +26,7 @@ import { useRepos } from '@/app/RepositoryContext';
 import { useAction } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
 import { Button, Field, Modal, Notice, Select, TextInput } from '@/components/ui';
-import type { Device, RechargeType, VendorResponse } from '@/types';
+import type { Device, RechargeType, SilversatRegion, VendorResponse } from '@/types';
 import { VendorPayload } from '../shared/VendorPayload';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -31,7 +34,16 @@ const TYPE_LABEL: Record<string, string> = {
   '1': 'تفعيل جهاز جديد',
 };
 
-export function RenewDialog({ device, onClose }: { device: Device; onClose: () => void }) {
+export function RenewDialog({
+  device,
+  region,
+  onClose,
+}: {
+  device: Device;
+  /** The server the owner's province routes to. Shown, never sent. */
+  region: SilversatRegion | null;
+  onClose: () => void;
+}) {
   const repos = useRepos();
   const { toast } = useToast();
   const [run, action] = useAction();
@@ -79,6 +91,17 @@ export function RenewDialog({ device, onClose }: { device: Device; onClose: () =
         <Notice tone="warning">
           الكارت لازم يكون مباع مسبقاً لنفس المشترك صاحب هذا الجهاز، والسيرفر ينتخب تلقائياً من
           منتج الكارت. الإجراء مباشر وما ننحفظ عدنا سجل إله.
+        </Notice>
+
+        <Notice tone={region ? 'info' : 'danger'}>
+          {region ? (
+            <>
+              محافظة المشترك تروح لسيرفر <span className="strong">{region.name}</span> — فلازم
+              الكارت يكون من منتج على نفس السيرفر، وإلا السيرفر يرفضه.
+            </>
+          ) : (
+            <>محافظة المشترك ما مربوطة بأي سيرفر، فأي كارت تكتبه هنا راح ينرفض.</>
+          )}
         </Notice>
 
         <div className="grid grid-form">

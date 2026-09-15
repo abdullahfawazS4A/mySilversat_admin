@@ -84,6 +84,37 @@ export interface Province extends Entity {
   name: string;
 }
 
+/**
+ * A province with everything that hangs off it, counted.
+ *
+ * The API has no such route — a province row is four columns. But a province
+ * is the unit this business is actually run in: it owns a card stock, it is
+ * served by one vendor server, and it sells one catalogue. An operator asking
+ * "how is Ninawa doing" is asking about all three at once, so the console
+ * assembles them into one row rather than making the question three screens.
+ *
+ * `regions` is a list and not a single server on purpose. The rule is that a
+ * province binds to exactly one, so more than one entry here is the shape a
+ * **misconfiguration** takes, and the screen can only warn about what the type
+ * lets it represent.
+ */
+export interface ProvinceOverview {
+  province: Province;
+  /** Servers this province's products activate on. More than one is a fault. */
+  regions: SilversatRegion[];
+  /** Products whose activation is not routed to SilverSat at all. */
+  unroutedProducts: number;
+  productCount: number;
+  categoryCount: number;
+  codesAvailable: number;
+  codesSold: number;
+  /** Categories at or below their own low-stock threshold. */
+  lowStockCategories: number;
+  /** Value of this province's available stock at list price, IQD. */
+  stockValue: number;
+  userCount: number;
+}
+
 // ------------------------------------------------ silversat regions --------
 
 /**
