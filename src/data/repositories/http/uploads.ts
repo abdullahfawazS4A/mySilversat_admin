@@ -7,15 +7,12 @@
  * URL, so the two halves of "add a banner" happen on one screen.
  *
  * What comes back may be relative (`/uploads/ads/x.jpg`), because the API and
- * the files it serves share an origin and it has no reason to spell out its
- * own host. The console does not share that origin — it runs on its own domain
- * and in dev on localhost — so a relative URL is resolved against `API_BASE`
- * here. Storing the bare path instead would produce a row that renders in the
- * mobile app and shows a broken image in the console, which is the kind of
- * difference nobody notices until a banner is live.
+ * the files it serves share an origin. `mediaUrl` makes it absolute, the same
+ * way it does for the paths already stored on existing rows.
  */
 
-import { api, API_BASE } from '@/data/http/client';
+import { api } from '@/data/http/client';
+import { mediaUrl } from '@/lib/media';
 import type { UploadsRepository } from '../types';
 
 /** What `POST /uploads` answers with. Only the URL is of any use here. */
@@ -33,10 +30,9 @@ interface UploadedFile {
  */
 function resolveUrl(file: UploadedFile | string | null): string {
   const raw = typeof file === 'string' ? file : (file?.url ?? file?.path ?? file?.location ?? '');
-  const value = raw.trim();
-  if (!value) throw new Error('السيرفر ما رجّع رابط الصورة بعد الرفع.');
-  if (/^https?:\/\//i.test(value) || value.startsWith('data:')) return value;
-  return `${API_BASE}/${value.replace(/^\/+/, '')}`;
+  const url = mediaUrl(raw);
+  if (!url) throw new Error('السيرفر ما رجّع رابط الصورة بعد الرفع.');
+  return url;
 }
 
 export class HttpUploadsRepository implements UploadsRepository {
