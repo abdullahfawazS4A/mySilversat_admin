@@ -1,13 +1,17 @@
 /**
  * The product form, in one place.
  *
- * A product is created and edited from two screens now — the price list and
- * the stock drill-down — and the fields that matter are not the names. They
- * are the **two bindings**: the province the product is sold in, and the
- * SilverSat server that turns its cards into live subscriptions. Those two are
- * what make a code provincial and what make a renewal reach the right box, so
- * a second copy of this form that forgets to validate the server binding is a
- * product whose cards silently never activate.
+ * Only one name is typed here. The API keeps an internal `name` beside the
+ * displayed one, but nothing in the console ever showed it — it only fed the
+ * search haystack — so asking an operator for a second name was a field that
+ * could only be got wrong. It is now mirrored from the displayed name, which
+ * keeps the column populated and keeps search matching what people see.
+ *
+ * What is left are the **two bindings**: the province the product is sold in,
+ * and the SilverSat server that turns its cards into live subscriptions. Those
+ * two are what make a code provincial and what make a renewal reach the right
+ * box, so a second copy of this form that forgets to validate the server
+ * binding is a product whose cards silently never activate.
  *
  * The one rule encoded here: a product activating through SilverSat **must**
  * name a server. The API will accept a null one; the console will not, because
@@ -53,9 +57,9 @@ export function productToInput(row: Product): ProductInput {
   };
 }
 
-/** What blocks a save. Both bindings are required, the names are not. */
+/** What blocks a save. The displayed name and both bindings are required. */
 export function validateProduct(draft: ProductInput): string | null {
-  if (!draft.displayName.trim()) return 'الاسم المعروض مطلوب';
+  if (!draft.displayName.trim()) return 'اسم المنتج مطلوب';
   if (!draft.provinceId) return 'اختر المحافظة';
   if (draft.activationApi === 'silvers' && !draft.silversatRegionId) {
     return 'منتج التفعيل عبر سلفرسات لازم يرتبط بسيرفر';
@@ -65,7 +69,7 @@ export function validateProduct(draft: ProductInput): string | null {
 
 type Setter = <K extends keyof ProductInput>(key: K, value: ProductInput[K]) => void;
 
-/** Every field of a product: the two names and the two bindings. */
+/** Every field of a product: the displayed name and the two bindings. */
 export function ProductFields({
   draft,
   set,
@@ -79,18 +83,20 @@ export function ProductFields({
 }) {
   return (
     <>
-      <Field label="الاسم المعروض" hint="اللي يشوفه المشترك بالتطبيق">
+      <Field label="اسم المنتج" className="span-2">
         <TextInput
           value={draft.displayName}
-          onChange={(next) => set('displayName', next)}
+          onChange={(next) => {
+            set('displayName', next);
+            // The internal name is no longer typed, but the API still stores
+            // one — mirror the displayed name so it is never blank.
+            set('name', next);
+          }}
           placeholder="سلفرسات نينوى"
         />
       </Field>
-      <Field label="الاسم الداخلي" hint="للتمييز باللوحة">
-        <TextInput value={draft.name} onChange={(next) => set('name', next)} />
-      </Field>
 
-      <Field label="المحافظة" hint="المنتج ينباع بمحافظة وحدة، ومخزنه يتبعها">
+      <Field label="المحافظة">
         <Select<Id>
           value={draft.provinceId}
           onChange={(next) => set('provinceId', next)}
