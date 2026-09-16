@@ -381,9 +381,9 @@ function ProvinceDetailDialog({
             title="المنتجات والفئات"
             subtitle="كل منتج وفئاته — والسعر يتغيّر من فئة لفئة"
             actions={
-              <Link to="/packages">
+              <Link to="/stock">
                 <Button variant="ghost" size="sm">
-                  فتح الباقات
+                  فتح المخزن
                 </Button>
               </Link>
             }

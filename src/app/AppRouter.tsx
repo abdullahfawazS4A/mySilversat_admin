@@ -19,8 +19,6 @@ import { UsersPage } from '@/features/users/UsersPage';
 import { UserDetailPage } from '@/features/users/UserDetailPage';
 import { DevicesPage } from '@/features/devices/DevicesPage';
 import { SalesPage } from '@/features/billing/SalesPage';
-import { PackagesPage } from '@/features/billing/PackagesPage';
-import { AgentsPage } from '@/features/billing/AgentsPage';
 import { StockPage } from '@/features/stock/StockPage';
 import { DrawsPage } from '@/features/draws/DrawsPage';
 import { CouponsPage } from '@/features/draws/CouponsPage';
@@ -55,8 +53,6 @@ export function AppRouter() {
           <Route path="users/:userId" element={<UserDetailPage />} />
           <Route path="devices" element={<DevicesPage />} />
           <Route path="sales" element={<SalesPage />} />
-          <Route path="packages" element={<PackagesPage />} />
-          <Route path="agents" element={<AgentsPage />} />
           <Route path="stock" element={<StockPage />} />
 
           <Route path="draws" element={<DrawsPage />} />
