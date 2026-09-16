@@ -113,6 +113,9 @@ const SERVER_MESSAGES: Record<string, string> = {
   'not found': 'العنصر المطلوب غير موجود.',
   'user is blocked': 'هذا الحساب محظور.',
   'too many requests': 'محاولات كثيرة — انتظر شوية وعاود.',
+  // The API's catch-all for a constraint it did not check before inserting.
+  // It names no field, so the sentence can only point at the form.
+  'database query failed': 'السيرفر رفض الحفظ — راجع القيم المدخلة، وخاصة الأسعار.',
 };
 
 /** Looks a server sentence up in the table above, ignoring case and dots. */

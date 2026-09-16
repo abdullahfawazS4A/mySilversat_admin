@@ -56,14 +56,24 @@ export function categoryToInput(row: Category): CategoryInput {
 /**
  * What blocks a save.
  *
- * The list price is the only one that must be positive: cost may legitimately
- * be zero for a promotional batch, and a reseller tier left at zero means the
- * tier does not sell this category rather than that it sells it for nothing.
+ * Cost may legitimately be zero — a promotional batch costs us nothing — but
+ * the three selling prices may not, and the two reseller tiers are the reason
+ * this check exists at all. The API rejects a zero `mainPrice` or `subPrice`
+ * at the database layer and reports it as `Database query failed`, a sentence
+ * that says nothing about which field is wrong. Since the blank draft starts
+ * both at zero, filling in only the app price — the obvious way to add a
+ * category — produced that error every time. Catching it here names the field
+ * instead, and never sends the request.
+ *
+ * Read as intent rather than as a rule about money: a tier priced at zero is
+ * not a tier that sells for nothing, it is a tier nobody set a price for.
  */
 export function validateCategory(draft: CategoryInput): string | null {
   if (!draft.productId) return 'اختر المنتج';
   if (!draft.name.trim()) return 'اسم الفئة مطلوب';
   if (draft.unitPrice <= 0) return 'سعر التطبيق لازم يكون أكبر من صفر';
+  if (draft.mainPrice <= 0) return 'سعر الوكيل الرئيسي لازم يكون أكبر من صفر';
+  if (draft.subPrice <= 0) return 'سعر الوكيل الفرعي لازم يكون أكبر من صفر';
   return null;
 }
 
@@ -100,7 +110,7 @@ export function CategoryFields({ draft, set }: { draft: CategoryInput; set: Sett
           onChange={(next) => set('unitPrice', Number(next) || 0)}
         />
       </Field>
-      <Field label="سعر الوكيل الرئيسي">
+      <Field label="سعر الوكيل الرئيسي" hint="مطلوب — لازم يكون أكبر من صفر">
         <TextInput
           type="number"
           min={0}
@@ -108,7 +118,7 @@ export function CategoryFields({ draft, set }: { draft: CategoryInput; set: Sett
           onChange={(next) => set('mainPrice', Number(next) || 0)}
         />
       </Field>
-      <Field label="سعر الوكيل الفرعي">
+      <Field label="سعر الوكيل الفرعي" hint="مطلوب — لازم يكون أكبر من صفر">
         <TextInput
           type="number"
           min={0}
