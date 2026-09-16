@@ -23,6 +23,7 @@ import { HttpPredictionsRepository } from './http/predictions';
 import { HttpSyncRepository } from './http/sync';
 import { HttpNotificationsRepository } from './http/notifications';
 import { HttpContentRepository } from './http/content';
+import { HttpUploadsRepository } from './http/uploads';
 import { HttpSilversatRepository } from './http/silversat';
 import { HttpDashboardRepository } from './http/dashboard';
 
@@ -41,6 +42,7 @@ export function createRepositories(): Repositories {
     sync: new HttpSyncRepository(),
     notifications: new HttpNotificationsRepository(),
     content: new HttpContentRepository(),
+    uploads: new HttpUploadsRepository(),
     silversat: new HttpSilversatRepository(),
     dashboard: new HttpDashboardRepository(),
   };

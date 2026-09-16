@@ -1005,3 +1005,62 @@
   flex-direction: column;
   line-height: 1.35;
 }
+
+/* ---------------------------------------------------------- image picker --- */
+
+/**
+ * The empty state of an image field: the whole box is the button, because a
+ * small "browse" link beside a large blank area is the part nobody aims at.
+ */
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 132px;
+  padding: var(--sp-4);
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--hairline-strong, var(--hairline));
+  border-radius: var(--r-chip);
+  background: var(--bg-app);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.dropzone:hover,
+.dropzone.is-dragging {
+  border-color: var(--brand-primary);
+  background: var(--bg-surface);
+}
+
+.dropzone.is-busy {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* The preview and its overlay share a stacking context. */
+.image-picked {
+  position: relative;
+}
+
+/**
+ * Shown over the local preview while the file is in flight. It covers the
+ * image rather than sitting under it so the picture cannot be read as already
+ * saved — it is not, until the URL comes back.
+ */
+.image-picked-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-small);
+  color: var(--text-strong, var(--text-body));
+  background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+  border-radius: var(--r-chip);
+  pointer-events: none;
+}

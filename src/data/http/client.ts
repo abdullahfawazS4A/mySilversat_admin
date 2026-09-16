@@ -70,6 +70,14 @@ export type Query = Record<string, string | number | boolean | undefined | null>
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   query?: Query;
+  /**
+   * JSON payload, or a `FormData` for the one route that takes a file.
+   *
+   * The two are not interchangeable: a `FormData` must reach `fetch` intact
+   * and *without* a `Content-Type`, because only the browser can write the
+   * multipart boundary that goes with it. Setting the header by hand produces
+   * a body the server cannot parse.
+   */
   body?: unknown;
   /** Sends the request without an Authorization header (login routes). */
   anonymous?: boolean;
@@ -155,8 +163,12 @@ function messageFrom(status: number, payload: unknown): string {
 async function send(path: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
   const { method = 'GET', query, body, anonymous, signal } = options;
 
+  const isMultipart = typeof FormData !== 'undefined' && body instanceof FormData;
+
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  // Multipart is the exception: the browser writes this header itself, with
+  // the boundary, and overriding it breaks the request.
+  if (body !== undefined && !isMultipart) headers['Content-Type'] = 'application/json';
   if (!anonymous) {
     const token = readToken();
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -167,7 +179,7 @@ async function send(path: string, options: RequestOptions = {}): Promise<Record<
     response = await fetch(buildUrl(path, query), {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isMultipart ? (body as FormData) : JSON.stringify(body),
       signal,
     });
   } catch (err) {
@@ -231,6 +243,12 @@ export const api = {
   /** Login routes, which must not carry a stale bearer token. */
   anonPost: <T>(path: string, body?: unknown) =>
     apiRequest<T>(path, { method: 'POST', body, anonymous: true }),
+  /** Posts one file as multipart. The field name is the server's to choose. */
+  upload: <T>(path: string, file: File, field = 'file', signal?: AbortSignal) => {
+    const form = new FormData();
+    form.append(field, file, file.name);
+    return apiRequest<T>(path, { method: 'POST', body: form, signal });
+  },
 };
 
 /** Pages requested at once by `fetchAll`. Enough to be quick, not a burst. */

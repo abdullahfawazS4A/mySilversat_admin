@@ -5,6 +5,9 @@
  * a named screen inside the app. The action value means something different in
  * each case, so the field relabels itself rather than staying a generic box.
  *
+ * The image is picked and uploaded here rather than pasted as a link; what is
+ * stored is still the URL that comes back, so nothing downstream changed.
+ *
  * `provinceId` is the targeting: null shows the banner to everyone, a province
  * shows it only there. The app resolves this per user, so a targeted banner
  * never reaches the wrong province.
@@ -18,6 +21,7 @@ import type { Ad, AdAction, Id } from '@/types';
 import type { AdInput } from '@/data/repositories/types';
 import { AD_ACTION } from '@/lib/labels';
 import { CrudScreen } from '../shared/CrudScreen';
+import { ImagePicker } from '../shared/ImagePicker';
 
 /** What `actionValue` holds, which depends entirely on `actionType`. */
 const ACTION_HINT: Record<AdAction, string | undefined> = {
@@ -129,7 +133,7 @@ export function SlidesPage() {
         !draft.title.trim()
           ? 'عنوان الإعلان مطلوب'
           : !draft.image.trim()
-            ? 'رابط الصورة مطلوب'
+            ? 'صورة السلايد مطلوبة'
             : draft.actionType !== 'none' && !draft.actionValue?.trim()
               ? 'حدّد وجهة الضغط'
               : null
@@ -143,19 +147,12 @@ export function SlidesPage() {
             <TextInput value={draft.titleKu} onChange={(next) => set('titleKu', next)} />
           </Field>
 
-          <Field label="رابط الصورة" className="span-2">
-            <TextInput
-              type="url"
-              value={draft.image}
-              onChange={(next) => set('image', next)}
-              placeholder="https://…"
-            />
-          </Field>
-          {draft.image.trim() ? (
-            <div className="span-2">
-              <img className="image-preview" src={draft.image} alt="" />
-            </div>
-          ) : null}
+          <ImagePicker
+            label="صورة السلايد"
+            className="span-2"
+            value={draft.image}
+            onChange={(next) => set('image', next)}
+          />
 
           <Field label="عند الضغط">
             <Select<AdAction>

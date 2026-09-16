@@ -565,6 +565,19 @@ export interface DashboardRepository {
   summary(): Promise<DashboardSummary>;
 }
 
+// --------------------------------------------------------------- uploads ---
+
+/**
+ * Turning a picked file into a URL the app can render.
+ *
+ * Kept apart from the content repository because it is not content — every
+ * screen that authors an image needs it, and none of them owns it.
+ */
+export interface UploadsRepository {
+  /** Uploads one image and resolves to its absolute URL. */
+  image(file: File, signal?: AbortSignal): Promise<string>;
+}
+
 // ------------------------------------------------------------ the bundle ---
 
 /** The full set, injected into React through one context. */
@@ -581,6 +594,7 @@ export interface Repositories {
   sync: SyncRepository;
   notifications: NotificationsRepository;
   content: ContentRepository;
+  uploads: UploadsRepository;
   silversat: SilversatRepository;
   dashboard: DashboardRepository;
 }
