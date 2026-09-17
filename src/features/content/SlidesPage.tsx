@@ -5,8 +5,8 @@
  * a named screen inside the app. The action value means something different in
  * each case, so the field relabels itself rather than staying a generic box.
  *
- * The image is picked and uploaded here rather than pasted as a link; what is
- * stored is still the URL that comes back, so nothing downstream changed.
+ * The image is picked here and travels with the save: `/ads` takes the file
+ * itself and has no field for a link, so there is no upload step to do first.
  *
  * `provinceId` is the targeting: null shows the banner to everyone, a province
  * shows it only there. The app resolves this per user, so a targeted banner
@@ -28,7 +28,7 @@ import { ImagePicker } from '../shared/ImagePicker';
 const ACTION_HINT: Record<AdAction, string | undefined> = {
   none: undefined,
   url: 'الرابط اللي يفتح بالمتصفح',
-  screen: 'اسم الشاشة داخل التطبيق، مثل predictions',
+  screen: 'اسم الشاشة داخل التطبيق، مثل products — ما يطلع من التطبيق',
 };
 
 export function SlidesPage() {
@@ -113,7 +113,8 @@ export function SlidesPage() {
       blank={() => ({
         title: '',
         titleKu: '',
-        image: '',
+        image: null,
+        imageUrl: '',
         actionType: 'none',
         actionValue: '',
         order: 0,
@@ -123,7 +124,10 @@ export function SlidesPage() {
       toInput={(row) => ({
         title: row.title,
         titleKu: row.titleKu,
-        image: mediaUrl(row.imageUrl),
+        // No file yet: an edit that does not touch the picture leaves the one
+        // on the server alone.
+        image: null,
+        imageUrl: mediaUrl(row.imageUrl),
         actionType: row.actionType,
         actionValue: row.actionValue ?? '',
         order: row.order,
@@ -133,7 +137,7 @@ export function SlidesPage() {
       validate={(draft) =>
         !draft.title.trim()
           ? 'عنوان الإعلان مطلوب'
-          : !draft.image.trim()
+          : !draft.image && !draft.imageUrl.trim()
             ? 'صورة السلايد مطلوبة'
             : draft.actionType !== 'none' && !draft.actionValue?.trim()
               ? 'حدّد وجهة الضغط'
@@ -151,8 +155,9 @@ export function SlidesPage() {
           <ImagePicker
             label="صورة السلايد"
             className="span-2"
-            value={draft.image}
-            onChange={(next) => set('image', next)}
+            file={draft.image}
+            currentUrl={draft.imageUrl}
+            onPick={(next) => set('image', next)}
           />
 
           <Field label="عند الضغط">

@@ -1,27 +1,26 @@
 /**
  * Picking an image, for any screen that authors one.
  *
- * The console stores images as URLs, so the field used to *be* a URL box: the
- * operator uploaded the picture somewhere else, then pasted a link. That is
- * two tools and one chance to paste a link that 404s later. Here the file is
- * chosen, checked and uploaded in place, and only its returned URL is kept —
- * the stored value is exactly what it always was.
+ * This used to upload the file to `/uploads` and hand back a URL, which is the
+ * shape you want when images are their own resource. They are not here:
+ * `/uploads` does not exist on this API — it answers `405` — and `/ads` takes
+ * the picture as a file on the request that saves the banner, refusing a link
+ * outright. So the picker's job is smaller than it was. It chooses a file,
+ * checks it, shows it, and hands it over; whoever owns the form sends it.
  *
- * The URL box is still here, behind a toggle, and deliberately so. It is the
- * way images already hosted elsewhere get in, and it is the way this field
- * keeps working on a server whose `/uploads` route does not exist yet — the
- * upload failing must not take the screen down with it.
+ * That also removes the URL box that used to sit behind a toggle. It was the
+ * way past a failed upload, and there is no upload left to fail — a pasted
+ * link is now something the API rejects, so offering it would only be a slower
+ * way to reach an error.
  *
- * The preview is shown from a local object URL the moment a file is picked,
- * before the upload finishes, because the question an operator has at that
- * instant is "is this the right picture" and the network cannot answer it.
+ * The preview comes from a local object URL the moment a file is picked,
+ * because the question an operator has at that instant is "is this the right
+ * picture" and nothing on the network is needed to answer it.
  */
 
 import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { ImagePlus, Link2, Trash2, Upload } from 'lucide-react';
-import { Button, Field, TextInput } from '@/components/ui';
-import { useRepos } from '@/app/RepositoryContext';
-import { ApiError } from '@/data/http/client';
+import { ImagePlus, Undo2, Upload } from 'lucide-react';
+import { Button, Field } from '@/components/ui';
 
 /** What the API will accept, and what the picker filters the file dialog to. */
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -50,96 +49,57 @@ function checkFile(file: File): string | null {
   return null;
 }
 
-/**
- * Turns a failed upload into a sentence that says what to do next.
- *
- * A 404 or 405 here is not a broken console: it is a server that has no upload
- * route yet, and the operator's way past it is the URL box — so that is what
- * the message points at, instead of the generic "not found".
- */
-function describeFailure(err: unknown): string {
-  if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
-    return 'السيرفر ما يدعم رفع الصور بعد — استخدم «الصق رابط» لحد ما ينضاف الراوت.';
-  }
-  if (err instanceof ApiError && err.status === 413) {
-    return 'السيرفر رفض الصورة لأنها كبيرة — صغّرها وعاود.';
-  }
-  return err instanceof Error ? err.message : 'ما انرفعت الصورة — عاود المحاولة.';
-}
-
 export function ImagePicker({
-  value,
-  onChange,
+  file,
+  currentUrl = '',
+  onPick,
   label = 'الصورة',
   className,
 }: {
-  /** The stored URL, or an empty string when there is no image yet. */
-  value: string;
-  onChange: (url: string) => void;
+  /** A picture chosen now and not saved yet. */
+  file: File | null;
+  /** The picture already stored, shown while nothing newer is picked. */
+  currentUrl?: string;
+  onPick: (file: File | null) => void;
   label?: string;
   className?: string;
 }) {
-  const repos = useRepos();
   const fileInput = useRef<HTMLInputElement | null>(null);
 
-  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [urlMode, setUrlMode] = useState(false);
 
-  // The picked file, shown while it uploads. Revoked on replace and on
-  // unmount — an object URL pins the whole file in memory until it is.
-  const [localPreview, setLocalPreview] = useState<string | null>(null);
-  useEffect(() => () => {
-    if (localPreview) URL.revokeObjectURL(localPreview);
-  }, [localPreview]);
+  /*
+   * The object URL for the picked file.
+   *
+   * Derived from `file` rather than set alongside it, so it cannot drift out
+   * of step with the draft the form holds — a stale preview here is a picture
+   * of something that is not going to be saved. Revoked whenever it is
+   * replaced and on unmount, because an object URL pins the whole file in
+   * memory until it is.
+   */
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
 
-  const upload = async (file: File) => {
-    const refusal = checkFile(file);
+  const choose = (picked: File) => {
+    const refusal = checkFile(picked);
     if (refusal) {
       setError(refusal);
       return;
     }
-
-    const preview = URL.createObjectURL(file);
-    setLocalPreview((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return preview;
-    });
     setError(null);
-    setPending(true);
-    try {
-      onChange(await repos.uploads.image(file));
-    } catch (err) {
-      setError(describeFailure(err));
-      // The upload is what failed, so the preview is a picture of something
-      // that was never stored. Dropping it keeps the field honest.
-      setLocalPreview((old) => {
-        if (old) URL.revokeObjectURL(old);
-        return null;
-      });
-    } finally {
-      setPending(false);
-    }
+    onPick(picked);
   };
 
-  const onDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setDragging(false);
-    const file = event.dataTransfer.files?.[0];
-    if (file) void upload(file);
-  };
-
-  const clear = () => {
-    setLocalPreview((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return null;
-    });
-    setError(null);
-    onChange('');
-  };
-
-  const shown = localPreview ?? (value.trim() || null);
+  const shown = preview ?? (currentUrl.trim() || null);
 
   return (
     <Field label={label} className={className} error={error ?? undefined}>
@@ -149,68 +109,62 @@ export function ImagePicker({
         accept={ACCEPTED.join(',')}
         hidden
         onChange={(event) => {
-          const file = event.target.files?.[0];
-          // Resetting lets the same file be picked again after a failure.
+          const picked = event.target.files?.[0];
+          // Resetting lets the same file be picked again after a refusal.
           event.target.value = '';
-          if (file) void upload(file);
+          if (picked) choose(picked);
         }}
       />
 
       {shown ? (
         <div className="image-picked">
           <img className="image-preview" src={shown} alt="" />
-          {pending ? <div className="image-picked-veil">جاري الرفع…</div> : null}
           <div className="row row-gap-2 mt-2">
-            <Button
-              size="sm"
-              icon={<Upload size={14} />}
-              disabled={pending}
-              onClick={() => fileInput.current?.click()}
-            >
+            <Button size="sm" icon={<Upload size={14} />} onClick={() => fileInput.current?.click()}>
               تغيير الصورة
             </Button>
-            <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} disabled={pending} onClick={clear}>
-              حذف
-            </Button>
+            {/*
+              * Undo, not delete. A banner cannot exist without a picture — the
+              * API requires one — so the only thing there is to take back is a
+              * pick that has not been saved yet.
+              */}
+            {file ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Undo2 size={14} />}
+                onClick={() => {
+                  setError(null);
+                  onPick(null);
+                }}
+              >
+                {currentUrl.trim() ? 'رجّع الصورة السابقة' : 'تراجع'}
+              </Button>
+            ) : null}
           </div>
+          {file ? <span className="fs-tiny dim mt-2">تنرفع مع الحفظ</span> : null}
         </div>
       ) : (
         <div
-          className={`dropzone${dragging ? ' is-dragging' : ''}${pending ? ' is-busy' : ''}`}
-          onClick={() => !pending && fileInput.current?.click()}
+          className={`dropzone${dragging ? ' is-dragging' : ''}`}
+          onClick={() => fileInput.current?.click()}
           onDragOver={(event) => {
             event.preventDefault();
             setDragging(true);
           }}
           onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
+          onDrop={(event: DragEvent<HTMLDivElement>) => {
+            event.preventDefault();
+            setDragging(false);
+            const dropped = event.dataTransfer.files?.[0];
+            if (dropped) choose(dropped);
+          }}
         >
           <ImagePlus size={22} />
-          <span className="strong">{pending ? 'جاري الرفع…' : 'اختر صورة أو اسحبها هنا'}</span>
+          <span className="strong">اختر صورة أو اسحبها هنا</span>
           <span className="fs-tiny dim">JPG أو PNG أو WEBP أو GIF — حد أقصى {describeSize(MAX_BYTES)}</span>
         </div>
       )}
-
-      {urlMode ? (
-        <div className="mt-2">
-          <TextInput
-            type="url"
-            value={value}
-            onChange={(next) => {
-              // A pasted link is the operator's way past a failed upload, so
-              // the failure stops being news the moment they use it.
-              setError(null);
-              onChange(next);
-            }}
-            placeholder="https://…"
-            disabled={pending}
-          />
-        </div>
-      ) : null}
-
-      <button type="button" className="link-button fs-tiny mt-2" onClick={() => setUrlMode((on) => !on)}>
-        <Link2 size={12} /> {urlMode ? 'إخفاء حقل الرابط' : 'أو الصق رابط صورة'}
-      </button>
     </Field>
   );
 }

@@ -470,7 +470,23 @@ export interface NotificationsRepository {
 export interface AdInput {
   title: string;
   titleKu: string;
-  image: string;
+  /**
+   * The picture itself, not a link to it.
+   *
+   * `/ads` takes the file on the same request that saves the banner and has no
+   * field for an image URL at all — a JSON create is refused outright with
+   * "Ad image is required" — so the file travels with the rest of the form.
+   * Null on an edit means "keep the picture that is already there".
+   */
+  image: File | null;
+  /**
+   * The picture already stored, for the form to show while editing.
+   *
+   * Display only, and never sent: the API has no field to send it to. It rides
+   * in the draft rather than being read off the row because the form and the
+   * validator are only ever handed the draft.
+   */
+  imageUrl: string;
   actionType?: 'none' | 'url' | 'screen';
   actionValue?: string | null;
   order?: number;
@@ -565,19 +581,6 @@ export interface DashboardRepository {
   summary(): Promise<DashboardSummary>;
 }
 
-// --------------------------------------------------------------- uploads ---
-
-/**
- * Turning a picked file into a URL the app can render.
- *
- * Kept apart from the content repository because it is not content — every
- * screen that authors an image needs it, and none of them owns it.
- */
-export interface UploadsRepository {
-  /** Uploads one image and resolves to its absolute URL. */
-  image(file: File, signal?: AbortSignal): Promise<string>;
-}
-
 // ------------------------------------------------------------ the bundle ---
 
 /** The full set, injected into React through one context. */
@@ -594,7 +597,6 @@ export interface Repositories {
   sync: SyncRepository;
   notifications: NotificationsRepository;
   content: ContentRepository;
-  uploads: UploadsRepository;
   silversat: SilversatRepository;
   dashboard: DashboardRepository;
 }
