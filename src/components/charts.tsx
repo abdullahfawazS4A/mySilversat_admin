@@ -138,7 +138,7 @@ export function TrendChart({
         {ticks.map((tick, i) => (
           <g key={i}>
             <line x1={padX} x2={w - padX} y1={tick.y} y2={tick.y} stroke={GRID} strokeWidth="1" />
-            <text x={padX - 8} y={tick.y + 4} fill={AXIS} fontSize="11" textAnchor="end">
+            <text x={padX - 8} y={tick.y + 4} fill={AXIS} fontSize="13" textAnchor="end">
               {formatNumber(Math.round(tick.v))}
             </text>
           </g>
@@ -149,7 +149,7 @@ export function TrendChart({
 
         {points.map((point, i) => (
           <g key={i}>
-            <text x={x(i)} y={h - 8} fill={AXIS} fontSize="11" textAnchor="middle">
+            <text x={x(i)} y={h - 8} fill={AXIS} fontSize="13" textAnchor="middle">
               {point.label.slice(0, 6)}
             </text>
             {/* A wide invisible target so hovering never demands precision. */}

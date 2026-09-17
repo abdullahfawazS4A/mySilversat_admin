@@ -65,16 +65,16 @@
    * The names are the *roles*, not the pixel values they happen to carry, so
    * raising the scale does not leave `--fs-small` meaning 13px everywhere.
    */
-  --fs-micro: 11px;   /* meta under a label, axis ticks */
-  --fs-tiny: 12px;    /* secondary line in a two-line cell */
-  --fs-small: 13px;   /* pills, chips, captions */
-  --fs-body: 14px;    /* table cells, form text */
-  --fs-base: 15px;    /* the document default */
-  --fs-lead: 16px;    /* card titles, emphasised rows */
-  --fs-title: 17px;   /* section and screen titles */
-  --fs-head: 18px;    /* page heading */
-  --fs-stat: 22px;    /* a number that is the point of its tile */
-  --fs-hero: 26px;    /* the largest number on the dashboard */
+  --fs-micro: 13px;   /* meta under a label, axis ticks */
+  --fs-tiny: 14px;    /* secondary line in a two-line cell */
+  --fs-small: 15px;   /* pills, chips, captions */
+  --fs-body: 16px;    /* table cells, form text */
+  --fs-base: 17px;    /* the document default */
+  --fs-lead: 18px;    /* card titles, emphasised rows */
+  --fs-title: 20px;   /* section and screen titles */
+  --fs-head: 22px;    /* page heading */
+  --fs-stat: 28px;    /* a number that is the point of its tile */
+  --fs-hero: 34px;    /* the largest number on the dashboard */
 
   /* Spacing scale — 4 / 8 / 12 / 16 / 20 / 24 */
   --sp-1: 4px;
@@ -102,9 +102,9 @@
   --header-wash: linear-gradient(180deg, var(--bg-tint) 0%, var(--bg-app) 100%);
 
   /* Layout metrics */
-  --sidebar-w: 254px;
-  --sidebar-w-collapsed: 72px;
-  --topbar-h: 62px;
+  --sidebar-w: 272px;
+  --sidebar-w-collapsed: 76px;
+  --topbar-h: 68px;
 
   /* Motion */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
