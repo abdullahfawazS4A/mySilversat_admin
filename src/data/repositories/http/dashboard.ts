@@ -22,6 +22,7 @@ import type {
   Code,
   DashboardSummary,
   Id,
+  League,
   Match,
   Prediction,
   Province,
@@ -63,6 +64,39 @@ async function liveMatchCount(): Promise<number> {
   return rows.filter((row) => row.league?.isActive).length;
 }
 
+/**
+ * Fixtures open for prediction, over the leagues the app shows.
+ *
+ * Read one league at a time, which looks like the expensive shape and is the
+ * cheap one. Three things force it:
+ *
+ *  - `/matches` accepts `isOpenForPrediction` and ignores it, so the switch
+ *    has to be counted over rows rather than asked for.
+ *  - `/leagues` accepts `isActive` and ignores it too — `true` and `false`
+ *    both answer with all 1,237 rows — so the active set is found by reading
+ *    the list, not by filtering it server-side.
+ *  - Scheduled fixtures across every league number 8,411 and come back oldest
+ *    first. Reading them whole is eighty-five requests; reading a capped
+ *    prefix, which is what this did, spends the whole budget on the oldest
+ *    fixtures in the archive and never reaches the ones actually open. That is
+ *    where 1,958 came from — a slice of the wrong end of the list — against a
+ *    true count of 18.
+ *
+ * Narrowing to the active leagues first collapses all of it: five leagues hold
+ * forty-six scheduled fixtures between them, a page each.
+ *
+ * Sequential rather than parallel, for the reason the fixtures screen gives:
+ * the API rate-limits, and a burst buys nothing here.
+ */
+async function openForPredictionCount(leagues: League[]): Promise<number> {
+  let open = 0;
+  for (const league of leagues) {
+    const rows = await fetchAll<Match>('/matches', { status: 'scheduled', leagueId: league.id }, 500);
+    open += rows.filter((row) => row.isOpenForPrediction).length;
+  }
+  return open;
+}
+
 /** `2026-09` — the bucket key every trend groups on. */
 function monthKey(iso: string): string {
   return iso.slice(0, 7);
@@ -99,6 +133,7 @@ export class HttpDashboardRepository implements DashboardRepository {
       totalPredictions,
       notificationsSent,
       liveMatches,
+      leagues,
     ] = await Promise.all([
       fetchAll<AppUser>('/app-users'),
       fetchAll<Code>('/codes', { status: 'sold' }, 10000),
@@ -112,13 +147,14 @@ export class HttpDashboardRepository implements DashboardRepository {
       countOf('/predictions'),
       countOf('/notifications'),
       liveMatchCount(),
+      fetchAll<League>('/leagues'),
     ]);
 
-    // Open fixtures and unscored picks both need the rows, not just a count.
-    const [openMatches, pendingPredictions] = await Promise.all([
-      fetchAll<Match>('/matches', { status: 'scheduled' }, 2000),
-      fetchAll<Prediction>('/predictions', undefined, 5000),
-    ]);
+    // Unscored picks need the rows, not just a count.
+    const pendingPredictions = await fetchAll<Prediction>('/predictions', undefined, 5000);
+    const openForPrediction = await openForPredictionCount(
+      leagues.filter((league) => league.isActive),
+    );
 
     const priceOf = new Map(categories.map((row) => [row.id, toAmount(row.unitPrice)]));
     const nameOf = new Map(categories.map((row) => [row.id, `${row.product?.displayName ?? ''} — ${row.name}`]));
@@ -185,7 +221,7 @@ export class HttpDashboardRepository implements DashboardRepository {
       revenueThisMonth,
       soldThisMonth,
       liveMatches,
-      openForPrediction: openMatches.filter((match) => match.isOpenForPrediction).length,
+      openForPrediction,
       totalPredictions,
       pendingScoring: pendingPredictions.filter(
         (row) => row.pointsEarned === null && row.match?.status === 'finished',
