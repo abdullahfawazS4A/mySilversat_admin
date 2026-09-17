@@ -384,6 +384,30 @@
   padding: 13px var(--sp-4);
   border-bottom: 1px solid var(--divider);
   vertical-align: middle;
+  /*
+   * No single value may widen the table past its container.
+   *
+   * A column sizes to its content, and content with nothing to break on — a
+   * URL, a pasted line with no spaces — has no width it can be asked to fit
+   * in. One such row pushed every other column off the screen. Allowing the
+   * break costs nothing on ordinary text, which still breaks on its spaces.
+   */
+  overflow-wrap: anywhere;
+}
+
+/*
+ * A text cell that keeps its column to a readable width.
+ *
+ * `.truncate` on its own does nothing inside a table cell, which is worth
+ * spelling out because five columns were written expecting it to work: the
+ * column sizes to its content, so the text is never narrower than it wants to
+ * be and the ellipsis never has a width to happen at. The cap is what gives
+ * the ellipsis something to bite on, and it goes on the cell rather than the
+ * line so that both lines of a two-line cell are held to the same width.
+ */
+.cell-text {
+  max-width: 340px;
+  min-width: 0;
 }
 
 .table tbody tr:last-child td {

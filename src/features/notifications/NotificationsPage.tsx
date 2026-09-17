@@ -47,8 +47,12 @@ export function NotificationsPage() {
       key: 'title',
       header: 'الإشعار',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
-          <span className="fs-body strong">{row.titleAr}</span>
+        // Both lines are free text an operator typed, so both are capped and
+        // carry the full value in a tooltip rather than being lost to the
+        // ellipsis.
+        <div className="col cell-text" style={{ lineHeight: 1.35 }} title={`${row.titleAr}
+${row.bodyAr}`}>
+          <span className="fs-body strong truncate">{row.titleAr}</span>
           <span className="fs-tiny dim truncate">{row.bodyAr}</span>
         </div>
       ),
