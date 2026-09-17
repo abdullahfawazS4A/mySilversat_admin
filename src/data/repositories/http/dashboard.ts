@@ -37,6 +37,32 @@ async function countOf(path: string, query?: Record<string, string | number>): P
   return page.total;
 }
 
+/**
+ * How many fixtures the app is showing as live.
+ *
+ * Not the `total` of `/matches?status=live`. That counts every row the feed
+ * has marked live, and a fixture under a league whose `isActive` is false is
+ * hidden from the app entirely. Measured against the live API that is not an
+ * edge case: all nine live rows sat under inactive leagues, so the tile read
+ * nine where a subscriber could watch none.
+ *
+ * `/matches/live` is the route that would answer this as a page of one, and it
+ * cannot be used here — it is an app-user route, an admin token gets a 401 on
+ * it, and `send` clears the stored token on a 401. Reading it from the
+ * dashboard would sign the operator out every time the screen loaded.
+ *
+ * So this counts rows rather than reading a total. It costs no more than the
+ * count did: `/matches` joins the league onto every fixture with `isActive` on
+ * it, so the answer needs no second request, and live is a handful of rows —
+ * one page, not a walk.
+ */
+async function liveMatchCount(): Promise<number> {
+  const rows = await fetchAll<Match>('/matches', { status: 'live' }, 500);
+  // A fixture whose league did not come back is left out: without the league
+  // there is nothing to say the app is showing it.
+  return rows.filter((row) => row.league?.isActive).length;
+}
+
 /** `2026-09` — the bucket key every trend groups on. */
 function monthKey(iso: string): string {
   return iso.slice(0, 7);
@@ -85,7 +111,7 @@ export class HttpDashboardRepository implements DashboardRepository {
       countOf('/codes', { status: 'disabled' }),
       countOf('/predictions'),
       countOf('/notifications'),
-      countOf('/matches', { status: 'live' }),
+      liveMatchCount(),
     ]);
 
     // Open fixtures and unscored picks both need the rows, not just a count.
