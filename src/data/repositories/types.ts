@@ -441,8 +441,10 @@ export interface MatchesRepository {
     /** Bulk version, for the multi-select toolbar. */
     bulkSetOpenForPrediction(ids: Id[], open: boolean): Promise<void>;
     /**
-     * Corrects a score by hand. Scoring pays out on this number, so a fix has
-     * to land before `scoreMatch` runs.
+     * Corrects a score by hand.
+     *
+     * Only the scoreline the app shows. The server has already paid points out
+     * on the number this replaces, and it never revisits a scored pick.
      */
     setScore(
       id: Id,
@@ -461,9 +463,13 @@ export interface PredictionsRepository {
   remove(id: Id): Promise<void>;
   /** How one fixture's picks are distributed, for the sentiment bar. */
   stats(matchId: Id): Promise<MatchPredictionStats>;
-  /** Awards points for one finished match. Only unscored picks are touched. */
-  scoreMatch(matchId: Id): Promise<{ scored: number }>;
-  /** Scores every finished match that still has unscored picks. */
+  /**
+   * Scores every finished match that still has unscored picks.
+   *
+   * A catch-up, not the routine: the server scores a fixture by itself when it
+   * finishes. This is what clears the backlog the dashboard counts when that
+   * did not happen.
+   */
   scorePending(): Promise<{ scored: number }>;
 }
 

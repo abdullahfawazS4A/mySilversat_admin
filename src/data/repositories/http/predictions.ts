@@ -1,10 +1,11 @@
 /**
  * Predictions and scoring.
  *
- * Scoring is the API's job — `/predictions/score/match/{id}` walks a finished
- * match's unscored picks and pays 25 for an exact scoreline, 10 for the right
- * outcome. It only touches rows whose `pointsEarned` is still null, so calling
- * it twice cannot double-pay.
+ * Scoring is the API's job, and it does it by itself: a fixture is scored when
+ * it finishes, paying 25 for an exact scoreline and 10 for the right outcome.
+ * `scorePending` is the catch-up for when that did not happen. It only touches
+ * rows whose `pointsEarned` is still null, so calling it twice cannot
+ * double-pay — and for the same reason it cannot re-pay a corrected score.
  *
  * `stats` has no endpoint behind it; the distribution is computed from the
  * match's own picks, which is cheap because `/predictions?matchId=` is already
@@ -81,11 +82,6 @@ export class HttpPredictionsRepository implements PredictionsRepository {
       .slice(0, 5);
 
     return { matchId, total: rows.length, homeWin, draw, awayWin, topScorelines };
-  }
-
-  async scoreMatch(matchId: Id): Promise<{ scored: number }> {
-    const raw = await api.post<unknown>(`/predictions/score/match/${matchId}`);
-    return { scored: scoredCount(raw) };
   }
 
   async scorePending(): Promise<{ scored: number }> {

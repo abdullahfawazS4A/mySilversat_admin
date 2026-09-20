@@ -119,7 +119,11 @@ function Summary({ data }: { data: DashboardSummary }) {
           value={formatNumber(data.totalPredictions)}
           icon={<Target size={15} />}
           tone={data.pendingScoring > 0 ? 'warning' : undefined}
-          hint={`${formatNumber(data.pendingScoring)} تنتظر الاحتساب`}
+          hint={
+            data.pendingScoring > 0
+              ? `${formatNumber(data.pendingScoring)} فاتها الاحتساب التلقائي`
+              : 'كلها محتسبة'
+          }
         />
         <StatTile
           label="سيرفرات فعّالة"

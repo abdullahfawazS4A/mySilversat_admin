@@ -2,15 +2,19 @@
  * Manual score correction.
  *
  * Scores arrive from the fixtures feed, so this dialog is the exception, not
- * the routine: it exists because points are paid out on the score, and a feed
- * that is wrong or twenty minutes behind will otherwise settle real points on
- * a wrong result.
+ * the routine: it exists for a result that came through wrong or late.
  *
- * One thing the API does *not* do is pin a corrected score — there is no
- * override flag, so the next live sync can overwrite whatever is saved here.
- * The dialog says so plainly instead of implying a permanence it cannot give,
- * and points the operator at the order that actually works: correct, then
- * settle, immediately.
+ * Two things it cannot do, and says so rather than implying otherwise.
+ *
+ * The API does not pin a corrected score — there is no override flag, so the
+ * next live sync can overwrite whatever is saved here.
+ *
+ * And it cannot move points that have already been paid. The server scores a
+ * fixture by itself once it finishes, and it only ever touches picks whose
+ * `pointsEarned` is still null, so a correction made afterwards fixes the
+ * scoreline the app displays and nothing else. That used to be a matter of
+ * ordering — correct, then settle — and it no longer is: the settling has
+ * happened before the operator gets here.
  */
 
 import { useState } from 'react';
@@ -102,7 +106,7 @@ export function ScoreOverrideDialog({
   const saveFinished = async () => {
     const ok = await run(() => repos.matches.matches.setScore(match.id, home, away, 'finished'));
     if (ok) {
-      toast('انتهت المباراة بالنتيجة المصححة — تكدر تحتسب النقاط الآن');
+      toast('انتهت المباراة بالنتيجة المصححة');
       onSaved();
     }
   };
@@ -147,7 +151,8 @@ export function ScoreOverrideDialog({
 
         <Notice tone="warning">
           التصحيح هنا ما يثبّت النتيجة — مزامنة المباشر الجاية تكدر ترجع تكتب عليها من المزوّد.
-          إذا كنت تصحّح حتى تحتسب النقاط، احتسبها فوراً بعد الحفظ كنتيجة نهائية.
+          والنقاط اللي انحسبت على النتيجة القديمة ما تنعاد: السيرفر يحتسب المباراة أول ما تنتهي
+          وما يرجع يلمس توقع محتسب.
         </Notice>
 
         <div className="row" style={{ gap: 'var(--sp-4)' }}>

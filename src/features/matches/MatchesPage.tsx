@@ -18,15 +18,17 @@
  * at once. Everything else on the row is feed data shown read-only, with one
  * escape hatch — correcting a wrong score, because points are settled on it.
  *
- * Scoring is offered on every finished fixture rather than hidden once it has
- * run. The API only pays out picks it has not paid out before, so pressing it
- * twice is harmless — and there is no `settledAt` column to hide it by.
+ * Scoring is not offered here at all. The server pays points out by itself
+ * once a fixture finishes, so a button would only ever be pressed on work that
+ * was already done — and the one case it used to serve, correcting a score and
+ * paying on the corrected one, it cannot serve any more: by the time an
+ * operator sees a wrong result the points are already paid, and the API only
+ * touches picks whose `pointsEarned` is still null.
  */
 
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  CheckCircle2,
   Flag,
   Lock,
   Pencil,
@@ -42,7 +44,6 @@ import {
   AsyncBlock,
   Button,
   Card,
-  ConfirmDialog,
   FilterChips,
   Notice,
   Pill,
@@ -124,7 +125,6 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
 
   const [scoring, setScoring] = useState<Match | null>(null);
   const [viewingPicks, setViewingPicks] = useState<Match | null>(null);
-  const [settling, setSettling] = useState<Match | null>(null);
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
@@ -260,25 +260,6 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
     }
   };
 
-  const runSettle = async () => {
-    if (!settling) return;
-    setBusy(true);
-    try {
-      const result = await repos.predictions.scoreMatch(settling.id);
-      toast(
-        result.scored > 0
-          ? `انحسبت نقاط ${result.scored} توقع`
-          : 'ماكو توقعات جديدة تنحسب على هذي المباراة',
-      );
-      setSettling(null);
-      refresh();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'تعذّر الاحتساب', 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const columns = useMemo<Column<Match>[]>(
     () => [
       {
@@ -390,24 +371,6 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
             عرض
           </Button>
         ),
-      },
-      {
-        key: 'settle',
-        header: 'النقاط',
-        width: 120,
-        render: (match) =>
-          match.status === 'finished' ? (
-            <Button
-              variant="subtle"
-              size="sm"
-              icon={<CheckCircle2 size={13} />}
-              onClick={() => setSettling(match)}
-            >
-              احتساب
-            </Button>
-          ) : (
-            <span className="dim">—</span>
-          ),
       },
       {
         key: 'actions',
@@ -633,25 +596,6 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
         <MatchPredictionsDialog match={viewingPicks} onClose={() => setViewingPicks(null)} />
       ) : null}
 
-      {settling ? (
-        <ConfirmDialog
-          title="احتساب نقاط المباراة"
-          message={
-            <>
-              راح تنحسب نقاط التوقعات على نتيجة{' '}
-              <span className="num strong">
-                {settling.homeScore} – {settling.awayScore}
-              </span>
-              ، وتنضاف لرصيد كل مشترك. التوقعات المحتسبة سابقاً ما تتأثر، فإذا النتيجة غلط صحّحها
-              الأول.
-            </>
-          }
-          confirmLabel="احتساب النقاط"
-          pending={busy}
-          onConfirm={() => void runSettle()}
-          onCancel={() => setSettling(null)}
-        />
-      ) : null}
     </>
   );
 }

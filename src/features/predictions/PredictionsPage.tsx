@@ -1,10 +1,12 @@
 /**
- * Every prediction in the system, and the button that settles them.
+ * Every prediction in the system.
  *
- * Scoring is the operator's real job here. `احتساب المعلّقة` walks every
- * finished match that still has unpaid picks and awards points in one pass —
- * which is what an operator wants at the end of a matchday, rather than
- * opening each fixture in turn.
+ * Scoring used to be the operator's job here and is not any more: the server
+ * pays a fixture's picks out by itself once it finishes. `احتساب المعلّقة` is
+ * what is left of it — a catch-up for a backlog that should not exist, which
+ * is why it is not the loudest thing on the page. The dashboard's «تنتظر
+ * الاحتساب» counter is where such a backlog shows up; on a working day it sits
+ * at zero and this button has nothing to do.
  *
  * Points are fixed server-side (exact score 25, right outcome 10) and shown on
  * the screen so the rule is visible rather than folklore.
@@ -217,11 +219,12 @@ export function PredictionsPage() {
     <>
       <PageHeader
         title="التوقعات"
-        subtitle="توقعات المشتركين على المباريات، واحتساب نقاطها"
+        subtitle="توقعات المشتركين على المباريات ونقاطها — الاحتساب يصير تلقائياً بالسيرفر"
         actions={
           <Button
-            variant="primary"
+            variant="outline"
             icon={<Calculator size={15} />}
+            title="للحالات اللي ما انحسبت تلقائياً"
             onClick={() => setSettling(true)}
           >
             احتساب المعلّقة
@@ -308,7 +311,7 @@ export function PredictionsPage() {
           title="احتساب التوقعات المعلّقة"
           confirmLabel="احتساب"
           pending={busy}
-          message="راح تنحسب نقاط كل مباراة منتهية عدها توقعات ما انحسبت بعد. التوقعات المحتسبة سابقاً ما تتأثر. تأكد من صحة النتائج قبل ما تكمل."
+          message="السيرفر يحتسب المباريات تلقائياً أول ما تنتهي، فهذا الزر للحالات اللي فاتته. راح تنحسب نقاط كل مباراة منتهية عدها توقعات ما انحسبت بعد، والتوقعات المحتسبة سابقاً ما تتأثر."
           onConfirm={() => void runScorePending()}
           onCancel={() => setSettling(false)}
         />
