@@ -8,6 +8,12 @@
  *
  * The token is written to local storage the moment it arrives, because the
  * HTTP client reads it from there rather than from React state.
+ *
+ * Resetting a forgotten password is a third, parallel pair of calls —
+ * `/auth/forgot-password` then `/auth/reset-password` — which look like the
+ * sign-in pair but are not: the code arrives over WhatsApp rather than SMS,
+ * the two challenges are not interchangeable, and finishing one produces a
+ * password rather than a session.
  */
 
 import { ApiError, api } from '@/data/http/client';
@@ -19,7 +25,7 @@ import {
   writeToken,
   writeUser,
 } from '@/data/http/session';
-import type { AdminSession, AdminUser, OtpChallenge } from '@/types';
+import type { AdminSession, AdminUser, OtpChallenge, ResetChallenge } from '@/types';
 import type { AuthRepository } from '../types';
 
 /** What `/auth/verify-otp` answers with. */
@@ -109,6 +115,41 @@ export class HttpAuthRepository implements AuthRepository {
 
   async resendOtp(challengeToken: string): Promise<void> {
     await api.anonPost('/auth/resend-otp', { challengeToken });
+  }
+
+  /**
+   * Starts a password reset.
+   *
+   * Anonymous like the login routes, and for a stronger reason: an operator
+   * who has lost the password may well be holding a token that has since been
+   * revoked, and sending it would only invite a 401 on a route that never
+   * needed one.
+   */
+  forgotPassword(phone: string): Promise<ResetChallenge> {
+    return api.anonPost<ResetChallenge>('/auth/forgot-password', { phone: phone.trim() });
+  }
+
+  /**
+   * Finishes a reset.
+   *
+   * Sets the password and nothing else — the API answers with no token, so the
+   * operator signs in afterwards the ordinary way, password then SMS code.
+   * That is the API's decision, not a shortcut taken here.
+   */
+  async resetPassword(
+    challengeToken: string,
+    code: string,
+    newPassword: string,
+  ): Promise<void> {
+    await api.anonPost('/auth/reset-password', {
+      challengeToken,
+      code: code.trim(),
+      newPassword,
+    });
+  }
+
+  async resendResetOtp(challengeToken: string): Promise<void> {
+    await api.anonPost('/auth/resend-password-reset-otp', { challengeToken });
   }
 
   async signOut(): Promise<void> {

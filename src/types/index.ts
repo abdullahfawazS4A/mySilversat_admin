@@ -266,6 +266,23 @@ export interface OtpChallenge {
   expiresInSeconds: number;
 }
 
+/**
+ * What `/auth/forgot-password` returns.
+ *
+ * The same idea as `OtpChallenge` and deliberately not the same type: the spec
+ * documents only the token, and the two codes do not even travel the same way
+ * — login texts an SMS, a reset is sent over WhatsApp. So everything past the
+ * token is optional here, and the screen renders the masked number and the
+ * countdown only when the server actually sent them. Typing them as required
+ * would put `undefined` on screen the first time the route answers leaner than
+ * the login one does.
+ */
+export interface ResetChallenge {
+  challengeToken: string;
+  maskedPhone?: string;
+  expiresInSeconds?: number;
+}
+
 // --------------------------------------------------------- app users -------
 
 /** A customer of the service — the person who uses the mobile app. */

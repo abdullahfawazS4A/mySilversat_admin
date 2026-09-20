@@ -46,6 +46,7 @@ import type {
   ProvinceOverview,
   RechargeType,
   RegionCheckResult,
+  ResetChallenge,
   SilversatRegion,
   SyncResult,
   Team,
@@ -88,6 +89,18 @@ export interface AuthRepository {
   verifyOtp(challengeToken: string, code: string): Promise<AdminSession>;
   /** Sends a fresh code for a challenge that has not expired. */
   resendOtp(challengeToken: string): Promise<void>;
+  /**
+   * Step 1 of a reset — sends a code over WhatsApp, not SMS.
+   *
+   * Answers the same way for a number that has no account, so a caller cannot
+   * use it to find out which numbers are admins. The screen has to word its
+   * confirmation accordingly.
+   */
+  forgotPassword(phone: string): Promise<ResetChallenge>;
+  /** Step 2 — trades the code for a new password. Does not sign anyone in. */
+  resetPassword(challengeToken: string, code: string, newPassword: string): Promise<void>;
+  /** Sends a fresh reset code. A separate route from the login one. */
+  resendResetOtp(challengeToken: string): Promise<void>;
   signOut(): Promise<void>;
   /** Re-reads the operator's own profile from the API. */
   me(): Promise<AdminUser>;

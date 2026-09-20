@@ -22,7 +22,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { AdminSession, OtpChallenge } from '@/types';
+import type { AdminSession, OtpChallenge, ResetChallenge } from '@/types';
 import { onSessionCleared } from '@/data/http/session';
 import { useRepos } from './RepositoryContext';
 
@@ -36,6 +36,13 @@ interface AuthContextValue {
   /** Step 2 — on success the app is authenticated. */
   verifyOtp: (challengeToken: string, code: string) => Promise<void>;
   resendOtp: (challengeToken: string) => Promise<void>;
+  /**
+   * The reset pair. Neither touches the session: a reset ends with a password,
+   * and the operator still signs in afterwards.
+   */
+  forgotPassword: (phone: string) => Promise<ResetChallenge>;
+  resetPassword: (challengeToken: string, code: string, newPassword: string) => Promise<void>;
+  resendResetOtp: (challengeToken: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -92,6 +99,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [repos],
   );
 
+  const forgotPassword = useCallback(
+    (phone: string) => repos.auth.forgotPassword(phone),
+    [repos],
+  );
+
+  const resetPassword = useCallback(
+    (challengeToken: string, code: string, newPassword: string) =>
+      repos.auth.resetPassword(challengeToken, code, newPassword),
+    [repos],
+  );
+
+  const resendResetOtp = useCallback(
+    (challengeToken: string) => repos.auth.resendResetOtp(challengeToken),
+    [repos],
+  );
+
   const signOut = useCallback(async () => {
     await repos.auth.signOut();
     setSession(null);
@@ -99,8 +122,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [repos]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, session, signIn, verifyOtp, resendOtp, signOut }),
-    [status, session, signIn, verifyOtp, resendOtp, signOut],
+    () => ({
+      status,
+      session,
+      signIn,
+      verifyOtp,
+      resendOtp,
+      forgotPassword,
+      resetPassword,
+      resendResetOtp,
+      signOut,
+    }),
+    [
+      status,
+      session,
+      signIn,
+      verifyOtp,
+      resendOtp,
+      forgotPassword,
+      resetPassword,
+      resendResetOtp,
+      signOut,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
