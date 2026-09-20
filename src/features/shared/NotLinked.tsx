@@ -2,8 +2,8 @@
  * The screen for features the backend does not have yet.
  *
  * The console was designed against a wider product than the API currently
- * exposes: draws, coupons, agents and an audit trail all have screens in the
- * design and no endpoint behind them.
+ * exposes: coupons, agents and an audit trail all have screens in the design
+ * and no endpoint behind them.
  *
  * Deleting them would lose the design; faking them with local data would be
  * worse — an operator cannot tell invented numbers from real ones, and a

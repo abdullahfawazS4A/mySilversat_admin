@@ -95,6 +95,44 @@ export function formatDateTimeAr(iso: IsoDate | null | undefined): string {
   return `${formatDateAr(iso)} · ${formatTimeAr(iso)}`;
 }
 
+/**
+ * An instant as a `datetime-local` field wants it: `2026-12-31T21:00`.
+ *
+ * The field has no time zone, so it must be handed the operator's own clock —
+ * building the string out of UTC parts instead would show a Baghdad evening as
+ * an afternoon and, worse, save back the hour it displayed.
+ */
+export function toLocalInput(iso: IsoDate | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Exactly what a `datetime-local` field emits, and nothing else. */
+const LOCAL_INPUT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
+
+/**
+ * What that field gives back, as the UTC instant the API stores.
+ *
+ * A zone-less string is parsed as local time, which is the half of the round
+ * trip that matches `toLocalInput`.
+ *
+ * The shape is checked before parsing rather than leaning on `Invalid Date`,
+ * because `Date` is far more willing than it looks: `new Date('2026-12-')`
+ * does not fail, it answers with the end of November. Anything that is not a
+ * whole instant comes back null instead of a plausible wrong date.
+ */
+export function fromLocalInput(value: string): IsoDate | null {
+  const trimmed = value.trim();
+  if (!LOCAL_INPUT.test(trimmed)) return null;
+
+  const d = new Date(trimmed);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 /** Whole days from now until `iso`. Negative when the date has passed. */
 export function daysUntil(iso: IsoDate): number {
   const target = new Date(iso).setHours(0, 0, 0, 0);

@@ -1,20 +1,24 @@
 /**
  * Everything marketing edits inside the app: banners, FAQs, tutorial videos,
- * towers and contact channels.
+ * towers, contact channels and prize draws.
  *
- * All five are plain REST collections that share two conventions — an `order`
- * column the app sorts on, and a bilingual pair for every authored string. The
- * screens are built from the same editor for that reason.
+ * They are plain REST collections sharing one convention — a bilingual pair for
+ * every authored string — and most of them an `order` column the app sorts on.
+ * The screens are built from the same editor for that reason.
+ *
+ * A prize draw sits here because that is all the API makes it: text, a date and
+ * a switch. Holding the draw and recording a winner have no routes at all.
  */
 
 import { api } from '@/data/http/client';
-import type { Ad, ContactLink, Faq, Id, Tower, TutorialVideo } from '@/types';
+import type { Ad, ContactLink, Faq, Id, PrizeDraw, Tower, TutorialVideo } from '@/types';
 import type {
   AdInput,
   ContactLinkInput,
   ContentRepository,
   CrudRepository,
   FaqInput,
+  PrizeDrawInput,
   TowerInput,
   VideoInput,
 } from '../types';
@@ -101,4 +105,9 @@ export class HttpContentRepository implements ContentRepository {
     ContactLink,
     ContactLinkInput
   >('/contact-links', (row) => `${row.label} ${row.labelKu} ${row.value} ${row.type}`);
+
+  readonly prizeDraws: CrudRepository<PrizeDraw, PrizeDrawInput> = new HttpCrudRepository<
+    PrizeDraw,
+    PrizeDrawInput
+  >('/prize-draws', (row) => `${row.titleAr} ${row.titleKu} ${row.bodyAr}`);
 }

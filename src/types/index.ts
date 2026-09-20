@@ -487,6 +487,30 @@ export interface TutorialVideo extends Entity {
   isActive: boolean;
 }
 
+/**
+ * A prize draw — the «جدّد واربح» campaign the app runs.
+ *
+ * The console authors the announcement and the date; the draw itself is not
+ * held here. There is no route to run one and none to record a winner, so the
+ * campaign that shows in the app is exactly this row: what it says, and when
+ * it says the draw happens. The coupons that enter it are issued server-side
+ * on a renewal and are only readable by the user who earned them.
+ *
+ * `drawAt` is what the app counts down to, so a draw whose date has passed
+ * keeps showing a finished countdown until it is switched off — which is why
+ * the screen flags a past date rather than leaving it to be noticed.
+ */
+export interface PrizeDraw extends Entity {
+  titleAr: string;
+  titleKu: string;
+  bodyAr: string;
+  bodyKu: string;
+  /** When the draw is held, as announced in the app. */
+  drawAt: IsoDate;
+  /** Inactive draws are hidden from the app without losing the text. */
+  isActive: boolean;
+}
+
 /** A transmitter the app's compass points at. */
 export interface Tower extends Entity {
   name: string;

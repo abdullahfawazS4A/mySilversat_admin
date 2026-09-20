@@ -31,6 +31,7 @@ import type {
   Device,
   Faq,
   Id,
+  IsoDate,
   LeaderboardRow,
   League,
   ListQuery,
@@ -41,6 +42,7 @@ import type {
   OtpChallenge,
   Page,
   Prediction,
+  PrizeDraw,
   Product,
   Province,
   ProvinceOverview,
@@ -551,6 +553,16 @@ export interface VideoInput {
   isActive?: boolean;
 }
 
+export interface PrizeDrawInput {
+  titleAr: string;
+  titleKu: string;
+  bodyAr: string;
+  bodyKu: string;
+  /** ISO-8601, UTC. The app counts down to it. */
+  drawAt: IsoDate;
+  isActive?: boolean;
+}
+
 export interface TowerInput {
   name: string;
   nameKu: string;
@@ -576,6 +588,14 @@ export interface ContentRepository {
   videos: CrudRepository<TutorialVideo, VideoInput>;
   towers: CrudRepository<Tower, TowerInput, Partial<TowerInput>, { provinceId?: Id }>;
   contactLinks: CrudRepository<ContactLink, ContactLinkInput>;
+  /**
+   * Prize draws.
+   *
+   * Here rather than in a bundle of their own because that is all the API
+   * gives them: bilingual text, a date and a switch, authored the same way a
+   * banner or an FAQ is. Running a draw and naming a winner have no routes.
+   */
+  prizeDraws: CrudRepository<PrizeDraw, PrizeDrawInput>;
 }
 
 // ------------------------------------------- silversat vendor operations ---
