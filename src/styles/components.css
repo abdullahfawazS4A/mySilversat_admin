@@ -1033,8 +1033,9 @@
 /* ---------------------------------------------------------- image picker --- */
 
 /**
- * The empty state of an image field: the whole box is the button, because a
- * small "browse" link beside a large blank area is the part nobody aims at.
+ * The empty state of a file field — a banner to pick, a shipment to file: the
+ * whole box is the button, because a small "browse" link beside a large blank
+ * area is the part nobody aims at.
  */
 .dropzone {
   display: flex;

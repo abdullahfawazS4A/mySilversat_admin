@@ -26,7 +26,7 @@
  * a reload lands where the operator was rather than at the root.
  */
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Boxes,
@@ -56,7 +56,6 @@ import {
   Pill,
   SearchInput,
   Select,
-  TextArea,
   TextInput,
   useDraft,
 } from '@/components/ui';
@@ -64,6 +63,13 @@ import { StatTile } from '@/components/charts';
 import { formatDateAr, formatDateTimeAr, formatIqd, formatNumber } from '@/lib/format';
 import { ACTIVATION_API, BATCH_STATUS, CODE_STATUS } from '@/lib/labels';
 import { matchesSearch } from '@/lib/utils';
+import {
+  SPREADSHEET_ACCEPT,
+  SpreadsheetError,
+  looksLikeHeader,
+  readSpreadsheet,
+  type Sheet,
+} from '@/lib/spreadsheet';
 import {
   toAmount,
   type Batch,
@@ -1219,10 +1225,20 @@ function CategoryDialog({
  * to pick — which removes the one mistake this dialog used to allow, filing
  * Basra's cards against a Ninawa tier.
  *
- * The codes are parsed here rather than sent as text, so the operator sees the
- * count the server is about to receive before committing: a paste with a stray
- * blank line or a header row is otherwise only discovered as a wrong total
- * afterwards.
+ * Cards arrive as a file, so the file is the whole input: choose the supplier's
+ * `.xlsx` or `.csv` and everything else is read off it. The first column is the
+ * card number, the second is the extra value when the tier carries one, a
+ * heading row is recognised and skipped, and the batch takes the file's own
+ * name. Nothing to map and nothing to confirm.
+ *
+ * The codes are parsed here rather than posted as a file, because the API takes
+ * them as JSON. Parsing first also puts the count on the upload button before
+ * anything is sent — a stray heading or a blank line is otherwise discovered
+ * afterwards, as a total that is quietly one short.
+ *
+ * The screen stays silent when the file is fine. It speaks only for the two
+ * things that would file cards nobody can redeem: a column Excel has already
+ * rounded, and a card that appears twice.
  */
 function FileBatchDialog({
   category,
@@ -1241,37 +1257,100 @@ function FileBatchDialog({
 
   const [fileName, setFileName] = useState('');
   const [notes, setNotes] = useState('');
-  const [raw, setRaw] = useState('');
-  const [invalid, setInvalid] = useState<string | null>(null);
+  /** Whether the operator has tried to submit, which is when refusals appear. */
+  const [tried, setTried] = useState(false);
+
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const [sheetError, setSheetError] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
 
   const wantsSecondary = category.hasSecondaryCode;
 
-  /** One code per line; a comma or tab splits the secondary value off. */
-  const parsed = useMemo(
-    () =>
-      raw
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => {
-          const [primary, secondary] = line.split(/[,\t]/).map((part) => part.trim());
-          return { primaryValue: primary, secondaryValue: secondary ? secondary : null };
-        })
-        .filter((code) => code.primaryValue),
-    [raw],
-  );
+  const take = async (file: File) => {
+    setReading(true);
+    setSheetError(null);
+    try {
+      const next = await readSpreadsheet(file);
+      if (!next.rows.length) throw new SpreadsheetError('الملف فارغ — ماكو ولا سطر بيه.');
+
+      setSheet(next);
+      // The file's own name is exactly what this field is for: the shipment's
+      // identity, the way the operator will look for it again.
+      setFileName(file.name);
+    } catch (err) {
+      setSheet(null);
+      setSheetError(err instanceof Error ? err.message : 'تعذّرت قراءة الملف.');
+    } finally {
+      setReading(false);
+    }
+  };
+
+  /**
+   * The sheet as codes.
+   *
+   * Column order is taken as read — first the card, then the extra value — and
+   * a heading row is dropped when the first row is words rather than numbers.
+   * Both are what every shipment file actually looks like, and the preview is
+   * where a file that does not is caught.
+   */
+  const parsed = useMemo(() => {
+    if (!sheet) return [];
+    const body = looksLikeHeader(sheet.rows) ? sheet.rows.slice(1) : sheet.rows;
+    return body
+      .map((row) => ({
+        primaryValue: (row[0] ?? '').trim(),
+        secondaryValue: wantsSecondary ? (row[1] ?? '').trim() || null : null,
+      }))
+      .filter((code) => code.primaryValue);
+  }, [sheet, wantsSecondary]);
 
   const missingSecondary = wantsSecondary && parsed.some((code) => !code.secondaryValue);
 
-  const submit = async () => {
-    const problem = !fileName.trim()
+  /**
+   * The first card that appears twice.
+   *
+   * A card number is unique across the system, so a repeat inside one shipment
+   * is a file that was built wrong — a block pasted twice, a range copied over
+   * itself. Caught here because the alternative is a refusal from the server
+   * after several thousand rows have already crossed, naming one value and
+   * leaving the operator to go and find it.
+   */
+  const duplicate = useMemo(() => {
+    const seen = new Set<string>();
+    for (const code of parsed) {
+      if (seen.has(code.primaryValue)) return code.primaryValue;
+      seen.add(code.primaryValue);
+    }
+    return null;
+  }, [parsed]);
+
+  /** Whether the card column is one Excel already rounded. */
+  const rounded = !!sheet?.imprecise.has(0);
+
+  /**
+   * What stops the upload, as the form currently stands.
+   *
+   * Derived rather than stored, so it follows the inputs: a refusal recorded on
+   * one submit would otherwise outlive the fix, leaving the operator reading a
+   * sentence about a file they had already replaced. It is only *shown* once a
+   * submit has been attempted — refusing a form nobody has filled in is noise.
+   */
+  const problem = !sheet
+    ? 'اختر ملف بيه الكارتات'
+    : !fileName.trim()
       ? 'اسم الرفعة مطلوب'
       : parsed.length === 0
-        ? 'ألصق الكارتات — سطر لكل كارت'
-        : missingSecondary
-          ? 'هذي الفئة تحتاج قيمة ثانية لكل كارت — افصلها بفاصلة'
-          : null;
-    setInvalid(problem);
+        ? 'ما لكينا كارتات بأول عمود من الملف'
+        : rounded
+          ? 'ما نكدر نرفع عمود فقد خانات — صلّح الملف وأعد اختياره.'
+          : duplicate
+            ? `الكارت ${duplicate} متكرر بالملف — صلّح الملف وأعد الرفع.`
+            : missingSecondary
+              ? 'هذي الفئة تحتاج قيمة ثانية لكل كارت — لازم عمود ثاني بالملف'
+              : null;
+
+  const submit = async () => {
+    setTried(true);
     if (problem) return;
 
     const ok = await run(() =>
@@ -1297,10 +1376,10 @@ function FileBatchDialog({
           <Button
             variant="primary"
             icon={<Plus size={15} />}
-            disabled={action.pending}
+            disabled={action.pending || reading}
             onClick={() => void submit()}
           >
-            {action.pending ? 'جاري الرفع…' : `رفع ${parsed.length} كارت`}
+            {action.pending ? 'جاري الرفع…' : `رفع ${formatNumber(parsed.length)} كارت`}
           </Button>
           <Button variant="ghost" onClick={onClose} disabled={action.pending}>
             إلغاء
@@ -1313,47 +1392,147 @@ function FileBatchDialog({
         <span className="strong">{product.displayName}</span> — {product.province?.name ?? '—'}.
       </Notice>
 
-      <div className="grid grid-form mt-3">
-        <Field label="اسم الرفعة" className="span-2" hint="اسم الملف الواصل — هوية الشحنة">
-          <TextInput value={fileName} onChange={setFileName} placeholder="ninawa-12m-2026-01.csv" />
-        </Field>
-        <Field label="ملاحظات" className="span-2" hint="اختيارية">
-          <TextInput value={notes} onChange={setNotes} />
-        </Field>
-
-        <Field
-          label="الكارتات"
-          className="span-2"
-          hint={
-            wantsSecondary
-              ? 'سطر لكل كارت: القيمة الأساسية ثم فاصلة ثم القيمة الثانية'
-              : 'سطر لكل كارت'
-          }
-        >
-          <TextArea
-            rows={8}
-            value={raw}
-            onChange={setRaw}
-            placeholder={
-              wantsSecondary ? '1234567890,4321\n1234567891,4322' : '1234567890\n1234567891'
-            }
-          />
-        </Field>
-      </div>
-
       <div className="mt-3">
-        <Notice tone={missingSecondary ? 'danger' : 'info'}>
-          انقرأ <span className="strong num">{parsed.length}</span> كارت.
-          {wantsSecondary
-            ? ' هذي الفئة تحمل قيمة ثانية لكل كارت.'
-            : ' هذي الفئة ما تحتاج قيمة ثانية.'}
-        </Notice>
+        <SheetPicker
+          busy={reading}
+          sheet={sheet}
+          wantsSecondary={wantsSecondary}
+          onPick={(file) => void take(file)}
+        />
       </div>
 
-      {invalid || action.error ? (
-        <div className="field-error mt-2">{invalid ?? action.error}</div>
+      {sheetError ? (
+        <div className="mt-2">
+          <Notice tone="danger">{sheetError}</Notice>
+        </div>
+      ) : null}
+
+      {sheet ? (
+        <>
+          <div className="grid grid-form mt-3">
+            <Field label="اسم الرفعة" hint="اسم الملف الواصل — هوية الشحنة">
+              <TextInput value={fileName} onChange={setFileName} />
+            </Field>
+            <Field label="ملاحظات" hint="اختيارية">
+              <TextInput value={notes} onChange={setNotes} />
+            </Field>
+          </div>
+
+          {/*
+            * Only ever a warning.
+            *
+            * A file that is fine says nothing: the count lives on the upload
+            * button, which is where the operator is already looking, and
+            * repeating it in a panel underneath was a line to read rather than
+            * a thing to know. What is left here is only what stops the upload.
+            */}
+          {rounded || duplicate || missingSecondary ? (
+            <div className="mt-3">
+              <Notice tone="danger">
+                {rounded ? (
+                  <div>
+                    عمود الكارتات انخزن بالإكسل كأرقام وفقد خانات من آخره — هذي الكارتات ما راح
+                    تشتغل. افتح الملف، سوّي العمود <span className="strong">Text</span>، وأعد
+                    الحفظ.
+                  </div>
+                ) : null}
+                {duplicate ? (
+                  <div>
+                    الكارت <span className="num strong">{duplicate}</span> مكرر بالملف.
+                  </div>
+                ) : null}
+                {missingSecondary ? (
+                  <div>
+                    هذي الفئة تحتاج قيمة ثانية لكل كارت — لازم تكون بالعمود الثاني من الملف.
+                  </div>
+                ) : null}
+              </Notice>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {(tried && problem) || action.error ? (
+        <div className="field-error mt-2">{(tried ? problem : null) ?? action.error}</div>
       ) : null}
     </Modal>
+  );
+}
+
+/**
+ * The drop zone for a shipment file.
+ *
+ * Drag-and-drop beside the picker because the file is nearly always already
+ * open in a folder next to the browser, and because a drop is the one gesture
+ * that cannot pick the wrong file by misreading a name in a list.
+ */
+function SheetPicker({
+  sheet,
+  busy,
+  wantsSecondary,
+  onPick,
+}: {
+  sheet: Sheet | null;
+  busy: boolean;
+  wantsSecondary: boolean;
+  onPick: (file: File) => void;
+}) {
+  const input = useRef<HTMLInputElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        accept={SPREADSHEET_ACCEPT}
+        hidden
+        onChange={(event) => {
+          const picked = event.target.files?.[0];
+          // Resetting lets the same file be picked again after a refusal.
+          event.target.value = '';
+          if (picked) onPick(picked);
+        }}
+      />
+
+      <div
+        className={`dropzone${dragging ? ' is-dragging' : ''}${busy ? ' is-busy' : ''}`}
+        onClick={() => input.current?.click()}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event: DragEvent<HTMLDivElement>) => {
+          event.preventDefault();
+          setDragging(false);
+          const dropped = event.dataTransfer.files?.[0];
+          if (dropped) onPick(dropped);
+        }}
+      >
+        <Upload size={22} />
+        {busy ? (
+          <span className="strong">جاري قراءة الملف…</span>
+        ) : sheet ? (
+          <>
+            <span className="strong">{sheet.fileName}</span>
+            <span className="fs-tiny dim">
+              {sheet.sheetName ? `ورقة «${sheet.sheetName}» — ` : ''}
+              {formatNumber(sheet.rows.length)} سطر — اضغط لتبديل الملف
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="strong">اختر ملف إكسل أو CSV، أو اسحبه هنا</span>
+            <span className="fs-tiny dim">
+              {wantsSecondary
+                ? 'أول عمود الكارتات، والعمود الثاني القيمة الثانية'
+                : 'أول عمود بيه الكارتات — عمود واحد يكفي'}
+            </span>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
