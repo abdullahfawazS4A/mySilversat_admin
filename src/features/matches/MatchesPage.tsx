@@ -53,7 +53,7 @@ import {
 } from '@/components/ui';
 import type { Id, Match, MatchStatus } from '@/types';
 import type { MatchWindow } from '@/data/repositories/types';
-import { MATCH_STATUS, leagueLabel } from '@/lib/labels';
+import { MATCH_STATUS, arabicName, leagueLabel, teamName } from '@/lib/labels';
 import { countdownAr, formatDateAr, formatTimeAr } from '@/lib/format';
 import { ScoreOverrideDialog } from './ScoreOverrideDialog';
 import { MatchPredictionsDialog } from './MatchPredictionsDialog';
@@ -238,7 +238,7 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
       await repos.matches.matches.setOpenForPrediction(match.id, open);
       toast(
         open
-          ? `انفتح التوقع على ${match.homeTeam?.name ?? ''} ضد ${match.awayTeam?.name ?? ''}`
+          ? `انفتح التوقع على ${teamName(match.homeTeam)} ضد ${teamName(match.awayTeam)}`
           : 'انغلق التوقع على المباراة',
       );
       refresh();
@@ -287,19 +287,21 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
         render: (match) => (
           <div className="row row-gap-3">
             <TeamCrest
-              name={match.homeTeam?.name ?? '—'}
+              name={teamName(match.homeTeam)}
               seed={crestSeed(match.homeTeamId)}
               logoUrl={match.homeTeam?.logoUrl}
             />
             <div className="col" style={{ lineHeight: 1.35 }}>
               <span className="fs-body strong">
-                {match.homeTeam?.name ?? '—'} <span className="dim">ضد</span>{' '}
-                {match.awayTeam?.name ?? '—'}
+                {teamName(match.homeTeam)} <span className="dim">ضد</span>{' '}
+                {teamName(match.awayTeam)}
               </span>
-              <span className="fs-tiny dim">{match.league?.name ?? ''}</span>
+              <span className="fs-tiny dim">
+                {match.league ? arabicName(match.league) : ''}
+              </span>
             </div>
             <TeamCrest
-              name={match.awayTeam?.name ?? '—'}
+              name={teamName(match.awayTeam)}
               seed={crestSeed(match.awayTeamId)}
               logoUrl={match.awayTeam?.logoUrl}
               size={26}

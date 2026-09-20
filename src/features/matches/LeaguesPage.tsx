@@ -5,7 +5,13 @@
  * create button is hidden: a row added by hand would carry no `externalId` and
  * the next sync would create the provider's own copy beside it. Editing is
  * still allowed, but only the columns the console owns are worth touching —
- * a league's display order and whether the app shows it at all.
+ * the Arabic name, the display order, and whether the app shows it at all.
+ *
+ * The Arabic name is the one an operator will actually spend time on. The feed
+ * spells everything in English, so a league switched on without one reaches the
+ * app reading "Iraq Stars League"; both tables therefore show the Arabic name
+ * as the row's name and keep the provider's spelling underneath it, which is
+ * also the only way to tell at a glance which rows still need translating.
  *
  * The sync itself lives on the API screen; this is where its result is read.
  *
@@ -41,7 +47,9 @@ import { useRepos } from '@/app/RepositoryContext';
 import { useToast } from '@/app/ToastContext';
 import type { Id, League, Team } from '@/types';
 import type { LeagueInput, TeamInput } from '@/data/repositories/types';
-import { leagueLabel } from '@/lib/labels';
+import { arabicName, leagueLabel, teamName } from '@/lib/labels';
+import { mediaUrl } from '@/lib/media';
+import { ImagePicker } from '../shared/ImagePicker';
 import { CrudScreen } from '../shared/CrudScreen';
 import { MatchesBoard } from './MatchesPage';
 
@@ -67,6 +75,24 @@ export function LeaguesPage() {
       {tab === 'teams' ? <TeamsTab /> : null}
       {tab === 'matches' ? <MatchesBoard scope="all" /> : null}
     </>
+  );
+}
+
+/**
+ * A row's name, Arabic first.
+ *
+ * The provider's spelling is kept underneath rather than dropped: it is what
+ * every sync writes, what the operator will be comparing against a fixture list
+ * from somewhere else, and — when it is the only line — the flag that this row
+ * has not been named in Arabic yet.
+ */
+function NamePair({ row }: { row: { name: string; nameAr: string | null } }) {
+  const named = !!row.nameAr?.trim();
+  return (
+    <div className="col">
+      <span className="strong">{arabicName(row)}</span>
+      {named ? <span className="fs-tiny dim">{row.name}</span> : null}
+    </div>
   );
 }
 
@@ -130,7 +156,8 @@ function LeaguesTab() {
   const toggle = async (league: League, next: boolean) => {
     try {
       await repos.matches.leagues.setActive(league.id, next);
-      toast(next ? `${league.name} صار يظهر بالتطبيق` : `${league.name} انخفى من التطبيق`);
+      const label = arabicName(league);
+      toast(next ? `${label} صار يظهر بالتطبيق` : `${label} انخفى من التطبيق`);
       refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : 'تعذّر التغيير', 'error');
@@ -252,7 +279,7 @@ function LeaguesTab() {
                   {
                     key: 'name',
                     header: 'الدوري',
-                    render: (row) => <span className="strong">{row.name}</span>,
+                    render: (row) => <NamePair row={row} />,
                   },
                   { key: 'country', header: 'الدولة', render: (row) => row.country?.name ?? '—' },
                   {
@@ -282,7 +309,7 @@ function LeaguesTab() {
                         variant="ghost"
                         size="sm"
                         icon={<Pencil size={14} />}
-                        title="تعديل الاسم والترتيب"
+                        title="تعديل الاسم العربي والترتيب"
                         onClick={() => setEditing(row)}
                       />
                     ),
@@ -339,6 +366,7 @@ function LeagueDialog({
   const [run, action] = useAction();
   const { draft, set } = useDraft<LeagueInput>({
     name: league.name,
+    nameAr: league.nameAr ?? '',
     countryId: league.countryId,
     order: league.order,
     isActive: league.isActive,
@@ -346,6 +374,8 @@ function LeagueDialog({
 
   const submit = async () => {
     if (!draft.name.trim()) return;
+    // An emptied box is a cleared override rather than an empty name; the
+    // repository is what turns it back into the `null` the API wants.
     const ok = await run(() => repos.matches.leagues.update(league.id, draft));
     if (ok) onSaved();
   };
@@ -366,7 +396,14 @@ function LeagueDialog({
       }
     >
       <div className="grid grid-form">
-        <Field label="اسم الدوري">
+        <Field label="اسم الدوري بالعربي" hint="هذا اللي يشوفه المشترك بالتطبيق">
+          <TextInput
+            value={draft.nameAr ?? ''}
+            onChange={(next) => set('nameAr', next)}
+            placeholder={league.name}
+          />
+        </Field>
+        <Field label="اسم المزوّد" hint="إنكليزي، تجي بالمزامنة وتنكتب فوقها بكل مزامنة">
           <TextInput value={draft.name} onChange={(next) => set('name', next)} />
         </Field>
         <Field label="الدولة">
@@ -430,8 +467,9 @@ function TeamsTab() {
         />
       }
       editTitle="تعديل الفريق"
+      dialogSize="lg"
       rowKey={(row) => row.id}
-      labelOf={(row) => row.name}
+      labelOf={(row) => teamName(row)}
       columns={[
         {
           key: 'logo',
@@ -439,7 +477,7 @@ function TeamsTab() {
           width: 52,
           render: (row) =>
             row.logoUrl ? (
-              <img className="team-logo" src={row.logoUrl} alt="" loading="lazy" />
+              <img className="team-logo" src={mediaUrl(row.logoUrl)} alt="" loading="lazy" />
             ) : (
               <span className="dim">—</span>
             ),
@@ -447,12 +485,12 @@ function TeamsTab() {
         {
           key: 'name',
           header: 'الفريق',
-          render: (row) => <span className="strong">{row.name}</span>,
+          render: (row) => <NamePair row={row} />,
         },
         {
           key: 'league',
           header: 'الدوري',
-          render: (row) => row.league?.name ?? '—',
+          render: (row) => (row.league ? arabicName(row.league) : '—'),
         },
         {
           key: 'external',
@@ -466,16 +504,33 @@ function TeamsTab() {
             ),
         },
       ]}
-      blank={() => ({ name: '', leagueId: leagueId || leagueOptions[0]?.value || '', logo: '' })}
+      blank={() => ({
+        name: '',
+        nameAr: '',
+        leagueId: leagueId || leagueOptions[0]?.value || '',
+        logo: null,
+        logoUrl: '',
+      })}
       toInput={(row) => ({
         name: row.name,
+        nameAr: row.nameAr ?? '',
         leagueId: row.leagueId,
-        logo: row.logoUrl ?? '',
+        // No file yet: an edit that does not touch the crest leaves the one on
+        // the server alone.
+        logo: null,
+        logoUrl: mediaUrl(row.logoUrl),
       })}
       validate={(draft) => (!draft.name.trim() ? 'اسم الفريق مطلوب' : null)}
       form={(draft, set) => (
         <>
-          <Field label="اسم الفريق">
+          <Field label="اسم الفريق بالعربي" hint="هذا اللي يشوفه المشترك بالتطبيق">
+            <TextInput
+              value={draft.nameAr ?? ''}
+              onChange={(next) => set('nameAr', next)}
+              placeholder={draft.name}
+            />
+          </Field>
+          <Field label="اسم المزوّد" hint="إنكليزي، تجي بالمزامنة وتنكتب فوقها بكل مزامنة">
             <TextInput value={draft.name} onChange={(next) => set('name', next)} />
           </Field>
           <Field label="الدوري">
@@ -485,14 +540,13 @@ function TeamsTab() {
               options={leagueOptions}
             />
           </Field>
-          <Field label="رابط الشعار" className="span-2">
-            <TextInput
-              type="url"
-              value={draft.logo ?? ''}
-              onChange={(next) => set('logo', next)}
-              placeholder="https://…"
-            />
-          </Field>
+          <ImagePicker
+            label="شعار الفريق"
+            className="span-2"
+            file={draft.logo}
+            currentUrl={draft.logoUrl}
+            onPick={(next) => set('logo', next)}
+          />
         </>
       )}
     >

@@ -18,6 +18,7 @@ import {
 import { ChevronLeft, ChevronRight, Inbox, Search, X } from 'lucide-react';
 import { MAX_PAGE_SIZE } from '@/data/http/client';
 import { cx } from '@/lib/utils';
+import { mediaUrl } from '@/lib/media';
 
 // ------------------------------------------------------------------ card ---
 
@@ -790,11 +791,23 @@ export function TeamCrest({
   // inherit the previous one's failure.
   useEffect(() => setBroken(false), [logoUrl]);
 
-  if (logoUrl && !broken) {
+  /*
+   * Resolved here rather than at each call site.
+   *
+   * Most crests are absolute URLs on the fixtures provider's host and pass
+   * through untouched, but one uploaded from this console is stored the way
+   * every other upload is — a path relative to the API's origin — and an
+   * `<img>` on the console's own domain would ask the wrong server for it.
+   * Doing it inside the crest is what keeps the two kinds indistinguishable to
+   * everything that renders one.
+   */
+  const src = mediaUrl(logoUrl);
+
+  if (src && !broken) {
     return (
       <img
         className="crest-img"
-        src={logoUrl}
+        src={src}
         alt=""
         title={name}
         loading="lazy"

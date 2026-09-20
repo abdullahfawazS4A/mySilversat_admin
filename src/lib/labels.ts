@@ -35,6 +35,32 @@ export const BATCH_STATUS: Record<BatchStatus, { label: string; tone: Tone }> = 
 };
 
 /**
+ * The name a league or a club is shown under.
+ *
+ * Both are mirrored from API-Football, which writes them in English, and both
+ * carry an optional `nameAr` the console authors. These two functions are the
+ * only place that decides between them, so a row named in Arabic reads the same
+ * in a table, a picker, a fixture line and a toast — and a row that has no
+ * Arabic name yet falls back to the provider's spelling instead of going blank.
+ *
+ * The trim matters: an operator who clears the field leaves `""` behind on the
+ * way to `null`, and an empty string is not a name.
+ */
+export function arabicName(row: { name: string; nameAr?: string | null }): string {
+  return row.nameAr?.trim() || row.name;
+}
+
+/**
+ * The same for a club, and forgiving of a missing one.
+ *
+ * Fixture rows reach for `match.homeTeam` which may not have been joined in, so
+ * the dash every one of those call sites used to write itself lives here.
+ */
+export function teamName(team: { name: string; nameAr?: string | null } | null | undefined): string {
+  return team ? arabicName(team) : '—';
+}
+
+/**
  * How a league is named in a picker.
  *
  * The feed mirrors 1,237 leagues and 291 of them share a name with another —
@@ -43,9 +69,14 @@ export const BATCH_STATUS: Record<BatchStatus, { label: string; tone: Tone }> = 
  * of bare names is therefore not a list the operator can choose from at all,
  * so the country comes along with the name wherever one is offered.
  */
-export function leagueLabel(league: { name: string; country?: { name: string } | null }): string {
+export function leagueLabel(league: {
+  name: string;
+  nameAr?: string | null;
+  country?: { name: string } | null;
+}): string {
   const country = league.country?.name;
-  return country ? `${league.name} — ${country}` : league.name;
+  const name = arabicName(league);
+  return country ? `${name} — ${country}` : name;
 }
 
 export const MATCH_STATUS: Record<MatchStatus, { label: string; tone: Tone }> = {

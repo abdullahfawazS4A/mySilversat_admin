@@ -3,9 +3,13 @@
  *
  * All three are mirrored from API-Football and carry the provider's
  * `externalId`. The console's own decisions on top of the feed are
- * `isOpenForPrediction` / `predictionClosesAt` and a manual score fix; both are
- * ordinary PATCHes, spelled out here so a screen never has to know which field
- * name the prediction switch maps to.
+ * `isOpenForPrediction` / `predictionClosesAt`, a manual score fix, and the
+ * Arabic name of a league or a club; all are ordinary PATCHes, spelled out here
+ * so a screen never has to know which field name the prediction switch maps to.
+ *
+ * `nameAr` is why the text searches here match on two names per row: the tables
+ * show the Arabic one, the feed only ever sends the English one, and both are
+ * things an operator will type.
  *
  * A correction has to land before scoring runs: `/predictions/score/match/{id}`
  * pays out on whatever `homeScore`/`awayScore` say at the moment it is called.
@@ -26,12 +30,30 @@ import type {
 } from '../types';
 import { DEFAULT_PAGE_SIZE, HttpCrudRepository, clean, localPage, toPage } from './crud';
 
+/**
+ * An Arabic name on its way to the API.
+ *
+ * The forms bind their text box to `''` when a row has no override, so a saved
+ * draft carries an empty string where the API wants `null` — and the two are
+ * not the same answer: `null` drops the override and puts the app back on the
+ * provider's spelling, `''` is stored as the name and leaves a blank where a
+ * league used to be. Normalised here rather than in the dialogs so it holds for
+ * every caller, the way the paging translation does.
+ *
+ * A patch that never mentions `nameAr` is left alone — adding the key would
+ * turn "rename this league" into "rename it and wipe its Arabic name".
+ */
+function withNameAr<T extends { nameAr?: string | null }>(input: T): T {
+  if (!('nameAr' in input)) return input;
+  return { ...input, nameAr: input.nameAr?.trim() || null };
+}
+
 class HttpLeaguesRepository
   extends HttpCrudRepository<League, LeagueInput, Partial<LeagueInput>, LeagueFilter>
   implements LeaguesRepository
 {
   constructor() {
-    super('/leagues', (row) => `${row.name} ${row.country?.name ?? ''}`);
+    super('/leagues', (row) => `${row.name} ${row.nameAr ?? ''} ${row.country?.name ?? ''}`);
   }
 
   /** Only `countryId` reaches the API; `isActive` is applied over the rows. */
@@ -55,7 +77,11 @@ class HttpLeaguesRepository
     const rows = (await fetchAll<League>('/leagues', this.filterQuery(rest))).filter(
       (row) => row.isActive === isActive,
     );
-    return localPage(rows, rest, (row) => `${row.name} ${row.country?.name ?? ''}`);
+    return localPage(
+      rows,
+      rest,
+      (row) => `${row.name} ${row.nameAr ?? ''} ${row.country?.name ?? ''}`,
+    );
   }
 
   async all(filter?: LeagueFilter): Promise<League[]> {
@@ -63,6 +89,14 @@ class HttpLeaguesRepository
     return filter?.isActive === undefined
       ? rows
       : rows.filter((row) => row.isActive === filter.isActive);
+  }
+
+  create(input: LeagueInput): Promise<League> {
+    return super.create(withNameAr(input));
+  }
+
+  update(id: Id, input: Partial<LeagueInput>): Promise<League> {
+    return super.update(id, withNameAr(input));
   }
 
   /** Shows a league in the app, or hides it and every fixture under it. */
@@ -85,6 +119,18 @@ class HttpLeaguesRepository
   }
 }
 
+/**
+ * Clubs, saved as multipart rather than JSON.
+ *
+ * `/teams` takes the crest as a file on the request that saves the club — its
+ * `logo` is a binary part, exactly like the banner on `/ads` — and there is no
+ * field anywhere for a crest URL. The console used to send a link in that field
+ * and there was nothing on the API to receive it.
+ *
+ * The form is sent even when no file was picked, because the route is multipart
+ * whether or not a crest is on the request; the parts it does carry are the
+ * ordinary text ones.
+ */
 class HttpTeamsRepository extends HttpCrudRepository<
   Team,
   TeamInput,
@@ -92,7 +138,40 @@ class HttpTeamsRepository extends HttpCrudRepository<
   { leagueId?: Id }
 > {
   constructor() {
-    super('/teams', (row) => `${row.name} ${row.league?.name ?? ''}`);
+    super('/teams', (row) => `${row.name} ${row.nameAr ?? ''} ${row.league?.name ?? ''}`);
+  }
+
+  /**
+   * The draft as multipart.
+   *
+   * Every field crosses as text, which is all a multipart part can be. An empty
+   * part is what clears `nameAr`, the same convention the banner form relies on
+   * — measured there, taken on trust here.
+   *
+   * `logoUrl` is left out on purpose: it is the form's copy of the crest
+   * already stored, and there is nothing on the API to send it to.
+   */
+  private static form(input: Partial<TeamInput>): FormData {
+    const form = new FormData();
+    const put = (key: string, value: string | null | undefined) => {
+      // Absent means "not part of this edit"; null means "clear it".
+      if (value === undefined) return;
+      form.append(key, value ?? '');
+    };
+
+    put('name', input.name);
+    put('nameAr', input.nameAr);
+    put('leagueId', input.leagueId);
+    if (input.logo) form.append('logo', input.logo, input.logo.name);
+    return form;
+  }
+
+  create(input: TeamInput): Promise<Team> {
+    return api.post<Team>('/teams', HttpTeamsRepository.form(withNameAr(input)));
+  }
+
+  update(id: Id, input: Partial<TeamInput>): Promise<Team> {
+    return api.patch<Team>(`/teams/${id}`, HttpTeamsRepository.form(withNameAr(input)));
   }
 }
 
@@ -178,6 +257,27 @@ export function isNamedMatch(match: Match | null | undefined): match is Match {
 }
 
 /**
+ * What a fixture is searched by.
+ *
+ * Both spellings of every name, because the table shows the Arabic one and the
+ * feed only knows the English one: an operator who typed "الزوراء" and an
+ * operator who pasted "Al-Zawraa" are looking for the same row, and a search
+ * over one of the two answers nothing for half of them.
+ */
+function matchSearchText(row: Match): string {
+  return [
+    row.homeTeam?.name,
+    row.homeTeam?.nameAr,
+    row.awayTeam?.name,
+    row.awayTeam?.nameAr,
+    row.league?.name,
+    row.league?.nameAr,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
  * Fixtures fetched at once when resolving ids.
  *
  * Well under the fan-out the boundary search uses, because this runs on screens
@@ -199,10 +299,7 @@ class HttpMatchesCollection extends HttpCrudRepository<
   MatchFilter
 > {
   constructor() {
-    super(
-      '/matches',
-      (row) => `${row.homeTeam?.name ?? ''} ${row.awayTeam?.name ?? ''} ${row.league?.name ?? ''}`,
-    );
+    super('/matches', matchSearchText);
   }
 
   /**
@@ -394,9 +491,7 @@ class HttpMatchesCollection extends HttpCrudRepository<
             isOpenForPrediction === undefined || row.isOpenForPrediction === isOpenForPrediction,
         )
         .sort(byTime);
-      return localPage(filtered, { search, page, pageSize }, (row) =>
-        `${row.homeTeam?.name ?? ''} ${row.awayTeam?.name ?? ''} ${row.league?.name ?? ''}`,
-      );
+      return localPage(filtered, { search, page, pageSize }, matchSearchText);
     }
 
     /*
@@ -489,9 +584,7 @@ class HttpMatchesCollection extends HttpCrudRepository<
       const rows = (await this.windowRows(filter, window, range)).filter(
         (row) => isOpenForPrediction === undefined || row.isOpenForPrediction === isOpenForPrediction,
       );
-      return localPage(rows, { search, page, pageSize }, (row) =>
-        `${row.homeTeam?.name ?? ''} ${row.awayTeam?.name ?? ''} ${row.league?.name ?? ''}`,
-      );
+      return localPage(rows, { search, page, pageSize }, matchSearchText);
     }
 
     const size = clampPageSize(pageSize ?? DEFAULT_PAGE_SIZE);

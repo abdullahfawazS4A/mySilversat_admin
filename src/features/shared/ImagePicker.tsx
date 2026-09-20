@@ -3,10 +3,11 @@
  *
  * This used to upload the file to `/uploads` and hand back a URL, which is the
  * shape you want when images are their own resource. They are not here:
- * `/uploads` does not exist on this API — it answers `405` — and `/ads` takes
- * the picture as a file on the request that saves the banner, refusing a link
- * outright. So the picker's job is smaller than it was. It chooses a file,
- * checks it, shows it, and hands it over; whoever owns the form sends it.
+ * `/uploads` does not exist on this API — it answers `405` — and every route
+ * that stores a picture takes it as a file on the request that saves the row:
+ * a banner on `/ads`, a club crest on `/teams`. So the picker's job is smaller
+ * than it was. It chooses a file, checks it, shows it, and hands it over;
+ * whoever owns the form sends it.
  *
  * That also removes the URL box that used to sit behind a toggle. It was the
  * way past a failed upload, and there is no upload left to fail — a pasted
@@ -26,7 +27,7 @@ import { Button, Field } from '@/components/ui';
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 /**
- * The size an image stops being a banner and starts being a problem.
+ * The size an image stops being a picture and starts being a problem.
  *
  * Nothing server-side is known to enforce this, which is the reason to enforce
  * it here: a 20MB photo straight off a phone uploads slowly, then loads slowly
@@ -124,9 +125,10 @@ export function ImagePicker({
               تغيير الصورة
             </Button>
             {/*
-              * Undo, not delete. A banner cannot exist without a picture — the
-              * API requires one — so the only thing there is to take back is a
-              * pick that has not been saved yet.
+              * Undo, not delete. Taking a stored picture away is not something
+              * any of these routes offers — the file part is how one is set,
+              * and there is no documented way to spell "remove it" — so the
+              * only thing there is to take back is a pick not yet saved.
               */}
             {file ? (
               <Button

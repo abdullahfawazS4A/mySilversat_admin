@@ -32,7 +32,13 @@ import { useMatchJoin } from '../shared/useMatchJoin';
 import { useRepos } from '@/app/RepositoryContext';
 import { useToast } from '@/app/ToastContext';
 import { formatDateAr, formatDateTimeAr, formatIqd, formatNumber, formatPhone } from '@/lib/format';
-import { CODE_STATUS, MATCH_STATUS, PREDICTION_OUTCOME } from '@/lib/labels';
+import {
+  CODE_STATUS,
+  MATCH_STATUS,
+  PREDICTION_OUTCOME,
+  arabicName,
+  teamName,
+} from '@/lib/labels';
 import { outcomeOf, toAmount, type Code, type Device, type Prediction } from '@/types';
 import type { AppUserDetail } from '@/data/repositories/types';
 
@@ -286,9 +292,11 @@ function PredictionsTable({ rows }: { rows: Prediction[] }) {
         return (
           <div className="col">
             <span className="strong">
-              {match.homeTeam?.name ?? '—'} × {match.awayTeam?.name ?? '—'}
+              {teamName(match.homeTeam)} × {teamName(match.awayTeam)}
             </span>
-            <span className="fs-tiny dim">{match.league?.name ?? ''}</span>
+            <span className="fs-tiny dim">
+              {match.league ? arabicName(match.league) : ''}
+            </span>
           </div>
         );
       },

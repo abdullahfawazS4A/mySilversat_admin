@@ -320,11 +320,22 @@ export interface Device extends Entity {
  * the matching row rather than duplicating it.
  *
  * What the console owns on top of the feed is the prediction decision —
- * `isOpenForPrediction` and `predictionClosesAt` — and a manual score fix.
+ * `isOpenForPrediction` and `predictionClosesAt` — a manual score fix, and the
+ * Arabic name.
+ *
+ * `nameAr` is that last one. The provider writes every competition and club in
+ * English ("Iraq Stars League", "Al-Zawraa"), and the app is Arabic, so the
+ * name a subscriber reads has to be authored somewhere; it is an override and
+ * not a translation, which is why it is nullable and why a row without one
+ * falls back to the feed's own spelling rather than to an empty cell. Read it
+ * through `arabicName`/`teamName` so the fallback is decided in one place.
  */
 export interface League extends Entity {
   externalId: number | null;
+  /** The provider's name. Overwritten by every sync. */
   name: string;
+  /** Arabic display name, authored here. Null = show `name`. */
+  nameAr: string | null;
   countryId: Id;
   country?: Country;
   order: number;
@@ -334,7 +345,10 @@ export interface League extends Entity {
 
 export interface Team extends Entity {
   externalId: number | null;
+  /** The provider's name. Overwritten by every sync. */
   name: string;
+  /** Arabic display name, authored here. Null = show `name`. */
+  nameAr: string | null;
   logoUrl: string | null;
   leagueId: Id;
   league?: League;

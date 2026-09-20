@@ -311,6 +311,8 @@ export type DevicesRepository = CrudRepository<Device, DeviceInput, Partial<Devi
 
 export interface LeagueInput {
   name: string;
+  /** Arabic display name. `null` clears the override and shows `name` again. */
+  nameAr?: string | null;
   countryId: Id;
   order?: number;
   isActive?: boolean;
@@ -348,8 +350,30 @@ export type LeaguesRepository = CrudRepository<
 
 export interface TeamInput {
   name: string;
+  /** Arabic display name. `null` clears the override and shows `name` again. */
+  nameAr?: string | null;
   leagueId: Id;
-  logo?: string;
+  /**
+   * The crest itself, not a link to it.
+   *
+   * `/teams` takes the file on the same request that saves the club — the
+   * route is multipart and its `logo` is a binary part, the same shape `/ads`
+   * uses for a banner. The console used to send a URL string here, which the
+   * server had nowhere to put.
+   *
+   * Null means "no crest on this request", which on an edit leaves the one
+   * already stored alone. Unlike a banner, a club may genuinely have none: the
+   * provider ships most crests, and a hand-added club can go without.
+   */
+  logo: File | null;
+  /**
+   * The crest already stored, for the form to show while editing.
+   *
+   * Display only, and never sent. It rides in the draft rather than being read
+   * off the row because the form and the validator are only ever handed the
+   * draft.
+   */
+  logoUrl: string;
 }
 
 export interface MatchInput {

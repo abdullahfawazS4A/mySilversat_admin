@@ -31,7 +31,7 @@ import {
 } from '@/components/ui';
 import { useMatchJoin } from '../shared/useMatchJoin';
 import { formatDateTimeAr, formatPhone } from '@/lib/format';
-import { PREDICTION_OUTCOME } from '@/lib/labels';
+import { PREDICTION_OUTCOME, arabicName, teamName } from '@/lib/labels';
 import { outcomeOf, SCORING, type Id, type Prediction, type PredictionOutcome } from '@/types';
 
 type OutcomeFilter = 'all' | PredictionOutcome;
@@ -135,10 +135,12 @@ export function PredictionsPage() {
         return (
           <div className="col" style={{ lineHeight: 1.35 }}>
             <span className="fs-body">
-              {match.homeTeam?.name ?? '—'} <span className="dim">ضد</span>{' '}
-              {match.awayTeam?.name ?? '—'}
+              {teamName(match.homeTeam)} <span className="dim">ضد</span>{' '}
+              {teamName(match.awayTeam)}
             </span>
-            <span className="fs-tiny dim">{match.league?.name ?? ''}</span>
+            <span className="fs-tiny dim">
+              {match.league ? arabicName(match.league) : ''}
+            </span>
           </div>
         );
       },
@@ -254,7 +256,7 @@ export function PredictionsPage() {
                 { value: 'all' as const, label: 'كل المباريات' },
                 ...(matches.data ?? []).map((match) => ({
                   value: match.id,
-                  label: `${match.homeTeam?.name ?? '—'} × ${match.awayTeam?.name ?? '—'}`,
+                  label: `${teamName(match.homeTeam)} × ${teamName(match.awayTeam)}`,
                 })),
               ]}
             />

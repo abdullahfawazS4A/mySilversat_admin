@@ -21,6 +21,7 @@ import { useToast } from '@/app/ToastContext';
 import { Button, Field, Modal, Notice, TeamCrest, TextInput } from '@/components/ui';
 import type { Match } from '@/types';
 import { formatDateTimeAr } from '@/lib/format';
+import { arabicName, teamName } from '@/lib/labels';
 
 /** A crest seed from the team id, so the same team always gets the same look. */
 function crestSeed(id: string): number {
@@ -138,7 +139,9 @@ export function ScoreOverrideDialog({
         {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
 
         <div className="col" style={{ gap: 2 }}>
-          <span className="fs-small muted">{match.league?.name ?? ''}</span>
+          <span className="fs-small muted">
+            {match.league ? arabicName(match.league) : ''}
+          </span>
           <span className="fs-small dim num">{formatDateTimeAr(match.matchAt)}</span>
         </div>
 
@@ -149,7 +152,7 @@ export function ScoreOverrideDialog({
 
         <div className="row" style={{ gap: 'var(--sp-4)' }}>
           <Stepper
-            label={match.homeTeam?.name ?? '—'}
+            label={teamName(match.homeTeam)}
             seed={crestSeed(match.homeTeamId)}
             logoUrl={match.homeTeam?.logoUrl}
             value={home}
@@ -159,7 +162,7 @@ export function ScoreOverrideDialog({
             –
           </span>
           <Stepper
-            label={match.awayTeam?.name ?? '—'}
+            label={teamName(match.awayTeam)}
             seed={crestSeed(match.awayTeamId)}
             logoUrl={match.awayTeam?.logoUrl}
             value={away}

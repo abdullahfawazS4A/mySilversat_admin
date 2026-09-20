@@ -15,7 +15,7 @@ import { AsyncBlock, Button, Modal, Pill, SearchInput } from '@/components/ui';
 import { DataTable, type Column } from '@/components/page';
 import { SentimentMeter } from '@/components/charts';
 import { outcomeOf, type Match, type Prediction } from '@/types';
-import { PREDICTION_OUTCOME } from '@/lib/labels';
+import { PREDICTION_OUTCOME, teamName } from '@/lib/labels';
 import { downloadCsv } from '@/lib/utils';
 import { collectAll } from '@/lib/paging';
 import { formatDateTimeAr, formatPhone } from '@/lib/format';
@@ -122,8 +122,8 @@ export function MatchPredictionsDialog({ match, onClose }: { match: Match; onClo
     },
   ];
 
-  const home = match.homeTeam?.name ?? '—';
-  const away = match.awayTeam?.name ?? '—';
+  const home = teamName(match.homeTeam);
+  const away = teamName(match.awayTeam);
 
   return (
     <Modal
