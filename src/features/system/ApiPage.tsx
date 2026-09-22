@@ -31,13 +31,14 @@ import {
   Modal,
   Notice,
   Pill,
+  Select,
   Switch,
   Tabs,
   TextInput,
 } from '@/components/ui';
 import { StatTile } from '@/components/charts';
 import { formatNumber } from '@/lib/format';
-import type { Id, RegionCheckResult, SilversatRegion } from '@/types';
+import type { Id, Province, RegionCheckResult, SilversatRegion } from '@/types';
 import type { RegionInput } from '@/data/repositories/types';
 
 export function ApiPage() {
@@ -67,6 +68,11 @@ function RegionsTab() {
   const { toast } = useToast();
 
   const regions = useAsync(() => repos.regions.all(), []);
+  // Only to name the binding a server carries. The picker in the dialog and
+  // the row on the card both read from this one list.
+  const provinces = useAsync(() => repos.geo.provinces.all(), []);
+  const provinceName = (id: Id | null | undefined) =>
+    id ? ((provinces.data ?? []).find((row) => row.id === id)?.name ?? id) : null;
   const [health, setHealth] = useState<Record<Id, RegionCheckResult>>({});
   const [checking, setChecking] = useState<Id | 'all' | null>(null);
   const [editing, setEditing] = useState<{ region: SilversatRegion | null } | null>(null);
@@ -164,6 +170,12 @@ function RegionsTab() {
                           ['المستخدم', region.userId ?? '—'],
                           ['معرّف الجهاز', region.appDeviceId ?? '—'],
                           [
+                            'المحافظة',
+                            provinceName(region.provinceId) ?? (
+                              <span className="dim">بلا ربط</span>
+                            ),
+                          ],
+                          [
                             'آخر فحص',
                             result ? (
                               <span className="row row-gap-2">
@@ -213,6 +225,7 @@ function RegionsTab() {
       {editing ? (
         <RegionDialog
           region={editing.region}
+          provinces={provinces.data ?? []}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -230,13 +243,20 @@ function RegionsTab() {
  * The password field starts empty even when editing, and an empty password on
  * an edit is simply not sent — so saving a name change never blanks the
  * credential that a whole province's activations run through.
+ *
+ * The province picker is the API's own binding, and it decides nothing here:
+ * activations still follow the server a *product* names. It is editable
+ * because the field exists upstream and a server whose binding nobody can see
+ * or fix is worse than one that is merely advisory.
  */
 function RegionDialog({
   region,
+  provinces,
   onClose,
   onSaved,
 }: {
   region: SilversatRegion | null;
+  provinces: Province[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -253,6 +273,7 @@ function RegionDialog({
     password: '',
     appDeviceId: region?.appDeviceId ?? '',
     isActive: region?.isActive ?? true,
+    provinceId: region?.provinceId ?? null,
   });
   const set = <K extends keyof RegionInput>(key: K, value: RegionInput[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -326,6 +347,19 @@ function RegionDialog({
           <TextInput
             value={draft.appDeviceId ?? ''}
             onChange={(next) => set('appDeviceId', next)}
+          />
+        </Field>
+        <Field
+          label="المحافظة"
+          hint="ربط الـ API نفسه. التفعيل يمشي على سيرفر المنتج مو على هذا."
+        >
+          <Select
+            value={draft.provinceId ?? ''}
+            onChange={(next) => set('provinceId', next || null)}
+            options={[
+              { value: '', label: 'بلا ربط' },
+              ...provinces.map((row) => ({ value: row.id, label: row.name })),
+            ]}
           />
         </Field>
         <Field label="التفعيل">

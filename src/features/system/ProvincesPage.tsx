@@ -68,11 +68,30 @@ export function ProvincesPage() {
 }
 
 /** How a province's server binding reads once its products are counted. */
-type Binding = 'ok' | 'none' | 'split';
+type Binding = 'ok' | 'none' | 'split' | 'mismatch';
+
+/**
+ * The two bindings, compared.
+ *
+ * A province's server is decided by its products — that is what a recharge
+ * follows. The API also lets a *server* name a province, and nothing keeps the
+ * two in step. A claim that disagrees is not a second opinion to average: it
+ * is a sign that somebody bound the server expecting activations to follow,
+ * and they will not. So it is reported, and the product side still wins.
+ *
+ * An absent claim is not a disagreement — most servers name no province at all.
+ */
+function claimDisagrees(row: ProvinceOverview): boolean {
+  if (row.claimedRegions.length === 0) return false;
+  const routed = new Set(row.regions.map((region) => region.id));
+  if (routed.size !== row.claimedRegions.length) return true;
+  return row.claimedRegions.some((region) => !routed.has(region.id));
+}
 
 function bindingOf(row: ProvinceOverview | undefined): Binding {
   if (!row || row.regions.length === 0) return 'none';
-  return row.regions.length > 1 ? 'split' : 'ok';
+  if (row.regions.length > 1) return 'split';
+  return claimDisagrees(row) ? 'mismatch' : 'ok';
 }
 
 // ------------------------------------------------------------- provinces ---
@@ -91,7 +110,14 @@ function ProvincesTab() {
   );
 
   const [opened, setOpened] = useState<Province | null>(null);
-  const faults = (overview.data ?? []).filter((row) => bindingOf(row) !== 'ok');
+  // Counted apart, because they are different sentences: a broken binding
+  // means the cards will not activate, a disagreeing claim means they will —
+  // just not on the server somebody bound expecting them to.
+  const faults = (overview.data ?? []).filter((row) => {
+    const binding = bindingOf(row);
+    return binding === 'none' || binding === 'split';
+  });
+  const mismatches = (overview.data ?? []).filter((row) => bindingOf(row) === 'mismatch');
 
   return (
     <>
@@ -210,6 +236,13 @@ function ProvincesTab() {
             تتفعّل.
           </Notice>
         ) : null}
+        {mismatches.length > 0 ? (
+          <Notice tone="warning">
+            <span className="strong num">{mismatches.length}</span> محافظة السيرفر المربوط بيها من
+            الـ API يختلف عن سيرفر منتجاتها. التفعيل يمشي على سيرفر المنتج — صلّح الربط من سيرفرات
+            سلفرسات أو من المنتجات حتى الاثنين يتفقون.
+          </Notice>
+        ) : null}
       </CrudScreen>
 
       {opened ? (
@@ -240,6 +273,7 @@ function BindingCell({ overview }: { overview: ProvinceOverview | undefined }) {
     <div className="row row-gap-2">
       <span className="fs-body">{region.name}</span>
       {region.isActive ? null : <Pill tone="muted">متوقف</Pill>}
+      {binding === 'mismatch' ? <Pill tone="warning">ربط الـ API يختلف</Pill> : null}
     </div>
   );
 }
@@ -310,7 +344,7 @@ function ProvinceDetailDialog({
       }
     >
       <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {binding !== 'ok' ? (
+        {binding === 'none' || binding === 'split' ? (
           <Notice tone="danger">
             {binding === 'split' ? (
               <>
@@ -327,6 +361,17 @@ function ProvinceDetailDialog({
                   : ' — منتجاتها ما تأشّر على سيرفر، فكارتاتها ما راح تتفعّل.'}
               </>
             )}
+          </Notice>
+        ) : null}
+
+        {binding === 'mismatch' ? (
+          <Notice tone="warning">
+            الـ API رابط هذي المحافظة بـ{' '}
+            <span className="strong">
+              {overview?.claimedRegions.map((row) => row.name).join('، ')}
+            </span>
+            ، بينما منتجاتها تفعّل على <span className="strong">{region?.name}</span>. التفعيل يمشي
+            على سيرفر المنتج — الربط الثاني ما يأثر، بس واحد من الاثنين غلط.
           </Notice>
         ) : null}
 

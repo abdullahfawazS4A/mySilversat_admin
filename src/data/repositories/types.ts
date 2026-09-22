@@ -147,6 +147,14 @@ export interface RegionInput {
   password: string;
   appDeviceId?: string;
   isActive?: boolean;
+  /**
+   * The province the API ties this server to.
+   *
+   * Explicitly `null` rather than absent when it is tied to none, because an
+   * edit that drops the key leaves the old binding standing — clearing one has
+   * to be a value the request actually carries.
+   */
+  provinceId?: Id | null;
 }
 
 export interface RegionsRepository

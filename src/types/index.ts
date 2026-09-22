@@ -97,11 +97,19 @@ export interface Province extends Entity {
  * province binds to exactly one, so more than one entry here is the shape a
  * **misconfiguration** takes, and the screen can only warn about what the type
  * lets it represent.
+ *
+ * `claimedRegions` is the *other* binding — the API's own `provinceId` on a
+ * server. It is carried separately rather than merged into `regions` because
+ * the two answer different questions: `regions` is where this province's
+ * activations actually go, and a claim that disagrees with it is a fault to
+ * show, not a server to route to.
  */
 export interface ProvinceOverview {
   province: Province;
   /** Servers this province's products activate on. More than one is a fault. */
   regions: SilversatRegion[];
+  /** Servers whose own `provinceId` names this province. */
+  claimedRegions: SilversatRegion[];
   /** Products whose activation is not routed to SilverSat at all. */
   unroutedProducts: number;
   productCount: number;
@@ -127,6 +135,11 @@ export interface ProvinceOverview {
  * `authKey`, `userId` and `password` come back only on the admin list; the
  * agent-facing list returns id/name/isActive alone, which is why they are
  * optional here.
+ *
+ * `provinceId` is the API's own province binding, and it is *not* the one this
+ * console resolves activations through — a product names its server, and that
+ * is what `recharge` obeys. Two bindings that can disagree is a fault worth
+ * seeing, so the field is carried here to be shown rather than to be used.
  */
 export interface SilversatRegion extends Entity {
   name: string;
@@ -136,6 +149,8 @@ export interface SilversatRegion extends Entity {
   password?: string;
   appDeviceId?: string;
   isActive: boolean;
+  /** The province the API ties this server to. Null when it is tied to none. */
+  provinceId?: Id | null;
 }
 
 /** Outcome of a vendor `GetToken` health check. */

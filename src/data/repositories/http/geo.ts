@@ -90,6 +90,16 @@ export class HttpGeoRepository implements GeoRepository {
 
     const regionById = new Map(regions.map((row) => [row.id, row]));
 
+    // The API's own binding, indexed the other way round: a server names its
+    // province, so the province's claims have to be gathered rather than read.
+    const claimsByProvince = new Map<Id, SilversatRegion[]>();
+    for (const region of regions) {
+      if (!region.provinceId) continue;
+      const list = claimsByProvince.get(region.provinceId);
+      if (list) list.push(region);
+      else claimsByProvince.set(region.provinceId, [region]);
+    }
+
     // Counted per category first, because the low-stock rule is a category's
     // own threshold — a province total cannot answer "which shelf is empty".
     const availableByCategory = new Map<Id, number>();
@@ -131,6 +141,7 @@ export class HttpGeoRepository implements GeoRepository {
           .regionIdsOf(province.id)
           .map((id) => regionById.get(id))
           .filter((row): row is SilversatRegion => Boolean(row)),
+        claimedRegions: claimsByProvince.get(province.id) ?? [],
         unroutedProducts: products.filter(
           (product) => product.activationApi !== 'silvers' || !product.silversatRegionId,
         ).length,
