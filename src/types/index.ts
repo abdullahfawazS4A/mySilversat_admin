@@ -194,10 +194,6 @@ export interface Category extends Entity {
   costPrice: Amount;
   /** List price in the app. */
   unitPrice: Amount;
-  /** Price for the main tier of resellers. */
-  mainPrice: Amount;
-  /** Price for the sub tier of resellers. */
-  subPrice: Amount;
   /** True when a code also carries a second value (e.g. a PIN). */
   hasSecondaryCode: boolean;
   /** Available codes at or below this raise a low-stock warning. Null = off. */

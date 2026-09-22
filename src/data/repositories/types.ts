@@ -182,13 +182,8 @@ export interface CategoryInput {
   nameKu: string;
   costPrice: number;
   unitPrice: number;
-  mainPrice: number;
-  subPrice: number;
-  hasSecondaryCode?: boolean;
   lowStockThreshold?: number | null;
-  isDisabled?: boolean;
   isDisplay?: boolean;
-  sortOrder?: number;
   image?: string;
 }
 

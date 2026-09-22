@@ -2,7 +2,7 @@
  * Products and categories — the price list.
  *
  * A product is one service in one province; a category is a purchasable
- * variant of it carrying four prices (cost, list, main-tier, sub-tier). Codes
+ * variant of it carrying what it costs us and what the app sells it for. Codes
  * hang off categories, which is what makes stock provincial without any
  * province column on the code itself. The product also names the SilverSat
  * server its codes activate against, so these two tables are the only place

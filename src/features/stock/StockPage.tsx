@@ -612,16 +612,6 @@ function CategoriesLevel({
       render: (row) => <span className="num dim">{formatIqd(toAmount(row.costPrice))}</span>,
     },
     {
-      key: 'agents',
-      header: 'رئيسي / فرعي',
-      numeric: true,
-      render: (row) => (
-        <span className="num">
-          {formatIqd(toAmount(row.mainPrice))} / {formatIqd(toAmount(row.subPrice))}
-        </span>
-      ),
-    },
-    {
       key: 'stock',
       header: 'المخزن',
       render: (row) => {

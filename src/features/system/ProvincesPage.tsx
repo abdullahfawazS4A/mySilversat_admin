@@ -497,16 +497,6 @@ function ProductPrices({ product, categories }: { product: Product; categories: 
       render: (row) => <span className="num strong">{formatIqd(toAmount(row.unitPrice))}</span>,
     },
     {
-      key: 'agents',
-      header: 'رئيسي / فرعي',
-      numeric: true,
-      render: (row) => (
-        <span className="num">
-          {formatIqd(toAmount(row.mainPrice))} / {formatIqd(toAmount(row.subPrice))}
-        </span>
-      ),
-    },
-    {
       key: 'state',
       header: 'الحالة',
       width: 96,
