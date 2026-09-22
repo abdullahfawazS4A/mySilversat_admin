@@ -249,10 +249,14 @@ const KEEP_HINT = 'محفوظة بالسيرفر — اتركها فارغة إ�
  * so renaming a server blanked the credentials a whole province activates
  * through, and the screen looked no different afterwards.
  *
- * The province picker is the API's own binding, and it decides nothing here:
- * activations still follow the server a *product* names. It is editable
- * because the field exists upstream and a server whose binding nobody can see
- * or fix is worse than one that is merely advisory.
+ * The province picker is what the mobile app resolves a receiver against:
+ * `POST /devices` sends no region, so the API looks for the server that names
+ * the user's province. Leaving it empty is not a blank field, it is that
+ * province's users being unable to add a device — which is invisible from the
+ * product side, where everything looks correctly routed.
+ *
+ * Activations are the other path and still follow the product's server. The
+ * two are meant to name the same one.
  */
 function RegionDialog({
   region,
@@ -372,7 +376,7 @@ function RegionDialog({
         </Field>
         <Field
           label="المحافظة"
-          hint="ربط الـ API نفسه. التفعيل يمشي على سيرفر المنتج مو على هذا."
+          hint="بيها يضيف مستخدمو التطبيق أجهزتهم — محافظة بلا سيرفر ما تكدر تضيف جهاز"
         >
           <Select
             value={draft.provinceId ?? ''}

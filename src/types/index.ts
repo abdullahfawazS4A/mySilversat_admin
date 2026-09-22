@@ -101,8 +101,9 @@ export interface Province extends Entity {
  * `claimedRegions` is the *other* binding — the API's own `provinceId` on a
  * server. It is carried separately rather than merged into `regions` because
  * the two answer different questions: `regions` is where this province's
- * activations actually go, and a claim that disagrees with it is a fault to
- * show, not a server to route to.
+ * activations go, and `claimedRegions` is the server the mobile app is handed
+ * when someone in this province registers a receiver. An empty list is not a
+ * missing detail; it is a province that cannot onboard at all.
  */
 export interface ProvinceOverview {
   province: Province;
@@ -136,10 +137,14 @@ export interface ProvinceOverview {
  * agent-facing list returns id/name/isActive alone, which is why they are
  * optional here.
  *
- * `provinceId` is the API's own province binding, and it is *not* the one this
- * console resolves activations through — a product names its server, and that
- * is what `recharge` obeys. Two bindings that can disagree is a fault worth
- * seeing, so the field is carried here to be shown rather than to be used.
+ * `provinceId` is the API's own province binding, and it runs a path of its
+ * own: `POST /devices` carries no region, so the API resolves one from the app
+ * user's province through this field. A province no server names cannot
+ * register a receiver in the mobile app, however well its products are routed.
+ *
+ * So it is not the binding `recharge` obeys — that is still the product's —
+ * and it is not decoration either. The two are separate paths that are
+ * supposed to agree.
  */
 export interface SilversatRegion extends Entity {
   name: string;

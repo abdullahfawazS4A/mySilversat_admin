@@ -14,9 +14,11 @@
  * "how is Ninawa set up" gets answered in one place instead of three screens.
  *
  * The one rule this screen exists to police: **a province binds to exactly one
- * server.** The API cannot enforce it — the binding lives on each product — so
- * a province whose products disagree, or whose products point nowhere, is a
- * fault only this screen can show.
+ * server, twice over.** The API enforces neither half. Routing lives on each
+ * product, the mobile app's answer lives on the server itself, and a province
+ * can satisfy one while failing the other — correctly routed products whose
+ * users cannot add a receiver, or the reverse. Both are faults only this
+ * screen can show, so it shows them apart rather than averaged into a verdict.
  */
 
 import { useMemo, useState } from 'react';
@@ -67,31 +69,39 @@ export function ProvincesPage() {
   );
 }
 
-/** How a province's server binding reads once its products are counted. */
-type Binding = 'ok' | 'none' | 'split' | 'mismatch';
-
 /**
- * The two bindings, compared.
+ * A province is bound to its server twice, and each binding runs one path.
  *
- * A province's server is decided by its products — that is what a recharge
- * follows. The API also lets a *server* name a province, and nothing keeps the
- * two in step. A claim that disagrees is not a second opinion to average: it
- * is a sign that somebody bound the server expecting activations to follow,
- * and they will not. So it is reported, and the product side still wins.
+ * **Routing** is the product's `silversatRegionId`. It is what a recharge, a
+ * code check and a subscription lookup follow, and the console has always
+ * shown it.
  *
- * An absent claim is not a disagreement — most servers name no province at all.
+ * **The claim** is the server's own `provinceId`, and it is not the decoration
+ * it looks like: `POST /devices` takes no region, so the API resolves one from
+ * the app user's province — through this field and nothing else. A province no
+ * server claims cannot register a receiver in the mobile app at all, however
+ * correctly its products are routed. That is a whole province locked out of
+ * onboarding, and it looks like nothing from the routing side.
+ *
+ * So both are reported, neither substitutes for the other, and the two are
+ * supposed to name the same server.
  */
-function claimDisagrees(row: ProvinceOverview): boolean {
-  if (row.claimedRegions.length === 0) return false;
-  const routed = new Set(row.regions.map((region) => region.id));
-  if (routed.size !== row.claimedRegions.length) return true;
-  return row.claimedRegions.some((region) => !routed.has(region.id));
+type Routing = 'ok' | 'none' | 'split';
+type Claim = 'ok' | 'none' | 'split' | 'mismatch';
+
+/** Where this province's activations go — the products' answer. */
+function routingOf(row: ProvinceOverview | undefined): Routing {
+  if (!row || row.regions.length === 0) return 'none';
+  return row.regions.length > 1 ? 'split' : 'ok';
 }
 
-function bindingOf(row: ProvinceOverview | undefined): Binding {
-  if (!row || row.regions.length === 0) return 'none';
-  if (row.regions.length > 1) return 'split';
-  return claimDisagrees(row) ? 'mismatch' : 'ok';
+/** Which server the API hands the mobile app for this province. */
+function claimOf(row: ProvinceOverview | undefined): Claim {
+  if (!row || row.claimedRegions.length === 0) return 'none';
+  if (row.claimedRegions.length > 1) return 'split';
+  // Disagreement is only meaningful once routing has settled on one server.
+  if (row.regions.length !== 1) return 'ok';
+  return row.claimedRegions[0].id === row.regions[0].id ? 'ok' : 'mismatch';
 }
 
 // ------------------------------------------------------------- provinces ---
@@ -113,11 +123,15 @@ function ProvincesTab() {
   // Counted apart, because they are different sentences: a broken binding
   // means the cards will not activate, a disagreeing claim means they will —
   // just not on the server somebody bound expecting them to.
-  const faults = (overview.data ?? []).filter((row) => {
-    const binding = bindingOf(row);
-    return binding === 'none' || binding === 'split';
+  const faults = (overview.data ?? []).filter((row) => routingOf(row) !== 'ok');
+  // Split by which path they break, because the two sentences are different:
+  // an unclaimed province cannot onboard a receiver at all, while a claimed
+  // one that names the wrong server sends the app somewhere it should not go.
+  const unclaimed = (overview.data ?? []).filter((row) => claimOf(row) === 'none');
+  const mismatches = (overview.data ?? []).filter((row) => {
+    const claim = claimOf(row);
+    return claim === 'mismatch' || claim === 'split';
   });
-  const mismatches = (overview.data ?? []).filter((row) => bindingOf(row) === 'mismatch');
 
   return (
     <>
@@ -236,11 +250,19 @@ function ProvincesTab() {
             تتفعّل.
           </Notice>
         ) : null}
+        {unclaimed.length > 0 ? (
+          <Notice tone="danger">
+            <span className="strong num">{unclaimed.length}</span> محافظة ماكو سيرفر مربوط بيها من
+            جهة السيرفر — يعني مستخدمي التطبيق بهذي المحافظات <span className="strong">ما يكدرون
+            يضيفون جهاز</span>، حتى لو منتجاتها مربوطة صح. صلّحها من سيرفرات سلفرسات ← تعديل السيرفر
+            ← المحافظة.
+          </Notice>
+        ) : null}
         {mismatches.length > 0 ? (
           <Notice tone="warning">
             <span className="strong num">{mismatches.length}</span> محافظة السيرفر المربوط بيها من
-            الـ API يختلف عن سيرفر منتجاتها. التفعيل يمشي على سيرفر المنتج — صلّح الربط من سيرفرات
-            سلفرسات أو من المنتجات حتى الاثنين يتفقون.
+            جهة السيرفر يختلف عن سيرفر منتجاتها. إضافة الأجهزة تروح لسيرفر والتفعيل لسيرفر ثاني —
+            لازم الاثنين نفس السيرفر.
           </Notice>
         ) : null}
       </CrudScreen>
@@ -259,13 +281,34 @@ function ProvincesTab() {
 /** The server binding as one cell: the server's name, or the fault instead. */
 function BindingCell({ overview }: { overview: ProvinceOverview | undefined }) {
   if (!overview) return <span className="dim">—</span>;
-  const binding = bindingOf(overview);
+  const routing = routingOf(overview);
+  const claim = claimOf(overview);
+  // Shown beside the routing answer rather than instead of it: the app path is
+  // broken independently of whether activations are routed correctly.
+  const claimPill =
+    claim === 'none' ? (
+      <Pill tone="danger">ما تضيف أجهزة</Pill>
+    ) : claim === 'mismatch' ? (
+      <Pill tone="warning">سيرفر التطبيق يختلف</Pill>
+    ) : claim === 'split' ? (
+      <Pill tone="warning">مربوطة بـ {overview.claimedRegions.length} سيرفرات</Pill>
+    ) : null;
 
-  if (binding === 'none') {
-    return <Pill tone="danger">{overview.productCount === 0 ? 'ماكو منتجات' : 'ماكو سيرفر'}</Pill>;
+  if (routing === 'none') {
+    return (
+      <div className="row row-gap-2">
+        <Pill tone="danger">{overview.productCount === 0 ? 'ماكو منتجات' : 'ماكو سيرفر'}</Pill>
+        {claimPill}
+      </div>
+    );
   }
-  if (binding === 'split') {
-    return <Pill tone="danger">موزّعة على {overview.regions.length} سيرفرات</Pill>;
+  if (routing === 'split') {
+    return (
+      <div className="row row-gap-2">
+        <Pill tone="danger">موزّعة على {overview.regions.length} سيرفرات</Pill>
+        {claimPill}
+      </div>
+    );
   }
 
   const region = overview.regions[0];
@@ -273,7 +316,7 @@ function BindingCell({ overview }: { overview: ProvinceOverview | undefined }) {
     <div className="row row-gap-2">
       <span className="fs-body">{region.name}</span>
       {region.isActive ? null : <Pill tone="muted">متوقف</Pill>}
-      {binding === 'mismatch' ? <Pill tone="warning">ربط الـ API يختلف</Pill> : null}
+      {claimPill}
     </div>
   );
 }
@@ -314,7 +357,8 @@ function ProvinceDetailDialog({
   }, [province.id]);
 
   const region = overview?.regions[0];
-  const binding = bindingOf(overview);
+  const routing = routingOf(overview);
+  const claim = claimOf(overview);
 
   const check = async () => {
     if (!region) return;
@@ -344,9 +388,9 @@ function ProvinceDetailDialog({
       }
     >
       <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {binding === 'none' || binding === 'split' ? (
+        {routing !== 'ok' ? (
           <Notice tone="danger">
-            {binding === 'split' ? (
+            {routing === 'split' ? (
               <>
                 منتجات هذي المحافظة موزّعة على{' '}
                 <span className="strong num">{overview?.regions.length}</span> سيرفرات:{' '}
@@ -364,14 +408,28 @@ function ProvinceDetailDialog({
           </Notice>
         ) : null}
 
-        {binding === 'mismatch' ? (
+        {claim === 'none' ? (
+          <Notice tone="danger">
+            ماكو سيرفر مربوط بهذي المحافظة من جهة السيرفر — يعني مستخدمي التطبيق بهذي المحافظة{' '}
+            <span className="strong">ما يكدرون يضيفون جهاز</span>. إضافة الجهاز ما تمر على المنتجات
+            أبداً: الـ API يطلع السيرفر من محافظة المستخدم مباشرة. صلّحها من سيرفرات سلفرسات ← تعديل{' '}
+            <span className="strong">{region?.name ?? 'السيرفر'}</span> ← المحافظة.
+          </Notice>
+        ) : claim === 'mismatch' ? (
           <Notice tone="warning">
-            الـ API رابط هذي المحافظة بـ{' '}
+            إضافة الأجهزة بالتطبيق تروح لـ{' '}
             <span className="strong">
               {overview?.claimedRegions.map((row) => row.name).join('، ')}
             </span>
-            ، بينما منتجاتها تفعّل على <span className="strong">{region?.name}</span>. التفعيل يمشي
-            على سيرفر المنتج — الربط الثاني ما يأثر، بس واحد من الاثنين غلط.
+            ، بينما التفعيل والشحن يروحون لـ <span className="strong">{region?.name}</span>. لازم
+            الاثنين نفس السيرفر — صلّح واحد منهم.
+          </Notice>
+        ) : claim === 'split' ? (
+          <Notice tone="warning">
+            <span className="strong num">{overview?.claimedRegions.length}</span> سيرفرات مربوطة
+            بهذي المحافظة:{' '}
+            {overview?.claimedRegions.map((row) => row.name).join('، ')}. المفروض واحد بس — التطبيق
+            ما عنده طريقة يختار بينهم.
           </Notice>
         ) : null}
 
