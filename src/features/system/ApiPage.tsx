@@ -93,20 +93,17 @@ function RegionsTab() {
   /**
    * Checks every region at once.
    *
-   * `check-all` answers positionally — the rows come back in the order of the
-   * regions list without ids — so the results are zipped back onto that same
-   * list rather than looked up by id.
+   * Every row names the region it is about, and the rows arrive in whatever
+   * order the checks finished — so they are keyed by that id. A row for a
+   * region this screen has not loaded is kept rather than dropped; it simply
+   * has no card to land on yet.
    */
   const checkAll = async () => {
     setChecking('all');
     try {
       const results = await repos.regions.checkAll();
-      const rows = regions.data ?? [];
       const next: Record<Id, RegionCheckResult> = {};
-      results.forEach((result, index) => {
-        const region = rows[index];
-        if (region) next[region.id] = { ...result, id: region.id, name: region.name };
-      });
+      for (const result of results) next[result.id] = result;
       setHealth(next);
       const down = results.filter((result) => !result.ok).length;
       toast(down === 0 ? 'كل السيرفرات ترد' : `${down} سيرفر ما يرد`, down === 0 ? 'success' : 'error');
@@ -154,7 +151,7 @@ function RegionsTab() {
                   <Card key={region.id} pad>
                     <CardHead
                       title={region.name}
-                      subtitle={region.baseUrl ?? '—'}
+                      subtitle={result?.baseUrl ?? 'العنوان محفوظ بالسيرفر'}
                       actions={
                         region.isActive ? (
                           <Pill tone="success">فعّال</Pill>
@@ -167,8 +164,6 @@ function RegionsTab() {
                     <div className="mt-3">
                       <KeyValue
                         rows={[
-                          ['المستخدم', region.userId ?? '—'],
-                          ['معرّف الجهاز', region.appDeviceId ?? '—'],
                           [
                             'المحافظة',
                             provinceName(region.provinceId) ?? (
@@ -237,12 +232,22 @@ function RegionsTab() {
   );
 }
 
+/** What an empty credential box means on an edit — it is every box. */
+const KEEP_HINT = 'محفوظة بالسيرفر — اتركها فارغة إذا ما تريد تغيّرها';
+
 /**
  * Adding or editing a region.
  *
- * The password field starts empty even when editing, and an empty password on
- * an edit is simply not sent — so saving a name change never blanks the
- * credential that a whole province's activations run through.
+ * Every credential is write-only upstream, so an edit opens with all five
+ * boxes empty — not because the server has none, but because the API will not
+ * say what they are. That makes an empty box mean **leave it alone**, and an
+ * edit sends only the boxes that were actually typed in.
+ *
+ * Getting that wrong is expensive and quiet: the form used to seed `baseUrl`,
+ * `authKey` and `userId` from a region that never carries them, require a
+ * `baseUrl` it could not show, and then send the other two as empty strings —
+ * so renaming a server blanked the credentials a whole province activates
+ * through, and the screen looked no different afterwards.
  *
  * The province picker is the API's own binding, and it decides nothing here:
  * activations still follow the server a *product* names. It is editable
@@ -267,11 +272,11 @@ function RegionDialog({
 
   const [draft, setDraft] = useState<RegionInput>({
     name: region?.name ?? '',
-    baseUrl: region?.baseUrl ?? '',
-    authKey: region?.authKey ?? '',
-    userId: region?.userId ?? '',
+    baseUrl: '',
+    authKey: '',
+    userId: '',
     password: '',
-    appDeviceId: region?.appDeviceId ?? '',
+    appDeviceId: '',
     isActive: region?.isActive ?? true,
     provinceId: region?.provinceId ?? null,
   });
@@ -279,20 +284,39 @@ function RegionDialog({
     setDraft((current) => ({ ...current, [key]: value }));
 
   const submit = async () => {
-    const problem = !draft.name.trim()
+    // A new server needs every credential; an edit needs none of them, because
+    // leaving one alone is the normal case and the only way to express it.
+    const missing = !draft.name.trim()
       ? 'اسم السيرفر مطلوب'
-      : !draft.baseUrl.trim()
-        ? 'عنوان السيرفر مطلوب'
-        : !region && !draft.password.trim()
-          ? 'كلمة المرور مطلوبة للسيرفر الجديد'
-          : null;
-    setInvalid(problem);
-    if (problem) return;
+      : region
+        ? null
+        : !draft.baseUrl.trim()
+          ? 'عنوان السيرفر مطلوب'
+          : !draft.authKey.trim()
+            ? 'مفتاح المصادقة مطلوب'
+            : !draft.userId.trim()
+              ? 'المستخدم مطلوب'
+              : !draft.password.trim()
+                ? 'كلمة المرور مطلوبة للسيرفر الجديد'
+                : null;
+    setInvalid(missing);
+    if (missing) return;
 
     const ok = await run(() => {
       if (!region) return repos.regions.create(draft);
-      const { password, ...rest } = draft;
-      return repos.regions.update(region.id, password.trim() ? draft : rest);
+
+      const patch: Partial<RegionInput> = {
+        name: draft.name.trim(),
+        isActive: draft.isActive,
+        provinceId: draft.provinceId ?? null,
+      };
+      if (draft.baseUrl.trim()) patch.baseUrl = draft.baseUrl.trim();
+      if (draft.authKey.trim()) patch.authKey = draft.authKey.trim();
+      if (draft.userId.trim()) patch.userId = draft.userId.trim();
+      if (draft.password.trim()) patch.password = draft.password.trim();
+      if (draft.appDeviceId?.trim()) patch.appDeviceId = draft.appDeviceId.trim();
+
+      return repos.regions.update(region.id, patch);
     });
     if (!ok) return;
     toast(region ? 'انحفظ السيرفر' : 'انضاف السيرفر');
@@ -319,7 +343,7 @@ function RegionDialog({
         <Field label="اسم السيرفر">
           <TextInput value={draft.name} onChange={(next) => set('name', next)} />
         </Field>
-        <Field label="العنوان (Base URL)">
+        <Field label="العنوان (Base URL)" hint={region ? KEEP_HINT : undefined}>
           <TextInput
             type="url"
             value={draft.baseUrl}
@@ -327,23 +351,20 @@ function RegionDialog({
             placeholder="https://…"
           />
         </Field>
-        <Field label="مفتاح المصادقة (Auth Key)">
+        <Field label="مفتاح المصادقة (Auth Key)" hint={region ? KEEP_HINT : undefined}>
           <TextInput value={draft.authKey} onChange={(next) => set('authKey', next)} />
         </Field>
-        <Field label="المستخدم">
+        <Field label="المستخدم" hint={region ? KEEP_HINT : undefined}>
           <TextInput value={draft.userId} onChange={(next) => set('userId', next)} />
         </Field>
-        <Field
-          label="كلمة المرور"
-          hint={region ? 'اتركها فارغة إذا ما تريد تغيّرها' : undefined}
-        >
+        <Field label="كلمة المرور" hint={region ? KEEP_HINT : undefined}>
           <TextInput
             type="password"
             value={draft.password}
             onChange={(next) => set('password', next)}
           />
         </Field>
-        <Field label="معرّف الجهاز" hint="اختياري">
+        <Field label="معرّف الجهاز" hint={region ? KEEP_HINT : 'اختياري'}>
           <TextInput
             value={draft.appDeviceId ?? ''}
             onChange={(next) => set('appDeviceId', next)}

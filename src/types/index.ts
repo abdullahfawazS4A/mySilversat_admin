@@ -143,6 +143,16 @@ export interface ProvinceOverview {
  */
 export interface SilversatRegion extends Entity {
   name: string;
+  /**
+   * Write-only, all five of them.
+   *
+   * The API takes these and never sends any of them back — not on the list,
+   * not on a single read, not to a super admin. They are optional here because
+   * a region read from the API has none of them, and a screen that renders one
+   * is rendering a blank that looks like an unconfigured server.
+   *
+   * A check result is the only response that carries the address.
+   */
   baseUrl?: string;
   authKey?: string;
   userId?: string;
@@ -157,6 +167,8 @@ export interface SilversatRegion extends Entity {
 export interface RegionCheckResult {
   id: Id;
   name: string;
+  /** The server's address — the one response that reveals it. */
+  baseUrl?: string;
   ok: boolean;
   message?: string;
   latencyMs?: number;
