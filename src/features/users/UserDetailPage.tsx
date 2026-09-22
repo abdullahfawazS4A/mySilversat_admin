@@ -12,7 +12,7 @@
 
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowRight, ShieldBan, ShieldCheck, Tv } from 'lucide-react';
+import { ArrowRight, Pencil, ShieldBan, ShieldCheck, Tv } from 'lucide-react';
 import {
   AsyncBlock,
   Button,
@@ -41,6 +41,7 @@ import {
 } from '@/lib/labels';
 import { outcomeOf, toAmount, type Code, type Device, type Prediction } from '@/types';
 import type { AppUserDetail } from '@/data/repositories/types';
+import { UserDialog } from './UserDialog';
 
 type Tab = 'devices' | 'purchases' | 'predictions';
 
@@ -51,8 +52,12 @@ export function UserDetailPage() {
   const { toast } = useToast();
 
   const detail = useAsync(() => repos.appUsers.detail(userId), [userId]);
+  // Only for the province picker in the edit dialog, so it is read once here
+  // rather than on every open.
+  const provinces = useAsync(() => repos.geo.provinces.all(), []);
   const [tab, setTab] = useState<Tab>('devices');
   const [confirmBlock, setConfirmBlock] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [run, action] = useAction();
 
   const toggleBlock = async (blocked: boolean) => {
@@ -90,6 +95,13 @@ export function UserDetailPage() {
                     ) : (
                       <Pill tone="success">فعّال</Pill>
                     )}
+                    <Button
+                      variant="outline"
+                      icon={<Pencil size={15} />}
+                      onClick={() => setEditing(true)}
+                    >
+                      تعديل البيانات
+                    </Button>
                     <Button
                       variant={data.user.isBlocked ? 'subtle' : 'danger'}
                       icon={
@@ -171,6 +183,22 @@ export function UserDetailPage() {
                 }
                 onCancel={() => setConfirmBlock(false)}
                 onConfirm={() => void toggleBlock(data.user.isBlocked)}
+              />
+            ) : null}
+
+            {editing ? (
+              <UserDialog
+                user={data.user}
+                provinceOptions={(provinces.data ?? []).map((row) => ({
+                  value: row.id,
+                  label: row.name,
+                }))}
+                onClose={() => setEditing(false)}
+                onSaved={() => {
+                  setEditing(false);
+                  detail.reload();
+                  toast('انحفظت البيانات');
+                }}
               />
             ) : null}
           </div>
