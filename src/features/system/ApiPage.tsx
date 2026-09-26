@@ -13,12 +13,14 @@
  * requests half way leaves a partial table, so the counters are shown before
  * the buttons that spend them.
  *
- * Credentials are write-only in practice — the API returns them on the admin
- * list, but the form never displays a stored password back.
+ * Each server's card shows the vendor account it signs in with, as the API
+ * returns it — the password behind a reveal so it is not on screen by default.
+ * The edit form still leaves stored values out of its boxes: an empty box
+ * there means "keep it", which is why they are not seeded.
  */
 
-import { useState } from 'react';
-import { Activity, PlugZap, RefreshCw } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Activity, Copy, Eye, EyeOff, PlugZap, RefreshCw } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAction, useAsync } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
@@ -75,6 +77,15 @@ function RegionsTab() {
   const provinces = useAsync(() => repos.geo.provinces.all(), []);
   const provinceName = (id: Id | null | undefined) =>
     id ? ((provinces.data ?? []).find((row) => row.id === id)?.name ?? id) : null;
+  // The list leaves the address out; the copy embedded under a product has it.
+  const products = useAsync(() => repos.catalog.products.all(), []);
+  const embedded = useMemo(() => {
+    const map = new Map<Id, SilversatRegion>();
+    for (const product of products.data ?? []) {
+      if (product.silversatRegion) map.set(product.silversatRegion.id, product.silversatRegion);
+    }
+    return map;
+  }, [products.data]);
   const [health, setHealth] = useState<Record<Id, RegionCheckResult>>({});
   const [checking, setChecking] = useState<Id | 'all' | null>(null);
   const [editing, setEditing] = useState<{ region: SilversatRegion | null } | null>(null);
@@ -149,11 +160,14 @@ function RegionsTab() {
             <div className="grid grid-2">
               {rows.map((region) => {
                 const result = health[region.id];
+                const known = embedded.get(region.id);
+                const baseUrl = result?.baseUrl ?? known?.baseUrl;
+                const appDeviceId = region.appDeviceId || known?.appDeviceId;
                 return (
                   <Card key={region.id} pad>
                     <CardHead
                       title={region.name}
-                      subtitle={result?.baseUrl ?? 'العنوان محفوظ بالسيرفر'}
+                      subtitle={baseUrl ?? 'العنوان يطلع بعد الفحص'}
                       actions={
                         region.isActive ? (
                           <Pill tone="success">فعّال</Pill>
@@ -172,6 +186,25 @@ function RegionsTab() {
                               <span className="dim">بلا ربط</span>
                             ),
                           ],
+                          [
+                            'المستخدم',
+                            region.userId ? (
+                              <Secret value={region.userId} plain />
+                            ) : (
+                              <span className="dim">—</span>
+                            ),
+                          ],
+                          [
+                            'كلمة المرور',
+                            region.password ? (
+                              <Secret value={region.password} />
+                            ) : (
+                              <span className="dim">—</span>
+                            ),
+                          ],
+                          ...(appDeviceId
+                            ? [['معرّف الجهاز', <Secret value={appDeviceId} plain />] as [string, JSX.Element]]
+                            : []),
                           [
                             'آخر فحص',
                             result ? (
@@ -231,6 +264,50 @@ function RegionsTab() {
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * One stored credential, with copy — and for a password, hidden until asked.
+ *
+ * Hidden by default because this screen gets shown and screenshotted; one
+ * click reveals it, and copying works either way.
+ */
+function Secret({ value, plain = false }: { value: string; plain?: boolean }) {
+  const { toast } = useToast();
+  const [shown, setShown] = useState(plain);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast('انتسخ');
+    } catch {
+      toast('تعذّر النسخ', 'error');
+    }
+  };
+
+  return (
+    <span className="row row-gap-1">
+      <code className="num" dir="ltr">
+        {shown ? value : '•'.repeat(Math.min(value.length, 12))}
+      </code>
+      {plain ? null : (
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={shown ? <EyeOff size={13} /> : <Eye size={13} />}
+          onClick={() => setShown((current) => !current)}
+          aria-label={shown ? 'إخفاء' : 'إظهار'}
+        />
+      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={<Copy size={13} />}
+        onClick={() => void copy()}
+        aria-label="نسخ"
+      />
+    </span>
   );
 }
 

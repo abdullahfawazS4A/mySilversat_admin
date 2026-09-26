@@ -6,12 +6,10 @@
  * reachable right now" are different questions, and only `check` answers the
  * second one.
  *
- * Credentials are **write-only**. The API accepts `baseUrl`, `authKey`,
- * `userId` and `password` and never gives any of them back — not on the list,
- * not on a single read, not to a super admin. So a region read from here
- * carries a name and two flags, and anything that wants to show its address
- * has to get it from a check result, which is the one response that includes
- * one.
+ * Credentials come back unevenly. The list carries `userId` and `password`;
+ * a single read carries neither; `baseUrl` and `appDeviceId` arrive only on
+ * the copy of a region embedded under a product or a subscriber, or on a check
+ * result; `authKey` never comes back at all.
  */
 
 import { api, fetchAll } from '@/data/http/client';
