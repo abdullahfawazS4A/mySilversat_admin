@@ -2,9 +2,11 @@
  * The two upstreams this console depends on.
  *
  * **سيرفرات سلفرسات** are the vendor endpoints that actually activate codes —
- * one per region, each with its own credentials. A product points at one, so a
- * region that stops answering takes a whole province's activations down with
- * it. That is why the health check is on this screen and not buried in a menu.
+ * one per region, each with its own credentials. Products and subscribers
+ * each point at one, and the region's province is theirs — so a region that
+ * stops answering takes its products' activations down with it, and a region
+ * with no province drops everything on it out of every province view. That is
+ * why the health check and the province are on this screen.
  *
  * **مزوّد المباريات** is API-Football, where every league, team and fixture
  * comes from. Its quota is the thing worth watching: a sync that runs out of
@@ -376,7 +378,7 @@ function RegionDialog({
         </Field>
         <Field
           label="المحافظة"
-          hint="بيها يضيف مستخدمو التطبيق أجهزتهم — محافظة بلا سيرفر ما تكدر تضيف جهاز"
+          hint="منتجات ومشتركين هذا السيرفر يُحسبون على هذي المحافظة — سيرفر بلا محافظة ما يطلع تحت أي محافظة"
         >
           <Select
             value={draft.provinceId ?? ''}

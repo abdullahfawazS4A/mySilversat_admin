@@ -7,15 +7,14 @@
  * could only be got wrong. It is now mirrored from the displayed name, which
  * keeps the column populated and keeps search matching what people see.
  *
- * What is left are the **two bindings**: the province the product is sold in,
- * and the SilverSat server that turns its cards into live subscriptions. Those
- * two are what make a code provincial and what make a renewal reach the right
- * box, so a second copy of this form that forgets to validate the server
- * binding is a product whose cards silently never activate.
+ * What is left is the **one binding**: the SilverSat server that turns the
+ * product's cards into live subscriptions. The product has no province of its
+ * own any more — it is in whatever province its server is in — so the server
+ * is both where renewals go and whose stock this is. Moving a product to
+ * another server moves its stock to that server's province with it.
  *
- * The one rule encoded here: a product activating through SilverSat **must**
- * name a server. The API will accept a null one; the console will not, because
- * the failure only shows up later, on a customer's receiver.
+ * The API requires the server on every product, SilverSat-activated or not,
+ * and refuses a `provinceId` outright.
  */
 
 import { Field, Select, TextInput } from '@/components/ui';
@@ -29,14 +28,13 @@ export interface Option {
   label: string;
 }
 
-/** A new product, pre-bound to a province when the screen already knows one. */
-export function blankProduct(provinceId: Id): ProductInput {
+/** A new product, pre-bound to a server when the screen already knows one. */
+export function blankProduct(silversatRegionId: Id): ProductInput {
   return {
     name: '',
     displayName: '',
-    provinceId,
+    silversatRegionId,
     activationApi: 'silvers',
-    silversatRegionId: null,
   };
 }
 
@@ -51,34 +49,33 @@ export function productToInput(row: Product): ProductInput {
   return {
     name: row.name,
     displayName: row.displayName,
-    provinceId: row.provinceId,
     activationApi: row.activationApi,
     silversatRegionId: row.silversatRegionId,
   };
 }
 
-/** What blocks a save. The displayed name and both bindings are required. */
+/** What blocks a save. The displayed name and the server are required. */
 export function validateProduct(draft: ProductInput): string | null {
   if (!draft.displayName.trim()) return 'اسم المنتج مطلوب';
-  if (!draft.provinceId) return 'اختر المحافظة';
-  if (draft.activationApi === 'silvers' && !draft.silversatRegionId) {
-    return 'منتج التفعيل عبر سلفرسات لازم يرتبط بسيرفر';
-  }
+  if (!draft.silversatRegionId) return 'اختر سيرفر سلفرسات';
   return null;
 }
 
 type Setter = <K extends keyof ProductInput>(key: K, value: ProductInput[K]) => void;
 
-/** Every field of a product: the displayed name and the two bindings. */
+/**
+ * Every field of a product: the displayed name, the server and how it activates.
+ *
+ * `regionOptions` should carry the server's province in the label — it is the
+ * only place the operator sees which province they are choosing.
+ */
 export function ProductFields({
   draft,
   set,
-  provinceOptions,
   regionOptions,
 }: {
   draft: ProductInput;
   set: Setter;
-  provinceOptions: Option[];
   regionOptions: Option[];
 }) {
   return (
@@ -96,38 +93,24 @@ export function ProductFields({
         />
       </Field>
 
-      <Field label="المحافظة">
+      <Field
+        label="سيرفر سلفرسات"
+        hint="المحافظة تنحسب من السيرفر — ونفس السيرفر يروح إله التجديد والاستعلام لكارتات هذا المنتج"
+      >
         <Select<Id>
-          value={draft.provinceId}
-          onChange={(next) => set('provinceId', next)}
-          options={provinceOptions}
+          value={draft.silversatRegionId}
+          onChange={(next) => set('silversatRegionId', next)}
+          options={[{ value: '', label: 'اختر السيرفر' }, ...regionOptions]}
         />
       </Field>
       <Field label="جهة التفعيل">
         <Select<ActivationApi>
           value={draft.activationApi ?? 'silvers'}
-          onChange={(next) => {
-            set('activationApi', next);
-            // A non-silvers product has nothing to point a server at.
-            if (next === 'other') set('silversatRegionId', null);
-          }}
+          onChange={(next) => set('activationApi', next)}
           options={(Object.keys(ACTIVATION_API) as ActivationApi[]).map((value) => ({
             value,
             label: ACTIVATION_API[value],
           }))}
-        />
-      </Field>
-
-      <Field
-        label="سيرفر سلفرسات (الـ API)"
-        hint="نفس السيرفر اللي يروح إله التجديد والاستعلام لكل كارت من هذا المنتج"
-        className="span-2"
-      >
-        <Select<Id>
-          value={draft.silversatRegionId ?? ''}
-          onChange={(next) => set('silversatRegionId', next || null)}
-          options={[{ value: '', label: 'بدون سيرفر' }, ...regionOptions]}
-          disabled={(draft.activationApi ?? 'silvers') !== 'silvers'}
         />
       </Field>
     </>

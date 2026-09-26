@@ -88,29 +88,22 @@ export interface Province extends Entity {
  * A province with everything that hangs off it, counted.
  *
  * The API has no such route — a province row is four columns. But a province
- * is the unit this business is actually run in: it owns a card stock, it is
- * served by one vendor server, and it sells one catalogue. An operator asking
- * "how is Ninawa doing" is asking about all three at once, so the console
- * assembles them into one row rather than making the question three screens.
+ * is the unit this business is actually run in: it is served by its SilverSat
+ * servers, and through them it owns a catalogue, a card stock and its
+ * subscribers. An operator asking "how is Ninawa doing" is asking about all of
+ * that at once, so the console assembles it into one row rather than making
+ * the question several screens.
  *
- * `regions` is a list and not a single server on purpose. The rule is that a
- * province binds to exactly one, so more than one entry here is the shape a
- * **misconfiguration** takes, and the screen can only warn about what the type
- * lets it represent.
- *
- * `claimedRegions` is the *other* binding — the API's own `provinceId` on a
- * server. It is carried separately rather than merged into `regions` because
- * the two answer different questions: `regions` is where this province's
- * activations go, and `claimedRegions` is the server the mobile app is handed
- * when someone in this province registers a receiver. An empty list is not a
- * missing detail; it is a province that cannot onboard at all.
+ * Every count reaches the province through a server's `provinceId`: a product
+ * or a subscriber is in a province because its server is. So `regions` is the
+ * whole binding — an empty list is a province nothing can be sold in and no
+ * one can register in, and a server that names no province takes its products
+ * and subscribers out of every row here.
  */
 export interface ProvinceOverview {
   province: Province;
-  /** Servers this province's products activate on. More than one is a fault. */
+  /** Servers whose `provinceId` names this province. Several is allowed. */
   regions: SilversatRegion[];
-  /** Servers whose own `provinceId` names this province. */
-  claimedRegions: SilversatRegion[];
   /** Products whose activation is not routed to SilverSat at all. */
   unroutedProducts: number;
   productCount: number;
@@ -133,30 +126,21 @@ export interface ProvinceOverview {
  * only the credentials change. A product points at the region that will
  * actually activate its codes.
  *
- * `authKey`, `userId` and `password` come back only on the admin list; the
- * agent-facing list returns id/name/isActive alone, which is why they are
- * optional here.
+ * The server is the anchor everything else hangs off. A product and an app
+ * user each name one server, and only the server names a province — so "which
+ * province is this subscriber in" is always answered through here. A server
+ * with no `provinceId` is not a loose end: every product and subscriber on it
+ * falls out of every province view in the console.
  *
- * `provinceId` is the API's own province binding, and it runs a path of its
- * own: `POST /devices` carries no region, so the API resolves one from the app
- * user's province through this field. A province no server names cannot
- * register a receiver in the mobile app, however well its products are routed.
- *
- * So it is not the binding `recharge` obeys — that is still the product's —
- * and it is not decoration either. The two are separate paths that are
- * supposed to agree.
+ * A province may have several servers. The mobile app lists the ones in the
+ * user's province at registration and lets them pick.
  */
 export interface SilversatRegion extends Entity {
   name: string;
   /**
-   * Write-only, all five of them.
-   *
-   * The API takes these and never sends any of them back — not on the list,
-   * not on a single read, not to a super admin. They are optional here because
-   * a region read from the API has none of them, and a screen that renders one
-   * is rendering a blank that looks like an unconfigured server.
-   *
-   * A check result is the only response that carries the address.
+   * Credentials. Optional because the answer depends on who asks: the agent
+   * list returns id/name/isActive alone, and the admin reads carry some of
+   * these but not all. A blank one here is not an unconfigured server.
    */
   baseUrl?: string;
   authKey?: string;
@@ -164,8 +148,10 @@ export interface SilversatRegion extends Entity {
   password?: string;
   appDeviceId?: string;
   isActive: boolean;
-  /** The province the API ties this server to. Null when it is tied to none. */
+  /** The province this server serves. Null when it is tied to none. */
   provinceId?: Id | null;
+  /** Embedded when the server arrives nested under a product or a user. */
+  province?: Province | null;
 }
 
 /** Outcome of a vendor `GetToken` health check. */
@@ -185,20 +171,21 @@ export interface RegionCheckResult {
 export type ActivationApi = 'silvers' | 'other';
 
 /**
- * A sellable service in one province, e.g. "Fiber 50 Mbps" in Ninawa.
+ * A sellable service on one SilverSat server, e.g. "Fiber 50 Mbps" on Basra.
  *
- * The province is what makes stock provincial: a code belongs to a category,
- * a category to a product, and a product to exactly one province.
+ * The product carries no province of its own. It names a server, and the
+ * server names the province — which is what makes stock provincial: a code
+ * belongs to a category, a category to a product, a product to a server, and
+ * the server to a province. Read it through `provinceOfProduct`.
  */
 export interface Product extends Entity {
   name: string;
   displayName: string;
   imageUrl: string | null;
   activationApi: ActivationApi;
-  silversatRegionId: Id | null;
+  silversatRegionId: Id;
+  /** Embedded on product reads, with its province; absent when nested in a category. */
   silversatRegion?: SilversatRegion | null;
-  provinceId: Id;
-  province?: Province;
 }
 
 /** A purchasable variant of a product — the row that carries prices. */
@@ -319,14 +306,34 @@ export interface AppUser extends Entity {
   email: string | null;
   imageUrl: string | null;
   phone: string;
-  provinceId: Id;
-  province?: Province;
+  /**
+   * The server the subscriber registered on. Their devices are checked and
+   * activated against it, and their province is its province — read it
+   * through `provinceOfUser`.
+   */
+  silversatRegionId: Id;
+  silversatRegion?: SilversatRegion | null;
   /** Running prediction score. The leaderboard is a sort of this column. */
   points: number;
   isBlocked: boolean;
   /** Set when a block invalidated the user's live JWTs. */
   tokenInvalidatedAt: IsoDate | null;
   fcmToken: string | null;
+}
+
+/**
+ * The province a subscriber is in, through their server.
+ *
+ * Null when the server is tied to no province, or arrived without being
+ * embedded — either way the subscriber belongs to no province view.
+ */
+export function provinceOfUser(user: Pick<AppUser, 'silversatRegion'>): Id | null {
+  return user.silversatRegion?.provinceId ?? null;
+}
+
+/** The province a product sells in, through its server. Same rules as `provinceOfUser`. */
+export function provinceOfProduct(product: Pick<Product, 'silversatRegion'>): Id | null {
+  return product.silversatRegion?.provinceId ?? null;
 }
 
 // ----------------------------------------------------------- devices -------

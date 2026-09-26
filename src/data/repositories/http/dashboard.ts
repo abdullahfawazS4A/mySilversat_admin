@@ -28,7 +28,7 @@ import type {
   Province,
   SilversatRegion,
 } from '@/types';
-import { toAmount } from '@/types';
+import { provinceOfUser, toAmount } from '@/types';
 import { ARABIC_MONTHS } from '@/lib/format';
 import type { DashboardRepository } from '../types';
 
@@ -192,7 +192,8 @@ export class HttpDashboardRepository implements DashboardRepository {
     let newUsersThisMonth = 0;
     let blockedUsers = 0;
     for (const user of users) {
-      usersByProvince.set(user.provinceId, (usersByProvince.get(user.provinceId) ?? 0) + 1);
+      const provinceId = provinceOfUser(user);
+      if (provinceId) usersByProvince.set(provinceId, (usersByProvince.get(provinceId) ?? 0) + 1);
       if (monthKey(user.createdAt) === thisMonth) newUsersThisMonth += 1;
       if (user.isBlocked) blockedUsers += 1;
     }

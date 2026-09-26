@@ -1,13 +1,13 @@
 /**
  * Countries and provinces.
  *
- * Reference data everything else joins against: a product belongs to a
- * province, a province to a country. Neither collection is large, so both are
+ * Reference data everything else joins against: a SilverSat server belongs
+ * to a province, a province to a country. Neither collection is large, so both are
  * searched client-side.
  *
  * `overview` is the exception that is not reference data at all. There is no
  * province summary route, and there is no province column on a code, a
- * category or a server — so the one view the business is actually run from
+ * category, a product or a subscriber — so the one view the business is actually run from
  * ("what does Ninawa own, sell and have left") has to be composed here out of
  * five list routes. It is a deliberate, one-shot read: the province screen
  * calls it once and pages over the result, never once per row.
@@ -23,7 +23,7 @@ import type {
   ProvinceOverview,
   SilversatRegion,
 } from '@/types';
-import { toAmount } from '@/types';
+import { provinceOfUser, toAmount } from '@/types';
 import type { CountryInput, GeoRepository, ProvinceInput } from '../types';
 import { HttpCrudRepository } from './crud';
 import { catalogScope } from './scope';
@@ -88,16 +88,14 @@ export class HttpGeoRepository implements GeoRepository {
       fetchAll<AppUser>('/app-users'),
     ]);
 
-    const regionById = new Map(regions.map((row) => [row.id, row]));
-
-    // The API's own binding, indexed the other way round: a server names its
-    // province, so the province's claims have to be gathered rather than read.
-    const claimsByProvince = new Map<Id, SilversatRegion[]>();
+    // The binding, indexed the other way round: a server names its province,
+    // so a province's servers have to be gathered rather than read.
+    const regionsByProvince = new Map<Id, SilversatRegion[]>();
     for (const region of regions) {
       if (!region.provinceId) continue;
-      const list = claimsByProvince.get(region.provinceId);
+      const list = regionsByProvince.get(region.provinceId);
       if (list) list.push(region);
-      else claimsByProvince.set(region.provinceId, [region]);
+      else regionsByProvince.set(region.provinceId, [region]);
     }
 
     // Counted per category first, because the low-stock rule is a category's
@@ -116,7 +114,8 @@ export class HttpGeoRepository implements GeoRepository {
 
     const usersByProvince = new Map<Id, number>();
     for (const user of users) {
-      usersByProvince.set(user.provinceId, (usersByProvince.get(user.provinceId) ?? 0) + 1);
+      const provinceId = provinceOfUser(user);
+      if (provinceId) usersByProvince.set(provinceId, (usersByProvince.get(provinceId) ?? 0) + 1);
     }
 
     return provinces.map((province) => {
@@ -137,14 +136,8 @@ export class HttpGeoRepository implements GeoRepository {
 
       return {
         province,
-        regions: scope
-          .regionIdsOf(province.id)
-          .map((id) => regionById.get(id))
-          .filter((row): row is SilversatRegion => Boolean(row)),
-        claimedRegions: claimsByProvince.get(province.id) ?? [],
-        unroutedProducts: products.filter(
-          (product) => product.activationApi !== 'silvers' || !product.silversatRegionId,
-        ).length,
+        regions: regionsByProvince.get(province.id) ?? [],
+        unroutedProducts: products.filter((product) => product.activationApi !== 'silvers').length,
         productCount: products.length,
         categoryCount: categories.length,
         codesAvailable,

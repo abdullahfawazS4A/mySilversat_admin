@@ -10,6 +10,7 @@
  */
 
 import { api, fetchAll } from '@/data/http/client';
+import { provinceOfUser } from '@/types';
 import type { AppUser, Id, ListQuery, NotificationRecord, NotificationTarget, Page } from '@/types';
 import type { NotificationInput, NotificationsRepository } from '../types';
 import { toPage, toRange } from './crud';
@@ -40,7 +41,7 @@ export class HttpNotificationsRepository implements NotificationsRepository {
     const users = await fetchAll<AppUser>('/app-users');
     const reachable = users.filter((user) => !user.isBlocked);
     if (targetType === 'province' && provinceId) {
-      return reachable.filter((user) => user.provinceId === provinceId).length;
+      return reachable.filter((user) => provinceOfUser(user) === provinceId).length;
     }
     return reachable.length;
   }

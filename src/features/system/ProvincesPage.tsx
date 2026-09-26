@@ -7,18 +7,18 @@
  * them to finish one task.
  *
  * A province is not a lookup row here, it is the unit the business runs in.
- * Three things hang off exactly one province — the catalogue that is sold in
- * it, the card stock that is burned in it, and the SilverSat server that
- * activates those cards — and none of the three is visible from a province's
- * own four columns. So the table carries them, and the detail dialog is where
- * "how is Ninawa set up" gets answered in one place instead of three screens.
+ * It is served by one or more SilverSat servers, and everything else reaches
+ * it through them — a product is sold in a province because its server is in
+ * it, and a subscriber belongs to a province because their server does. None
+ * of that is visible from a province's own four columns, so the table carries
+ * it, and the detail dialog is where "how is Ninawa set up" gets answered in
+ * one place instead of three screens.
  *
- * The one rule this screen exists to police: **a province binds to exactly one
- * server, twice over.** The API enforces neither half. Routing lives on each
- * product, the mobile app's answer lives on the server itself, and a province
- * can satisfy one while failing the other — correctly routed products whose
- * users cannot add a receiver, or the reverse. Both are faults only this
- * screen can show, so it shows them apart rather than averaged into a verdict.
+ * The rule this screen polices: **every server names a province, and every
+ * province has a server.** A province with no server has nothing to sell and
+ * no one can register in it; a server with no province takes its products,
+ * its stock and its subscribers out of every province view in the console.
+ * The API enforces neither.
  */
 
 import { useMemo, useState } from 'react';
@@ -28,8 +28,16 @@ import { useAsync } from '@/app/useAsync';
 import { useRepos } from '@/app/RepositoryContext';
 import { useToast } from '@/app/ToastContext';
 import { formatIqd, formatIqdCompact, formatNumber } from '@/lib/format';
-import type { Category, Country, Id, Product, Province, ProvinceOverview } from '@/types';
-import { toAmount } from '@/types';
+import type {
+  Category,
+  Country,
+  Id,
+  Product,
+  Province,
+  ProvinceOverview,
+  SilversatRegion,
+} from '@/types';
+import { provinceOfProduct, toAmount } from '@/types';
 import type { CountryInput, ProvinceInput } from '@/data/repositories/types';
 import {
   AsyncBlock,
@@ -37,7 +45,6 @@ import {
   Card,
   CardHead,
   Field,
-  KeyValue,
   Modal,
   Notice,
   Pill,
@@ -69,41 +76,6 @@ export function ProvincesPage() {
   );
 }
 
-/**
- * A province is bound to its server twice, and each binding runs one path.
- *
- * **Routing** is the product's `silversatRegionId`. It is what a recharge, a
- * code check and a subscription lookup follow, and the console has always
- * shown it.
- *
- * **The claim** is the server's own `provinceId`, and it is not the decoration
- * it looks like: `POST /devices` takes no region, so the API resolves one from
- * the app user's province — through this field and nothing else. A province no
- * server claims cannot register a receiver in the mobile app at all, however
- * correctly its products are routed. That is a whole province locked out of
- * onboarding, and it looks like nothing from the routing side.
- *
- * So both are reported, neither substitutes for the other, and the two are
- * supposed to name the same server.
- */
-type Routing = 'ok' | 'none' | 'split';
-type Claim = 'ok' | 'none' | 'split' | 'mismatch';
-
-/** Where this province's activations go — the products' answer. */
-function routingOf(row: ProvinceOverview | undefined): Routing {
-  if (!row || row.regions.length === 0) return 'none';
-  return row.regions.length > 1 ? 'split' : 'ok';
-}
-
-/** Which server the API hands the mobile app for this province. */
-function claimOf(row: ProvinceOverview | undefined): Claim {
-  if (!row || row.claimedRegions.length === 0) return 'none';
-  if (row.claimedRegions.length > 1) return 'split';
-  // Disagreement is only meaningful once routing has settled on one server.
-  if (row.regions.length !== 1) return 'ok';
-  return row.claimedRegions[0].id === row.regions[0].id ? 'ok' : 'mismatch';
-}
-
 // ------------------------------------------------------------- provinces ---
 
 function ProvincesTab() {
@@ -119,19 +91,12 @@ function ProvincesTab() {
     [overview.data],
   );
 
+  // Servers that name no province: everything on them is invisible from here.
+  const regions = useAsync(() => repos.regions.all(), []);
+  const homeless = (regions.data ?? []).filter((row) => !row.provinceId);
+
   const [opened, setOpened] = useState<Province | null>(null);
-  // Counted apart, because they are different sentences: a broken binding
-  // means the cards will not activate, a disagreeing claim means they will —
-  // just not on the server somebody bound expecting them to.
-  const faults = (overview.data ?? []).filter((row) => routingOf(row) !== 'ok');
-  // Split by which path they break, because the two sentences are different:
-  // an unclaimed province cannot onboard a receiver at all, while a claimed
-  // one that names the wrong server sends the app somewhere it should not go.
-  const unclaimed = (overview.data ?? []).filter((row) => claimOf(row) === 'none');
-  const mismatches = (overview.data ?? []).filter((row) => {
-    const claim = claimOf(row);
-    return claim === 'mismatch' || claim === 'split';
-  });
+  const unserved = (overview.data ?? []).filter((row) => row.regions.length === 0);
 
   return (
     <>
@@ -243,26 +208,18 @@ function ProvincesTab() {
           </>
         )}
       >
-        {faults.length > 0 ? (
-          <Notice tone="warning">
-            <span className="strong num">{faults.length}</span> محافظة ما إلها ربط سيرفر صحيح —
-            منتجاتها إما ما مربوطة بسيرفر أو موزّعة على أكثر من سيرفر. كارتات هذي المحافظات ما راح
-            تتفعّل.
-          </Notice>
-        ) : null}
-        {unclaimed.length > 0 ? (
+        {homeless.length > 0 ? (
           <Notice tone="danger">
-            <span className="strong num">{unclaimed.length}</span> محافظة ماكو سيرفر مربوط بيها من
-            جهة السيرفر — يعني مستخدمي التطبيق بهذي المحافظات <span className="strong">ما يكدرون
-            يضيفون جهاز</span>، حتى لو منتجاتها مربوطة صح. صلّحها من سيرفرات سلفرسات ← تعديل السيرفر
-            ← المحافظة.
+            <span className="strong num">{homeless.length}</span> سيرفر ما مربوط بأي محافظة:{' '}
+            {homeless.map((row) => row.name).join('، ')}. منتجات هذي السيرفرات ومخزنها ومشتركيها
+            ما يطلعون تحت أي محافظة. صلّحها من <Link to="/api">سيرفرات سلفرسات</Link> ← تعديل
+            السيرفر ← المحافظة.
           </Notice>
         ) : null}
-        {mismatches.length > 0 ? (
+        {unserved.length > 0 ? (
           <Notice tone="warning">
-            <span className="strong num">{mismatches.length}</span> محافظة السيرفر المربوط بيها من
-            جهة السيرفر يختلف عن سيرفر منتجاتها. إضافة الأجهزة تروح لسيرفر والتفعيل لسيرفر ثاني —
-            لازم الاثنين نفس السيرفر.
+            <span className="strong num">{unserved.length}</span> محافظة ماكو سيرفر مربوط بيها —
+            ما ينباع بيها شي، ومستخدمي التطبيق ما يكدرون ينسجّلون عليها.
           </Notice>
         ) : null}
       </CrudScreen>
@@ -278,45 +235,18 @@ function ProvincesTab() {
   );
 }
 
-/** The server binding as one cell: the server's name, or the fault instead. */
+/** The province's servers as one cell, or the fault instead. */
 function BindingCell({ overview }: { overview: ProvinceOverview | undefined }) {
   if (!overview) return <span className="dim">—</span>;
-  const routing = routingOf(overview);
-  const claim = claimOf(overview);
-  // Shown beside the routing answer rather than instead of it: the app path is
-  // broken independently of whether activations are routed correctly.
-  const claimPill =
-    claim === 'none' ? (
-      <Pill tone="danger">ما تضيف أجهزة</Pill>
-    ) : claim === 'mismatch' ? (
-      <Pill tone="warning">سيرفر التطبيق يختلف</Pill>
-    ) : claim === 'split' ? (
-      <Pill tone="warning">مربوطة بـ {overview.claimedRegions.length} سيرفرات</Pill>
-    ) : null;
-
-  if (routing === 'none') {
-    return (
-      <div className="row row-gap-2">
-        <Pill tone="danger">{overview.productCount === 0 ? 'ماكو منتجات' : 'ماكو سيرفر'}</Pill>
-        {claimPill}
-      </div>
-    );
-  }
-  if (routing === 'split') {
-    return (
-      <div className="row row-gap-2">
-        <Pill tone="danger">موزّعة على {overview.regions.length} سيرفرات</Pill>
-        {claimPill}
-      </div>
-    );
-  }
-
-  const region = overview.regions[0];
+  if (overview.regions.length === 0) return <Pill tone="danger">ماكو سيرفر</Pill>;
   return (
-    <div className="row row-gap-2">
-      <span className="fs-body">{region.name}</span>
-      {region.isActive ? null : <Pill tone="muted">متوقف</Pill>}
-      {claimPill}
+    <div className="row row-gap-2 wrap">
+      {overview.regions.map((region) => (
+        <span key={region.id} className="row row-gap-1">
+          <span className="fs-body">{region.name}</span>
+          {region.isActive ? null : <Pill tone="muted">متوقف</Pill>}
+        </span>
+      ))}
     </div>
   );
 }
@@ -339,14 +269,13 @@ function ProvinceDetailDialog({
 }) {
   const repos = useRepos();
   const { toast } = useToast();
-  const [checking, setChecking] = useState(false);
 
   const catalog = useAsync(async () => {
     const [products, categories] = await Promise.all([
       repos.catalog.products.all(),
       repos.catalog.categories.all(),
     ]);
-    const mine = products.filter((product) => product.provinceId === province.id);
+    const mine = products.filter((product) => provinceOfProduct(product) === province.id);
     const ids = new Set(mine.map((product) => product.id));
     return {
       products: mine,
@@ -356,13 +285,11 @@ function ProvinceDetailDialog({
     };
   }, [province.id]);
 
-  const region = overview?.regions[0];
-  const routing = routingOf(overview);
-  const claim = claimOf(overview);
+  const servers = overview?.regions ?? [];
+  const [checking, setChecking] = useState<Id | null>(null);
 
-  const check = async () => {
-    if (!region) return;
-    setChecking(true);
+  const check = async (region: SilversatRegion) => {
+    setChecking(region.id);
     try {
       const result = await repos.regions.check(region.id);
       toast(
@@ -372,7 +299,7 @@ function ProvinceDetailDialog({
     } catch (err) {
       toast(err instanceof Error ? err.message : 'تعذّر الفحص', 'error');
     } finally {
-      setChecking(false);
+      setChecking(null);
     }
   };
 
@@ -388,48 +315,10 @@ function ProvinceDetailDialog({
       }
     >
       <div className="col" style={{ gap: 'var(--sp-4)' }}>
-        {routing !== 'ok' ? (
+        {servers.length === 0 ? (
           <Notice tone="danger">
-            {routing === 'split' ? (
-              <>
-                منتجات هذي المحافظة موزّعة على{' '}
-                <span className="strong num">{overview?.regions.length}</span> سيرفرات:{' '}
-                {overview?.regions.map((row) => row.name).join('، ')}. المفروض المحافظة تنربط بسيرفر
-                واحد بس — صلّحها من الباقات والأسعار ← المنتجات.
-              </>
-            ) : (
-              <>
-                ماكو سيرفر سلفرسات مربوط بهذي المحافظة
-                {overview?.productCount === 0
-                  ? ' — لأنه ماكو منتجات أصلاً.'
-                  : ' — منتجاتها ما تأشّر على سيرفر، فكارتاتها ما راح تتفعّل.'}
-              </>
-            )}
-          </Notice>
-        ) : null}
-
-        {claim === 'none' ? (
-          <Notice tone="danger">
-            ماكو سيرفر مربوط بهذي المحافظة من جهة السيرفر — يعني مستخدمي التطبيق بهذي المحافظة{' '}
-            <span className="strong">ما يكدرون يضيفون جهاز</span>. إضافة الجهاز ما تمر على المنتجات
-            أبداً: الـ API يطلع السيرفر من محافظة المستخدم مباشرة. صلّحها من سيرفرات سلفرسات ← تعديل{' '}
-            <span className="strong">{region?.name ?? 'السيرفر'}</span> ← المحافظة.
-          </Notice>
-        ) : claim === 'mismatch' ? (
-          <Notice tone="warning">
-            إضافة الأجهزة بالتطبيق تروح لـ{' '}
-            <span className="strong">
-              {overview?.claimedRegions.map((row) => row.name).join('، ')}
-            </span>
-            ، بينما التفعيل والشحن يروحون لـ <span className="strong">{region?.name}</span>. لازم
-            الاثنين نفس السيرفر — صلّح واحد منهم.
-          </Notice>
-        ) : claim === 'split' ? (
-          <Notice tone="warning">
-            <span className="strong num">{overview?.claimedRegions.length}</span> سيرفرات مربوطة
-            بهذي المحافظة:{' '}
-            {overview?.claimedRegions.map((row) => row.name).join('، ')}. المفروض واحد بس — التطبيق
-            ما عنده طريقة يختار بينهم.
+            ماكو سيرفر سلفرسات مربوط بهذي المحافظة — فما ينباع بيها شي، ومستخدمي التطبيق ما يكدرون
+            ينسجّلون عليها. اربط سيرفر من سيرفرات سلفرسات ← تعديل السيرفر ← المحافظة.
           </Notice>
         ) : null}
 
@@ -442,40 +331,32 @@ function ProvinceDetailDialog({
 
         <Card pad>
           <CardHead
-            title="سيرفر سلفرسات"
-            subtitle="اللي يفعّل كارتات هذي المحافظة — والاستعلام والتجديد يروحون إله"
-            actions={
-              region ? (
+            title={servers.length > 1 ? 'سيرفرات سلفرسات' : 'سيرفر سلفرسات'}
+            subtitle="منتجات ومشتركين هذي المحافظة على هذي السيرفرات — والاستعلام والتجديد يروحون إلها"
+            actions={servers.length === 0 ? <Pill tone="danger">غير مربوط</Pill> : undefined}
+          />
+          <div className="col mt-3" style={{ gap: 'var(--sp-3)' }}>
+            {servers.map((region) => (
+              <div key={region.id} className="row row-gap-2">
+                <span className="fs-body strong">{region.name}</span>
+                {region.isActive ? null : <Pill tone="muted">متوقف</Pill>}
+                <span className="fs-small dim">{region.baseUrl ?? ''}</span>
                 <Button
                   variant="outline"
                   size="sm"
                   icon={<PlugZap size={14} />}
-                  disabled={checking}
-                  onClick={() => void check()}
+                  disabled={checking !== null}
+                  onClick={() => void check(region)}
                 >
-                  {checking ? 'جاري…' : 'فحص'}
+                  {checking === region.id ? 'جاري…' : 'فحص'}
                 </Button>
-              ) : (
-                <Pill tone="danger">غير مربوط</Pill>
-              )
-            }
-          />
-          <div className="mt-3">
-            <KeyValue
-              rows={[
-                ['السيرفر', region ? region.name : <span className="dim">—</span>],
-                ['الدومين', region?.baseUrl ?? '—'],
-                ['المستخدم', region?.userId ?? '—'],
-                [
-                  'منتجات ما تمر عليه',
-                  overview && overview.unroutedProducts > 0 ? (
-                    <Pill tone="warning">{overview.unroutedProducts} منتج</Pill>
-                  ) : (
-                    <span className="dim">ماكو</span>
-                  ),
-                ],
-              ]}
-            />
+              </div>
+            ))}
+            {overview && overview.unroutedProducts > 0 ? (
+              <span className="fs-small">
+                <Pill tone="warning">{overview.unroutedProducts} منتج</Pill> تفعيله مو عبر سلفرسات.
+              </span>
+            ) : null}
           </div>
         </Card>
 

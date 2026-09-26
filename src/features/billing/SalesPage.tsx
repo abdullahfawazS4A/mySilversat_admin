@@ -34,13 +34,18 @@ import {
 import { StatTile } from '@/components/charts';
 import { formatDateTimeAr, formatIqd, formatNumber } from '@/lib/format';
 import { downloadCsv } from '@/lib/utils';
-import { toAmount, type Category, type Code, type Id } from '@/types';
+import { toAmount, type Category, type Code, type Id, type Product } from '@/types';
 
-/** Labels a category with its product, since names repeat across provinces. */
-function categoryLabel(category: Category): string {
-  const product = category.product;
+/**
+ * Labels a category with its product, since names repeat across provinces.
+ *
+ * The product is looked up rather than read off the category: a code's nested
+ * category carries no product at all, and a category's nested product carries
+ * no server — so only the product list knows the province.
+ */
+function categoryLabel(category: Category, product: Product | undefined): string {
   if (!product) return category.name;
-  const province = product.province?.name;
+  const province = product.silversatRegion?.province?.name;
   return `${product.displayName} — ${category.name}${province ? ` (${province})` : ''}`;
 }
 
@@ -54,6 +59,13 @@ export function SalesPage() {
   const [page, setPage] = useState(1);
 
   const categories = useAsync(() => repos.catalog.categories.all(), []);
+  const products = useAsync(() => repos.catalog.products.all(), []);
+  const productById = useMemo(
+    () => new Map((products.data ?? []).map((row) => [row.id, row])),
+    [products.data],
+  );
+  const productOf = (code: Code) =>
+    code.category ? productById.get(code.category.productId) : undefined;
   const sales = useAsync(
     () =>
       repos.stock.codes.list({
@@ -82,8 +94,8 @@ export function SalesPage() {
       ...rows.map((row) => [
         row.primaryValue,
         row.category?.name ?? '',
-        row.category?.product?.displayName ?? '',
-        row.category?.product?.province?.name ?? '',
+        productOf(row)?.displayName ?? '',
+        productOf(row)?.silversatRegion?.province?.name ?? '',
         toAmount(row.category?.unitPrice),
         formatDateTimeAr(row.soldAt),
       ]),
@@ -103,14 +115,14 @@ export function SalesPage() {
       render: (row) => (
         <div className="col" style={{ lineHeight: 1.35 }}>
           <span className="fs-body">{row.category?.name ?? '—'}</span>
-          <span className="fs-tiny dim">{row.category?.product?.displayName ?? ''}</span>
+          <span className="fs-tiny dim">{productOf(row)?.displayName ?? ''}</span>
         </div>
       ),
     },
     {
       key: 'province',
       header: 'المحافظة',
-      render: (row) => row.category?.product?.province?.name ?? '—',
+      render: (row) => productOf(row)?.silversatRegion?.province?.name ?? '—',
     },
     {
       key: 'buyer',
@@ -184,7 +196,7 @@ export function SalesPage() {
                 { value: 'all' as const, label: 'كل الفئات' },
                 ...(categories.data ?? []).map((row) => ({
                   value: row.id,
-                  label: categoryLabel(row),
+                  label: categoryLabel(row, productById.get(row.productId)),
                 })),
               ]}
             />

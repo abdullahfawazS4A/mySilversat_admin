@@ -11,14 +11,14 @@
  * they are per-row rather than bulk, and why the two that change something
  * confirm first.
  *
- * **The server is derived, not chosen.** A receiver has an owner, the owner
- * has a province, and the province's products name the server that actually
- * serves it — so the screen walks that chain per row instead of applying one
- * dropdown to every device in the table. A query is only meaningful against
- * the server the subscriber is on: the same receiver number asked of the wrong
- * province answers, and answers wrongly, which is the failure a support tool
- * can least afford. The override is still there for the case the chain cannot
- * resolve, and it says what it is overriding.
+ * **The server is the owner's, not chosen.** Every subscriber registers on
+ * one SilverSat server, and the API validated this receiver against that
+ * server when it was added — so the screen asks that same server per row
+ * instead of applying one dropdown to every device in the table. A query is
+ * only meaningful against the server the subscriber is on: the same receiver
+ * number asked of another server answers, and answers wrongly, which is the
+ * failure a support tool can least afford. The override is still there for the
+ * case the owner cannot be read, and it says what it is overriding.
  */
 
 import { useMemo, useState } from 'react';
@@ -48,7 +48,7 @@ import { RenewDialog } from './RenewDialog';
 /** Which server a device's vendor calls go to, and how that was decided. */
 interface Routing {
   region: SilversatRegion | null;
-  /** `derived` came from the owner's province; `manual` from the override. */
+  /** `derived` is the owner's own server; `manual` came from the override. */
   source: 'derived' | 'manual' | 'none';
   /** Why a derivation failed, ready to render. */
   problem?: string;
@@ -66,27 +66,10 @@ export function DevicesPage() {
   const provinces = useAsync(() => repos.geo.provinces.all(), []);
   const regions = useAsync(() => repos.silversat.regions(), []);
 
-  /**
-   * The province→server map, built once for the whole table.
-   *
-   * Deliberately *not* `geo.overview()`: that answers the stock question too,
-   * at the cost of reading every code in the system, and this screen needs
-   * only which server a province routes to. Products and the region list are
-   * two small reads, and the products one is already memoised.
-   */
-  const products = useAsync(() => repos.catalog.products.all(), []);
-  const serversByProvince = useMemo(() => {
-    const byId = new Map((regions.data ?? []).map((row) => [row.id, row]));
-    const map = new Map<Id, SilversatRegion[]>();
-    for (const product of products.data ?? []) {
-      const region = product.silversatRegionId ? byId.get(product.silversatRegionId) : undefined;
-      if (!region) continue;
-      const list = map.get(product.provinceId) ?? [];
-      if (!list.some((row) => row.id === region.id)) list.push(region);
-      map.set(product.provinceId, list);
-    }
-    return map;
-  }, [products.data, regions.data]);
+  const regionById = useMemo(
+    () => new Map((regions.data ?? []).map((row) => [row.id, row])),
+    [regions.data],
+  );
 
   const devices = useAsync(
     () =>
@@ -119,23 +102,21 @@ export function DevicesPage() {
       return { region, source: 'manual' };
     }
 
-    const province = device.appUser?.provinceId;
-    if (!province) {
-      return { region: null, source: 'none', problem: 'الجهاز ما إله مشترك أو محافظة' };
+    const owner = device.appUser;
+    if (!owner?.silversatRegionId) {
+      return { region: null, source: 'none', problem: 'الجهاز ما إله مشترك أو سيرفر' };
     }
 
-    const servers = serversByProvince.get(province) ?? [];
-    if (servers.length === 0) {
-      return { region: null, source: 'none', problem: 'محافظة المشترك ما مربوطة بسيرفر' };
+    // The active list is preferred for being the vendor-facing record; a
+    // stopped server is missing from it, so the embedded copy still names it.
+    const region = regionById.get(owner.silversatRegionId) ?? owner.silversatRegion ?? null;
+    if (!region) {
+      return { region: null, source: 'none', problem: 'سيرفر المشترك ما ينلكى' };
     }
-    if (servers.length > 1) {
-      return {
-        region: servers[0],
-        source: 'derived',
-        problem: `محافظة المشترك موزّعة على ${servers.length} سيرفرات`,
-      };
+    if (!region.isActive) {
+      return { region, source: 'derived', problem: 'سيرفر المشترك متوقف' };
     }
-    return { region: servers[0], source: 'derived' };
+    return { region, source: 'derived' };
   };
 
   const sendSignal = async () => {
@@ -177,7 +158,7 @@ export function DevicesPage() {
     {
       key: 'province',
       header: 'المحافظة',
-      render: (row) => row.appUser?.province?.name ?? '—',
+      render: (row) => row.appUser?.silversatRegion?.province?.name ?? '—',
     },
     {
       key: 'server',
@@ -195,7 +176,7 @@ export function DevicesPage() {
           <div className="col" style={{ lineHeight: 1.35 }}>
             <span className="fs-small">{route.region.name}</span>
             <span className="fs-tiny dim">
-              {route.source === 'manual' ? 'اختيار يدوي' : 'من محافظة المشترك'}
+              {route.source === 'manual' ? 'اختيار يدوي' : 'سيرفر المشترك'}
             </span>
           </div>
         );
@@ -249,20 +230,19 @@ export function DevicesPage() {
     <>
       <PageHeader
         title="الأجهزة"
-        subtitle="رسيفرات المشتركين — والاستعلام والشحن يروحون لسيرفر محافظة المشترك"
+        subtitle="رسيفرات المشتركين — والاستعلام والشحن يروحون لسيرفر المشترك"
       />
 
       <div className="page">
         <Notice tone="warning">
           الاستعلام وإرسال الإشارة والشحن كلها إجراءات مباشرة على سيرفر سلفرسات — ما ننحفظ عدنا أي
-          سجل إلها. السيرفر ينشتق من محافظة المشترك تلقائياً، فما تحتاج تنتخبه.
+          سجل إلها. السيرفر هو سيرفر المشترك نفسه، فما تحتاج تنتخبه.
         </Notice>
 
         {unroutable > 0 ? (
           <Notice tone="danger">
             <span className="strong num">{unroutable}</span> جهاز بهذي الصفحة ما ينلكى إله سيرفر —
-            محافظة صاحبه ما مربوطة بسيرفر سلفرسات. صلّح الربط من{' '}
-            <Link to="/provinces">المحافظات</Link>، أو انتخب سيرفر يدوياً من فوق.
+            صاحبه ما إله سيرفر مقروء. صلّح سيرفر المشترك من صفحته، أو انتخب سيرفر يدوياً من فوق.
           </Notice>
         ) : null}
 
@@ -291,7 +271,7 @@ export function DevicesPage() {
               value={overrideRegion}
               onChange={setOverrideRegion}
               options={[
-                { value: '', label: 'السيرفر: من محافظة المشترك' },
+                { value: '', label: 'السيرفر: سيرفر المشترك' },
                 ...(regions.data ?? []).map((row: SilversatRegion) => ({
                   value: row.id,
                   label: `تجاوز: ${row.name}`,
@@ -400,7 +380,7 @@ function SubscriptionDialog({
       <div className="col" style={{ gap: 'var(--sp-3)' }}>
         <Notice tone={routing.problem ? 'warning' : 'info'}>
           الاستعلام راح لسيرفر <span className="strong">{routing.region?.name ?? '—'}</span>
-          {routing.source === 'manual' ? ' (اختيار يدوي)' : ' — سيرفر محافظة المشترك'}.
+          {routing.source === 'manual' ? ' (اختيار يدوي)' : ' — سيرفر المشترك'}.
           {routing.problem ? ` ${routing.problem}.` : ''}
         </Notice>
         <AsyncBlock state={state}>{(data) => <VendorPayload data={data} />}</AsyncBlock>

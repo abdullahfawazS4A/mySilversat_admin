@@ -10,7 +10,7 @@
  * The tabs are just density management — all of it is already loaded.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowRight, Pencil, ShieldBan, ShieldCheck, Tv } from 'lucide-react';
 import {
@@ -52,9 +52,6 @@ export function UserDetailPage() {
   const { toast } = useToast();
 
   const detail = useAsync(() => repos.appUsers.detail(userId), [userId]);
-  // Only for the province picker in the edit dialog, so it is read once here
-  // rather than on every open.
-  const provinces = useAsync(() => repos.geo.provinces.all(), []);
   const [tab, setTab] = useState<Tab>('devices');
   const [confirmBlock, setConfirmBlock] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -118,7 +115,8 @@ export function UserDetailPage() {
               <div className="grid grid-form mt-3">
                 <KeyValue
                   rows={[
-                    ['المحافظة', data.user.province?.name ?? '—'],
+                    ['السيرفر', data.user.silversatRegion?.name ?? '—'],
+                    ['المحافظة', data.user.silversatRegion?.province?.name ?? '—'],
                     ['البريد الإلكتروني', data.user.email ?? '—'],
                     ['تاريخ الاشتراك', formatDateAr(data.user.createdAt)],
                     [
@@ -189,10 +187,6 @@ export function UserDetailPage() {
             {editing ? (
               <UserDialog
                 user={data.user}
-                provinceOptions={(provinces.data ?? []).map((row) => ({
-                  value: row.id,
-                  label: row.name,
-                }))}
                 onClose={() => setEditing(false)}
                 onSaved={() => {
                   setEditing(false);
@@ -255,6 +249,15 @@ function DevicesTable({ rows }: { rows: Device[] }) {
  * reason: it would be wrong to present it as the receipt.
  */
 function PurchasesTable({ rows }: { rows: Code[] }) {
+  // A code's nested category no longer carries its product, so the name is
+  // looked up. The list is small and the page reads it once.
+  const repos = useRepos();
+  const products = useAsync(() => repos.catalog.products.all(), []);
+  const productName = useMemo(
+    () => new Map((products.data ?? []).map((row) => [row.id, row.displayName])),
+    [products.data],
+  );
+
   const columns: Column<Code>[] = [
     {
       key: 'category',
@@ -262,7 +265,9 @@ function PurchasesTable({ rows }: { rows: Code[] }) {
       render: (row) => (
         <div className="col">
           <span className="strong">{row.category?.name ?? '—'}</span>
-          <span className="fs-tiny dim">{row.category?.product?.displayName ?? ''}</span>
+          <span className="fs-tiny dim">
+            {row.category ? (productName.get(row.category.productId) ?? '') : ''}
+          </span>
         </div>
       ),
     },

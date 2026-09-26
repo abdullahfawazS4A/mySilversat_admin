@@ -1,25 +1,27 @@
 /**
  * Province scoping.
  *
- * A code carries no province. It belongs to a category, the category to a
- * product, and only the product names a province — so "the stock of Ninawa"
- * is a join the API cannot do for us. Every province filter in the console
- * resolves through here instead: read the two reference tables once, build the
- * product→province and category→product maps, and apply them over fetched rows.
+ * A code carries no province, and neither does anything it hangs off until
+ * the very end of the chain: code → category → product → SilverSat server →
+ * province. So "the stock of Ninawa" is a join the API cannot do for us. Every
+ * province filter in the console resolves through here instead: read the two
+ * catalogue tables once, build the product→province and category→province
+ * maps, and apply them over fetched rows.
  *
- * The same maps answer the other question a province raises, which is which
- * SilverSat server activates its codes. The server hangs off the product too,
- * so a province's server is whatever its products point at — and the rule that
- * a province binds to exactly one server is a fact to be *checked* here, not
- * assumed: a province whose products disagree is a misconfiguration the
- * console has to be able to show.
+ * The product read embeds its server with the server's `provinceId`, which is
+ * what makes one read enough. A category's nested product does not embed it,
+ * so categories are placed through the product map rather than their own row.
+ *
+ * A product whose server names no province is in no province. That is a
+ * server misconfiguration and the province screen surfaces it; here it simply
+ * drops out of every province's lists.
  *
  * Products and categories are small and change rarely, so the maps are
  * memoised for a minute rather than re-read on every keystroke of a search.
  */
 
 import { fetchAll } from '@/data/http/client';
-import type { Category, Id, Product } from '@/types';
+import { provinceOfProduct, type Category, type Id, type Product } from '@/types';
 
 /** How long a built scope is reused before the tables are read again. */
 const SCOPE_TTL_MS = 60_000;
@@ -36,13 +38,6 @@ export interface CatalogScope {
   categoryIdsOf(provinceId: Id): Set<Id>;
   /** Which province a category belongs to, or undefined if it is orphaned. */
   provinceOfCategory(categoryId: Id): Id | undefined;
-  /**
-   * The SilverSat servers a province's products point at.
-   *
-   * More than one means the province is split across servers, which the
-   * contract says must not happen — the caller renders that as a warning.
-   */
-  regionIdsOf(provinceId: Id): Id[];
 }
 
 let cached: { at: number; scope: CatalogScope } | null = null;
@@ -50,19 +45,20 @@ let inFlight: Promise<CatalogScope> | null = null;
 
 function build(products: Product[], categories: Category[]): CatalogScope {
   const byProvince = new Map<Id, Product[]>();
+  const provinceOf = new Map<Id, Id>();
   for (const product of products) {
-    const list = byProvince.get(product.provinceId);
+    const provinceId = provinceOfProduct(product);
+    if (!provinceId) continue;
+    provinceOf.set(product.id, provinceId);
+    const list = byProvince.get(provinceId);
     if (list) list.push(product);
-    else byProvince.set(product.provinceId, [product]);
+    else byProvince.set(provinceId, [product]);
   }
-
-  const provinceOfProduct = new Map(products.map((row) => [row.id, row.provinceId]));
 
   const categoriesByProvince = new Map<Id, Category[]>();
   const provinceOfCategory = new Map<Id, Id>();
   for (const category of categories) {
-    const provinceId =
-      category.product?.provinceId ?? provinceOfProduct.get(category.productId);
+    const provinceId = provinceOf.get(category.productId);
     if (!provinceId) continue;
     provinceOfCategory.set(category.id, provinceId);
     const list = categoriesByProvince.get(provinceId);
@@ -84,13 +80,6 @@ function build(products: Product[], categories: Category[]): CatalogScope {
     categoriesOf: (provinceId) => categoriesByProvince.get(provinceId) ?? [],
     categoryIdsOf: (provinceId) => idsByProvince.get(provinceId) ?? new Set<Id>(),
     provinceOfCategory: (categoryId) => provinceOfCategory.get(categoryId),
-    regionIdsOf: (provinceId) => [
-      ...new Set(
-        (byProvince.get(provinceId) ?? [])
-          .map((product) => product.silversatRegionId)
-          .filter((id): id is Id => Boolean(id)),
-      ),
-    ],
   };
 }
 

@@ -73,7 +73,7 @@ export function LeaderboardPage() {
         row.rank,
         row.user.name,
         row.user.phone,
-        row.user.province?.name ?? '',
+        row.user.silversatRegion?.province?.name ?? '',
         row.points,
         row.predictionCount,
         formatPercent(row.accuracy),
@@ -102,7 +102,7 @@ export function LeaderboardPage() {
     {
       key: 'province',
       header: 'المحافظة',
-      render: (row) => row.user.province?.name ?? '—',
+      render: (row) => row.user.silversatRegion?.province?.name ?? '—',
     },
     {
       key: 'points',

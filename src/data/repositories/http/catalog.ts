@@ -1,12 +1,11 @@
 /**
  * Products and categories — the price list.
  *
- * A product is one service in one province; a category is a purchasable
- * variant of it carrying what it costs us and what the app sells it for. Codes
- * hang off categories, which is what makes stock provincial without any
- * province column on the code itself. The product also names the SilverSat
- * server its codes activate against, so these two tables are the only place
- * the console can learn which upstream a province talks to.
+ * A product is one service on one SilverSat server; a category is a
+ * purchasable variant of it carrying what it costs us and what the app sells
+ * it for. Codes hang off categories and the server names a province, which is
+ * what makes stock provincial without any province column on the code or the
+ * product itself.
  *
  * Because those two facts are joined from here, every write drops the
  * memoised province maps. A new category whose stock screen cannot see it for
@@ -28,7 +27,8 @@ class HttpProductsRepository extends HttpCrudRepository<Product, ProductInput> {
   constructor() {
     super(
       '/products',
-      (row) => `${row.displayName} ${row.name} ${row.province?.name ?? ''} ${row.silversatRegion?.name ?? ''}`,
+      (row) =>
+        `${row.displayName} ${row.name} ${row.silversatRegion?.name ?? ''} ${row.silversatRegion?.province?.name ?? ''}`,
     );
   }
 

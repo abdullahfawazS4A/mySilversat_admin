@@ -12,6 +12,7 @@
  */
 
 import { api, fetchAll } from '@/data/http/client';
+import { provinceOfUser } from '@/types';
 import type { AppUser, Code, Device, Id, LeaderboardRow, ListQuery, Page, Prediction } from '@/types';
 import type { AppUserDetail, AppUserFilter, AppUserInput, AppUsersRepository } from '../types';
 import { HttpCrudRepository, localPage, toPage, toRange } from './crud';
@@ -21,12 +22,17 @@ export class HttpAppUsersRepository
   implements AppUsersRepository
 {
   constructor() {
-    super('/app-users', (row) => `${row.name} ${row.phone} ${row.email ?? ''} ${row.province?.name ?? ''}`);
+    super(
+      '/app-users',
+      (row) =>
+        `${row.name} ${row.phone} ${row.email ?? ''} ${row.silversatRegion?.name ?? ''} ${row.silversatRegion?.province?.name ?? ''}`,
+    );
   }
 
   /**
    * Lists users, narrowing by province and block state.
    *
+   * A user's province is their server's, read off the embedded region.
    * `/app-users` takes neither filter, so an unfiltered page is served
    * straight from the API and a filtered one is built from every row. The
    * split matters: the common case stays a single paged request.
@@ -46,7 +52,7 @@ export class HttpAppUsersRepository
   private narrow(rows: AppUser[], filter: AppUserFilter | undefined): AppUser[] {
     return rows.filter(
       (row) =>
-        (filter?.provinceId === undefined || row.provinceId === filter.provinceId) &&
+        (filter?.provinceId === undefined || provinceOfUser(row) === filter.provinceId) &&
         (filter?.isBlocked === undefined || row.isBlocked === filter.isBlocked),
     );
   }
@@ -101,7 +107,7 @@ export class HttpAppUsersRepository
     }
 
     const scoped = query?.provinceId
-      ? users.filter((user) => user.provinceId === query.provinceId)
+      ? users.filter((user) => provinceOfUser(user) === query.provinceId)
       : users;
 
     const needle = query?.search?.trim()?.toLowerCase();

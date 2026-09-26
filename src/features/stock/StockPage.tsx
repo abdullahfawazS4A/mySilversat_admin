@@ -6,12 +6,11 @@
  *
  *   المنتجات  →  الفئات  →  الرفعات  →  الكارتات
  *
- * A **product** is one service in one province, and it carries the two
- * bindings everything else depends on: the province whose stock this is, and
- * the SilverSat server that will activate its cards. Both are set here, on the
- * product, because that is the only row in the system that holds them — a code
- * has no province and no server of its own, it inherits them by being in a
- * category of a product.
+ * A **product** is one service on one SilverSat server, and that server is
+ * the binding everything else depends on: it activates the product's cards,
+ * and its province is whose stock this is. It is set here, on the product,
+ * because that is the only row that holds it — a code has no province and no
+ * server of its own, it inherits them by being in a category of a product.
  *
  * A **category** is a purchasable tier of that product and the row that
  * carries prices. Stock levels are per category, not per product: "we are out"
@@ -71,6 +70,7 @@ import {
   type Sheet,
 } from '@/lib/spreadsheet';
 import {
+  provinceOfProduct,
   toAmount,
   type Batch,
   type Category,
@@ -93,6 +93,11 @@ import {
   validateProduct,
   type Option,
 } from '../shared/productForm';
+
+/** A server in the product picker, with the province it puts a product in. */
+interface RegionOption extends Option {
+  provinceId: Id | null;
+}
 
 /** Counters rolled up from a set of batches. */
 interface Counts {
@@ -185,10 +190,16 @@ export function StockPage() {
     value: row.id,
     label: row.name,
   }));
-  const regionOptions: Option[] = (regions.data ?? []).map((row) => ({
-    value: row.id,
-    label: row.name,
-  }));
+  // The province rides in the label: choosing a server is choosing a province,
+  // and this picker is the only place the operator sees that.
+  const regionOptions: RegionOption[] = useMemo(() => {
+    const names = new Map((provinces.data ?? []).map((row) => [row.id, row.name]));
+    return (regions.data ?? []).map((row) => ({
+      value: row.id,
+      label: `${row.name} — ${(row.provinceId && names.get(row.provinceId)) || 'بدون محافظة'}`,
+      provinceId: row.provinceId ?? null,
+    }));
+  }, [provinces.data, regions.data]);
 
   /**
    * One setter for the whole path.
@@ -254,7 +265,6 @@ export function StockPage() {
               tree={data}
               onOpen={(id) => go({ category: id })}
               onChanged={tree.reload}
-              provinceOptions={provinceOptions}
               regionOptions={regionOptions}
             />
           ) : (
@@ -332,7 +342,7 @@ function ProductsLevel({
 }: {
   tree: Tree;
   provinceOptions: Option[];
-  regionOptions: Option[];
+  regionOptions: RegionOption[];
   onOpen: (id: Id) => void;
   onChanged: () => void;
 }) {
@@ -349,11 +359,11 @@ function ProductsLevel({
 
   const rows = useMemo(() => {
     let out = tree.products;
-    if (provinceId !== 'all') out = out.filter((row) => row.provinceId === provinceId);
+    if (provinceId !== 'all') out = out.filter((row) => provinceOfProduct(row) === provinceId);
     if (debounced.trim()) {
       out = out.filter((row) =>
         matchesSearch(
-          `${row.displayName} ${row.name} ${row.province?.name ?? ''} ${row.silversatRegion?.name ?? ''}`,
+          `${row.displayName} ${row.name} ${row.silversatRegion?.province?.name ?? ''} ${row.silversatRegion?.name ?? ''}`,
           debounced,
         ),
       );
@@ -381,10 +391,12 @@ function ProductsLevel({
       key: 'province',
       header: 'المحافظة',
       render: (row) =>
-        row.province?.name ? (
-          <span className="fs-body">{row.province.name}</span>
+        row.silversatRegion?.province?.name ? (
+          <span className="fs-body">{row.silversatRegion.province.name}</span>
         ) : (
-          <Pill tone="danger">بدون محافظة</Pill>
+          <span title="سيرفر هذا المنتج ما مربوط بمحافظة">
+            <Pill tone="danger">سيرفره بدون محافظة</Pill>
+          </span>
         ),
     },
     {
@@ -394,10 +406,8 @@ function ProductsLevel({
         <div className="col" style={{ lineHeight: 1.35 }}>
           {row.silversatRegion ? (
             <span className="fs-small">{row.silversatRegion.name}</span>
-          ) : row.activationApi === 'silvers' ? (
-            <Pill tone="danger">غير مربوط</Pill>
           ) : (
-            <span className="dim">—</span>
+            <Pill tone="danger">غير مربوط</Pill>
           )}
           <span className="fs-tiny dim">{ACTIVATION_API[row.activationApi]}</span>
         </div>
@@ -465,7 +475,7 @@ function ProductsLevel({
     <>
       <PageHeader
         title="المخزن"
-        subtitle="المنتجات — وكل منتج مربوط بمحافظة وبسيرفر API، وجوّاه فئاته ورفعاته"
+        subtitle="المنتجات — كل منتج مربوط بسيرفر، ومحافظته محافظة السيرفر، وجوّاه فئاته ورفعاته"
         actions={
           <Button
             variant="primary"
@@ -521,7 +531,7 @@ function ProductsLevel({
               <EmptyState
                 icon={<Package size={20} />}
                 title="ماكو منتجات"
-                hint="أضف منتج واربطه بمحافظة وسيرفر حتى يبدأ مخزنه"
+                hint="أضف منتج واربطه بسيرفر حتى يبدأ مخزنه"
               />
             }
           />
@@ -531,9 +541,13 @@ function ProductsLevel({
       {editing ? (
         <ProductDialog
           row={editing.row}
-          provinceOptions={provinceOptions}
           regionOptions={regionOptions}
-          defaultProvinceId={provinceId === 'all' ? (provinceOptions[0]?.value ?? '') : provinceId}
+          defaultRegionId={
+            (provinceId === 'all'
+              ? regionOptions[0]
+              : regionOptions.find((option) => option.provinceId === provinceId)
+            )?.value ?? ''
+          }
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -570,15 +584,13 @@ function CategoriesLevel({
   tree,
   onOpen,
   onChanged,
-  provinceOptions,
   regionOptions,
 }: {
   product: Product;
   tree: Tree;
   onOpen: (id: Id) => void;
   onChanged: () => void;
-  provinceOptions: Option[];
-  regionOptions: Option[];
+  regionOptions: RegionOption[];
 }) {
   const repos = useRepos();
   const rows = tree.categoriesOf.get(product.id) ?? [];
@@ -674,7 +686,7 @@ function CategoriesLevel({
     <>
       <PageHeader
         title={product.displayName}
-        subtitle={`${product.province?.name ?? 'بدون محافظة'} · ${
+        subtitle={`${product.silversatRegion?.province?.name ?? 'بدون محافظة'} · ${
           product.silversatRegion?.name ?? 'بدون سيرفر'
         } — فئات المنتج وأسعارها`}
         actions={
@@ -746,9 +758,8 @@ function CategoriesLevel({
       {editingProduct ? (
         <ProductDialog
           row={product}
-          provinceOptions={provinceOptions}
           regionOptions={regionOptions}
-          defaultProvinceId={product.provinceId}
+          defaultRegionId={product.silversatRegionId}
           onClose={() => setEditingProduct(false)}
           onSaved={() => {
             setEditingProduct(false);
@@ -867,7 +878,7 @@ function BatchesLevel({
     <>
       <PageHeader
         title={`${category.name} — الرفعات`}
-        subtitle={`${product.displayName} · ${product.province?.name ?? '—'} — كل رفعة ملف كارتات واصل`}
+        subtitle={`${product.displayName} · ${product.silversatRegion?.province?.name ?? '—'} — كل رفعة ملف كارتات واصل`}
         actions={
           <Button variant="primary" icon={<Upload size={15} />} onClick={() => setFiling(true)}>
             رفع دفعة
@@ -1083,23 +1094,21 @@ function CodesLevel({ batchId, category }: { batchId: Id; category: Category }) 
 /** Create or edit a product, bindings included. */
 function ProductDialog({
   row,
-  provinceOptions,
   regionOptions,
-  defaultProvinceId,
+  defaultRegionId,
   onClose,
   onSaved,
 }: {
   row: Product | null;
-  provinceOptions: Option[];
   regionOptions: Option[];
-  defaultProvinceId: Id;
+  defaultRegionId: Id;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const repos = useRepos();
   const { toast } = useToast();
   const { draft, set } = useDraft<ProductInput>(
-    row ? productToInput(row) : blankProduct(defaultProvinceId),
+    row ? productToInput(row) : blankProduct(defaultRegionId),
   );
   const [run, action] = useAction();
   const [invalid, setInvalid] = useState<string | null>(null);
@@ -1133,13 +1142,13 @@ function ProductDialog({
       }
     >
       <Notice tone="info">
-        المحافظة تحدّد مخزن هذا المنتج، والسيرفر يحدّد وين يروح التجديد والاستعلام لكارتاته.
+        السيرفر يحدّد وين يروح التجديد والاستعلام لكارتات هذا المنتج، ومحافظة السيرفر هي محافظة
+        مخزنه. تغيير السيرفر ينقل المنتج ومخزنه لمحافظة السيرفر الجديد.
       </Notice>
       <div className="grid grid-form mt-3">
         <ProductFields
           draft={draft}
           set={set}
-          provinceOptions={provinceOptions}
           regionOptions={regionOptions}
         />
       </div>
@@ -1379,7 +1388,8 @@ function FileBatchDialog({
     >
       <Notice tone="info">
         الرفعة راح تنزل على <span className="strong">{category.name}</span> من{' '}
-        <span className="strong">{product.displayName}</span> — {product.province?.name ?? '—'}.
+        <span className="strong">{product.displayName}</span> —{' '}
+        {product.silversatRegion?.province?.name ?? '—'}.
       </Notice>
 
       <div className="mt-3">

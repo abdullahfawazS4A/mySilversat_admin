@@ -145,7 +145,7 @@ export function UsersPage() {
             {
               key: 'province',
               header: 'المحافظة',
-              render: (row) => row.province?.name ?? '—',
+              render: (row) => row.silversatRegion?.province?.name ?? '—',
             },
             {
               key: 'points',
@@ -230,7 +230,6 @@ export function UsersPage() {
       {editing ? (
         <UserDialog
           user={editing.user}
-          provinceOptions={provinceOptions}
           onClose={() => setEditing(null)}
           onSaved={() => {
             const added = !editing.user;

@@ -167,12 +167,15 @@ export interface RegionsRepository
 
 // ------------------------------------------------------------ catalog ------
 
+/**
+ * A product names its server and nothing else. The province is the server's,
+ * and the API refuses a `provinceId` here outright.
+ */
 export interface ProductInput {
   name: string;
   displayName: string;
-  provinceId: Id;
+  silversatRegionId: Id;
   activationApi?: 'silvers' | 'other';
-  silversatRegionId?: Id | null;
   image?: string;
 }
 
@@ -260,7 +263,8 @@ export interface AppUserInput {
   name: string;
   password?: string;
   phone: string;
-  provinceId: Id;
+  /** The server the subscriber is on. Their province follows from it. */
+  silversatRegionId: Id;
   email?: string | null;
   image?: string;
 }
@@ -617,16 +621,6 @@ export interface ContentRepository {
 export interface SilversatRepository {
   /** Active regions, as the vendor tools' picker sees them. */
   regions(): Promise<SilversatRegion[]>;
-  /**
-   * Which server a province's activations go to, or null when none is bound.
-   *
-   * Every vendor call below takes a region, and nothing an operator works
-   * from carries one: a receiver knows its owner, its owner knows a province,
-   * and only the province's products know the server. Making each screen redo
-   * that walk is how one of them ends up picking the wrong server and
-   * querying the right receiver number against the wrong province.
-   */
-  regionForProvince(provinceId: Id): Promise<SilversatRegion | null>;
   /** Validates a code against a region before anyone burns it. */
   checkCode(regionId: Id, code: string): Promise<VendorResponse>;
   /** Looks a subscription up by receiver number, within one region. */

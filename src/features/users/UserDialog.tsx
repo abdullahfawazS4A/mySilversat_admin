@@ -2,20 +2,21 @@
  * Adding a subscriber, and editing one.
  *
  * One dialog for both, because the fields are the same five and a second copy
- * is how the edit path ends up missing the province — the one field that
- * quietly decides whether this person can register a receiver at all.
+ * is how the edit path ends up missing the server — the one field that
+ * decides where this person's receivers are checked and activated, and which
+ * province they count in. The picker names each server's province beside it,
+ * because that is the only place the operator sees the province at all.
  *
  * Two things differ by mode, and both are about the password. On a create it
- * is offered and may be left blank, because support usually sets the account
- * up and lets the customer claim it through the app's own OTP flow. On an edit
- * a blank box means **leave the password alone**, so it is never sent empty —
+ * is required — the API refuses an account without one. On an edit a blank
+ * box means **leave the password alone**, so it is never sent empty —
  * the same rule the server credentials follow, for the same reason: you cannot
  * show what is stored, so an empty box cannot mean "clear it".
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, Field, Modal, Select, TextInput, useDraft } from '@/components/ui';
-import { useAction } from '@/app/useAsync';
+import { useAction, useAsync } from '@/app/useAsync';
 import { useRepos } from '@/app/RepositoryContext';
 import type { AppUser, Id } from '@/types';
 import type { AppUserInput } from '@/data/repositories/types';
@@ -25,13 +26,11 @@ const MIN_PASSWORD = 8;
 
 export function UserDialog({
   user,
-  provinceOptions,
   onClose,
   onSaved,
 }: {
   /** The subscriber being edited, or null to add one. */
   user: AppUser | null;
-  provinceOptions: { value: Id; label: string }[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -39,10 +38,22 @@ export function UserDialog({
   const { draft, set } = useDraft<AppUserInput>({
     name: user?.name ?? '',
     phone: user?.phone ?? '',
-    provinceId: user?.provinceId ?? provinceOptions[0]?.value ?? '',
+    silversatRegionId: user?.silversatRegionId ?? '',
     email: user?.email ?? '',
     password: '',
   });
+
+  const regions = useAsync(() => repos.regions.all(), []);
+  const provinces = useAsync(() => repos.geo.provinces.all(), []);
+  const regionOptions = useMemo(() => {
+    const names = new Map((provinces.data ?? []).map((row) => [row.id, row.name]));
+    return (regions.data ?? []).map((row) => ({
+      value: row.id,
+      label: `${row.name} — ${(row.provinceId && names.get(row.provinceId)) || 'بدون محافظة'}${
+        row.isActive ? '' : ' (متوقف)'
+      }`,
+    }));
+  }, [regions.data, provinces.data]);
   const [run, action] = useAction();
   const [invalid, setInvalid] = useState<string | null>(null);
 
@@ -53,11 +64,13 @@ export function UserDialog({
       ? 'اسم المشترك مطلوب'
       : !draft.phone.trim()
         ? 'رقم الهاتف مطلوب'
-        : !draft.provinceId
-          ? 'اختر المحافظة'
-          : password && password.length < MIN_PASSWORD
-            ? `كلمة المرور لازم تكون ${MIN_PASSWORD} أحرف على الأقل`
-            : null;
+        : !draft.silversatRegionId
+          ? 'اختر السيرفر'
+          : !user && !password
+            ? 'كلمة المرور مطلوبة'
+            : password && password.length < MIN_PASSWORD
+              ? `كلمة المرور لازم تكون ${MIN_PASSWORD} أحرف على الأقل`
+              : null;
     setInvalid(problem);
     if (problem) return;
 
@@ -105,13 +118,17 @@ export function UserDialog({
           />
         </Field>
         <Field
-          label="المحافظة"
-          hint={user ? 'تغييرها يغيّر السيرفر اللي تنسجّل عليه أجهزته الجديدة' : undefined}
+          label="سيرفر سلفرسات"
+          hint={
+            user
+              ? 'أجهزته تنفحص وتتفعّل على هذا السيرفر، ومحافظته هي محافظة السيرفر. إذا عنده أجهزة، السيرفر ممكن يرفض التغيير'
+              : 'أجهزته تنفحص وتتفعّل على هذا السيرفر، ومحافظته هي محافظة السيرفر'
+          }
         >
           <Select<Id>
-            value={draft.provinceId}
-            onChange={(next) => set('provinceId', next)}
-            options={provinceOptions}
+            value={draft.silversatRegionId}
+            onChange={(next) => set('silversatRegionId', next)}
+            options={[{ value: '', label: 'اختر السيرفر' }, ...regionOptions]}
           />
         </Field>
         <Field label="البريد الإلكتروني" hint="اختياري — فرّغه حتى تشيله">
@@ -122,7 +139,7 @@ export function UserDialog({
           hint={
             user
               ? 'اتركها فارغة إذا ما تريد تغيّرها'
-              : `اختيارية — يكدر يفعّل حسابه من التطبيق (${MIN_PASSWORD} أحرف على الأقل)`
+              : `${MIN_PASSWORD} أحرف على الأقل`
           }
         >
           <TextInput
