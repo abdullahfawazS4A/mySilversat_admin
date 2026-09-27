@@ -459,8 +459,15 @@ function ProductsLevel({
           <Button
             variant="ghost"
             size="sm"
-            title="حذف المنتج"
+            title={
+              (tree.byProduct.get(row.id)?.batches ?? 0) > 0
+                ? 'ما ينحذف — المنتج عنده رفعات'
+                : 'حذف المنتج'
+            }
             icon={<Trash2 size={14} />}
+            // The API deletes a product whatever hangs off it, so the rule is
+            // kept here: a product with any batch is a stock and sales record.
+            disabled={(tree.byProduct.get(row.id)?.batches ?? 0) > 0}
             onClick={() => setRemoving(row)}
           />
         </div>
@@ -562,8 +569,8 @@ function ProductsLevel({
           title="حذف المنتج"
           message={
             <>
-              راح ينحذف المنتج <span className="strong">{removing.displayName}</span> وفئاته تظل بلا
-              منتج. الكارتات المرفوعة ما تنحذف.
+              راح ينحذف المنتج <span className="strong">{removing.displayName}</span>. ما عنده أي
+              رفعة، وفئاته تظل بلا منتج.
             </>
           }
           onConfirm={() => repos.catalog.products.remove(removing.id)}
