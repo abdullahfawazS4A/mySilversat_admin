@@ -250,6 +250,10 @@ export interface StockRepository {
       notes?: string | null;
       codes: { primaryValue: string }[];
     }): Promise<Batch>;
+    /** Disables the batch and every code in it that is not sold yet. */
+    disable(id: Id): Promise<{ disabledCodesCount: number }>;
+    /** Soft-deletes the batch's unsold codes. Sold codes stay, as history. */
+    removeUnsold(id: Id): Promise<{ deletedCodesCount: number }>;
   };
   codes: CrudRepository<Code, CodeInput, Partial<CodeInput>, CodeFilter>;
   /** Finds codes by id or primary value — the support lookup. */

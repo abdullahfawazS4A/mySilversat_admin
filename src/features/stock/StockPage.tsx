@@ -28,6 +28,7 @@
 import { useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  Ban,
   Boxes,
   ChevronLeft,
   Layers,
@@ -808,7 +809,10 @@ function BatchesLevel({
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
   const [page, setPage] = useState(1);
+  const { toast } = useToast();
   const [filing, setFiling] = useState(false);
+  const [disabling, setDisabling] = useState<Batch | null>(null);
+  const [removing, setRemoving] = useState<Batch | null>(null);
 
   const batches = useAsync(
     () =>
@@ -872,7 +876,43 @@ function BatchesLevel({
         <Pill tone={BATCH_STATUS[row.status].tone}>{BATCH_STATUS[row.status].label}</Pill>
       ),
     },
+    {
+      /*
+       * Disable first, delete after. Disabling is the reversible-in-spirit
+       * step — it pulls the unsold codes off sale in one call — and deleting
+       * a batch that is still on sale would be one click from losing stock
+       * the app is selling right now.
+       */
+      key: 'actions',
+      header: '',
+      width: 92,
+      render: (row) => (
+        <div className="row row-gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            title={row.status === 'active' ? 'تعطيل الرفعة' : 'الرفعة معطّلة'}
+            icon={<Ban size={14} />}
+            disabled={row.status !== 'active'}
+            onClick={() => setDisabling(row)}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            title={row.status === 'active' ? 'عطّل الرفعة أولاً حتى تنحذف' : 'حذف الرفعة'}
+            icon={<Trash2 size={14} />}
+            disabled={row.status === 'active'}
+            onClick={() => setRemoving(row)}
+          />
+        </div>
+      ),
+    },
   ];
+
+  const refresh = () => {
+    batches.reload();
+    onChanged();
+  };
 
   return (
     <>
@@ -952,7 +992,121 @@ function BatchesLevel({
           }}
         />
       ) : null}
+
+      {disabling ? (
+        <BatchActionDialog
+          title="تعطيل الرفعة"
+          confirmLabel="تعطيل"
+          message={
+            <>
+              راح تتعطّل الرفعة <span className="strong">{disabling.fileName}</span> ومعها{' '}
+              <span className="strong num">{formatNumber(disabling.codeAvailableCount)}</span> كارت
+              متاح، فتطلع من البيع. الكارتات المباعة (
+              <span className="num">{formatNumber(disabling.codeSoldCount)}</span>) ما تتأثر.
+            </>
+          }
+          onConfirm={async () => {
+            const result = await repos.stock.batches.disable(disabling.id);
+            toast(`انعطّلت الرفعة و${formatNumber(result?.disabledCodesCount ?? 0)} كارت`);
+          }}
+          onClose={() => setDisabling(null)}
+          onSettled={refresh}
+        />
+      ) : null}
+
+      {removing ? (
+        <BatchActionDialog
+          title="حذف الرفعة"
+          confirmLabel="حذف"
+          message={
+            removing.codeSoldCount > 0 ? (
+              <>
+                راح تنحذف الكارتات غير المباعة من الرفعة{' '}
+                <span className="strong">{removing.fileName}</span>. الرفعة نفسها وكارتاتها المباعة (
+                <span className="num">{formatNumber(removing.codeSoldCount)}</span>) تبقى، لأنها
+                سجل مبيعات المشتركين.
+              </>
+            ) : (
+              <>
+                راح تنحذف الرفعة <span className="strong">{removing.fileName}</span> وكل كارتاتها.
+                ما فيها كارت مباع.
+              </>
+            )
+          }
+          onConfirm={async () => {
+            // Two calls, so a refusal says which one: after the first, the
+            // unsold codes are already gone whatever the second answers.
+            const result = await repos.stock.batches
+              .removeUnsold(removing.id)
+              .catch((err: unknown) => {
+                throw new Error(`ما انحذفت الكارتات: ${err instanceof Error ? err.message : ''}`);
+              });
+            // A batch with sales is the record of them, so only an unsold one
+            // goes as a whole.
+            if (removing.codeSoldCount === 0) {
+              // The API cannot delete a batch whose codes it soft-deleted a
+              // moment ago — the rows still point at it and the query fails —
+              // so this refusal is expected until the backend is fixed.
+              await repos.stock.batches.remove(removing.id).catch(() => {
+                throw new Error(
+                  `انحذفت الكارتات غير المباعة (${formatNumber(result?.deletedCodesCount ?? 0)})، بس الباك إند ما يقدر يحذف الرفعة نفسها حالياً — تبقى معطّلة وفاضية.`,
+                );
+              });
+              toast('انحذفت الرفعة');
+            } else {
+              toast(`انحذف ${formatNumber(result?.deletedCodesCount ?? 0)} كارت غير مباع`);
+            }
+          }}
+          onClose={() => setRemoving(null)}
+          onSettled={refresh}
+        />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * Confirms a batch action and runs it.
+ *
+ * Refreshes whether it worked or not: the delete is two calls, and when the
+ * second is refused the first has already removed the unsold codes — the
+ * table has to show that rather than the counts from before.
+ */
+function BatchActionDialog({
+  title,
+  confirmLabel,
+  message,
+  onConfirm,
+  onClose,
+  onSettled,
+}: {
+  title: string;
+  confirmLabel: string;
+  message: ReactNode;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+  onSettled: () => void;
+}) {
+  const [run, action] = useAction();
+  return (
+    <ConfirmDialog
+      danger
+      title={title}
+      confirmLabel={confirmLabel}
+      pending={action.pending}
+      message={
+        <>
+          {message}
+          {action.error ? <div className="field-error mt-2">{action.error}</div> : null}
+        </>
+      }
+      onCancel={onClose}
+      onConfirm={async () => {
+        const ok = await run(onConfirm);
+        onSettled();
+        if (ok) onClose();
+      }}
+    />
   );
 }
 

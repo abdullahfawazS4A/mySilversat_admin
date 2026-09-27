@@ -49,6 +49,14 @@ class HttpBatchesRepository extends HttpCrudRepository<
   }): Promise<Batch> {
     return api.post<Batch>('/batches/with-codes', input);
   }
+
+  disable(id: Id): Promise<{ disabledCodesCount: number }> {
+    return api.patch<{ disabledCodesCount: number }>(`/batches/${id}/disable`);
+  }
+
+  removeUnsold(id: Id): Promise<{ deletedCodesCount: number }> {
+    return api.delete<{ deletedCodesCount: number }>(`/batches/${id}/unsold-codes`);
+  }
 }
 
 class HttpCodesRepository extends HttpCrudRepository<
