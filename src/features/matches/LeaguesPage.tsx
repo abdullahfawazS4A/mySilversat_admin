@@ -48,7 +48,7 @@ import { useToast } from '@/app/ToastContext';
 import type { Id, League, Team } from '@/types';
 import type { LeagueInput, TeamInput } from '@/data/repositories/types';
 import { arabicName, leagueLabel, teamName } from '@/lib/labels';
-import { mediaUrl } from '@/lib/media';
+import { mediaUrl, mediaCrossOrigin } from '@/lib/media';
 import { ImagePicker } from '../shared/ImagePicker';
 import { CrudScreen } from '../shared/CrudScreen';
 import { MatchesBoard } from './MatchesPage';
@@ -477,7 +477,13 @@ function TeamsTab() {
           width: 52,
           render: (row) =>
             row.logoUrl ? (
-              <img className="team-logo" src={mediaUrl(row.logoUrl)} alt="" loading="lazy" />
+              <img
+                className="team-logo"
+                src={mediaUrl(row.logoUrl)}
+                crossOrigin={mediaCrossOrigin(mediaUrl(row.logoUrl))}
+                alt=""
+                loading="lazy"
+              />
             ) : (
               <span className="dim">—</span>
             ),

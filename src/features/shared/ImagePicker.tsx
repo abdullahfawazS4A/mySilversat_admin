@@ -22,6 +22,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { ImagePlus, Undo2, Upload } from 'lucide-react';
 import { Button, Field } from '@/components/ui';
+import { mediaCrossOrigin } from '@/lib/media';
 
 /** What the API will accept, and what the picker filters the file dialog to. */
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -119,7 +120,7 @@ export function ImagePicker({
 
       {shown ? (
         <div className="image-picked">
-          <img className="image-preview" src={shown} alt="" />
+          <img className="image-preview" src={shown} crossOrigin={mediaCrossOrigin(shown)} alt="" />
           <div className="row row-gap-2 mt-2">
             <Button size="sm" icon={<Upload size={14} />} onClick={() => fileInput.current?.click()}>
               تغيير الصورة

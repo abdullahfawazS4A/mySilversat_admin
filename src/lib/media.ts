@@ -31,3 +31,21 @@ export function mediaUrl(value: string | null | undefined): string {
   if (/^(https?:|data:|blob:)/i.test(path)) return path;
   return `${API_BASE}/${path.replace(/^\/+/, '')}`;
 }
+
+/**
+ * The `crossOrigin` an `<img>` needs for `src`.
+ *
+ * The API answers its uploads with `Cross-Origin-Resource-Policy:
+ * same-origin`, which forbids a page on any other origin — this console — from
+ * showing them, so every banner and uploaded crest rendered broken. That
+ * policy only binds plain (no-cors) image loads. Asked for with CORS, the same
+ * file is governed by `Access-Control-Allow-Origin: *`, which the API also
+ * sends, and it loads.
+ *
+ * Only for the API's own files: an external host (the fixtures provider's
+ * crests) may send no CORS headers, and a CORS request to it would fail where
+ * a plain one works.
+ */
+export function mediaCrossOrigin(src: string | null | undefined): 'anonymous' | undefined {
+  return src && src.startsWith(`${API_BASE}/`) ? 'anonymous' : undefined;
+}

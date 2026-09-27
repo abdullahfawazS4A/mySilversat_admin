@@ -20,7 +20,7 @@ import { useRepos } from '@/app/RepositoryContext';
 import type { Ad, AdAction, Id } from '@/types';
 import type { AdInput } from '@/data/repositories/types';
 import { AD_ACTION } from '@/lib/labels';
-import { mediaUrl } from '@/lib/media';
+import { mediaUrl, mediaCrossOrigin } from '@/lib/media';
 import { CrudScreen } from '../shared/CrudScreen';
 import { ImagePicker } from '../shared/ImagePicker';
 
@@ -66,7 +66,13 @@ export function SlidesPage() {
           width: 92,
           render: (row) => (
             <button className="thumb-button" title={row.title} onClick={() => setPreview(row)}>
-              <img className="thumb" src={mediaUrl(row.imageUrl)} alt="" loading="lazy" />
+              <img
+                className="thumb"
+                src={mediaUrl(row.imageUrl)}
+                crossOrigin={mediaCrossOrigin(mediaUrl(row.imageUrl))}
+                alt=""
+                loading="lazy"
+              />
             </button>
           ),
         },
@@ -204,7 +210,12 @@ export function SlidesPage() {
     >
       {preview ? (
         <Modal title={preview.title} size="lg" onClose={() => setPreview(null)}>
-          <img className="image-preview" src={mediaUrl(preview.imageUrl)} alt={preview.title} />
+          <img
+            className="image-preview"
+            src={mediaUrl(preview.imageUrl)}
+            crossOrigin={mediaCrossOrigin(mediaUrl(preview.imageUrl))}
+            alt={preview.title}
+          />
           <div className="mt-3">
             <KeyValue
               rows={[

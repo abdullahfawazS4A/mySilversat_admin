@@ -18,7 +18,7 @@ import {
 import { ChevronLeft, ChevronRight, Inbox, Search, X } from 'lucide-react';
 import { MAX_PAGE_SIZE } from '@/data/http/client';
 import { cx } from '@/lib/utils';
-import { mediaUrl } from '@/lib/media';
+import { mediaUrl, mediaCrossOrigin } from '@/lib/media';
 
 // ------------------------------------------------------------------ card ---
 
@@ -816,6 +816,7 @@ export function TeamCrest({
       <img
         className="crest-img"
         src={src}
+        crossOrigin={mediaCrossOrigin(src)}
         alt=""
         title={name}
         loading="lazy"
