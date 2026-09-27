@@ -9,8 +9,7 @@
  * ledger of the whole system.
  *
  * `/codes` filters by status, category and batch server-side but has no text
- * search — `/codes/lookup` is the search, and it matches id, primary value and
- * secondary value at once.
+ * search — `/codes/lookup` is the search, and it matches id and primary value.
  *
  * There is deliberately no province filter here. A code has no province: it
  * belongs to a category, the category to a product, and only the product names
@@ -46,7 +45,7 @@ class HttpBatchesRepository extends HttpCrudRepository<
     fileName: string;
     status?: 'active' | 'disabled';
     notes?: string | null;
-    codes: { primaryValue: string; secondaryValue?: string | null }[];
+    codes: { primaryValue: string }[];
   }): Promise<Batch> {
     return api.post<Batch>('/batches/with-codes', input);
   }

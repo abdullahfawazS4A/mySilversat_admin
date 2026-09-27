@@ -1263,8 +1263,6 @@ function FileBatchDialog({
   const [sheetError, setSheetError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
 
-  const wantsSecondary = category.hasSecondaryCode;
-
   const take = async (file: File) => {
     setReading(true);
     setSheetError(null);
@@ -1287,23 +1285,18 @@ function FileBatchDialog({
   /**
    * The sheet as codes.
    *
-   * Column order is taken as read — first the card, then the extra value — and
-   * a heading row is dropped when the first row is words rather than numbers.
-   * Both are what every shipment file actually looks like, and the preview is
-   * where a file that does not is caught.
+   * The card is the first column, and a heading row is dropped when the first
+   * row is words rather than numbers. Only the card is sent: the API dropped
+   * the second value from codes, and refuses the whole batch if any code
+   * carries one.
    */
   const parsed = useMemo(() => {
     if (!sheet) return [];
     const body = looksLikeHeader(sheet.rows) ? sheet.rows.slice(1) : sheet.rows;
     return body
-      .map((row) => ({
-        primaryValue: (row[0] ?? '').trim(),
-        secondaryValue: wantsSecondary ? (row[1] ?? '').trim() || null : null,
-      }))
+      .map((row) => ({ primaryValue: (row[0] ?? '').trim() }))
       .filter((code) => code.primaryValue);
-  }, [sheet, wantsSecondary]);
-
-  const missingSecondary = wantsSecondary && parsed.some((code) => !code.secondaryValue);
+  }, [sheet]);
 
   /**
    * The first card that appears twice.
@@ -1344,9 +1337,7 @@ function FileBatchDialog({
           ? 'ما نكدر نرفع عمود فقد خانات — صلّح الملف وأعد اختياره.'
           : duplicate
             ? `الكارت ${duplicate} متكرر بالملف — صلّح الملف وأعد الرفع.`
-            : missingSecondary
-              ? 'هذي الفئة تحتاج قيمة ثانية لكل كارت — لازم عمود ثاني بالملف'
-              : null;
+            : null;
 
   const submit = async () => {
     setTried(true);
@@ -1396,7 +1387,6 @@ function FileBatchDialog({
         <SheetPicker
           busy={reading}
           sheet={sheet}
-          wantsSecondary={wantsSecondary}
           onPick={(file) => void take(file)}
         />
       </div>
@@ -1426,7 +1416,7 @@ function FileBatchDialog({
             * repeating it in a panel underneath was a line to read rather than
             * a thing to know. What is left here is only what stops the upload.
             */}
-          {rounded || duplicate || missingSecondary ? (
+          {rounded || duplicate ? (
             <div className="mt-3">
               <Notice tone="danger">
                 {rounded ? (
@@ -1439,11 +1429,6 @@ function FileBatchDialog({
                 {duplicate ? (
                   <div>
                     الكارت <span className="num strong">{duplicate}</span> مكرر بالملف.
-                  </div>
-                ) : null}
-                {missingSecondary ? (
-                  <div>
-                    هذي الفئة تحتاج قيمة ثانية لكل كارت — لازم تكون بالعمود الثاني من الملف.
                   </div>
                 ) : null}
               </Notice>
@@ -1469,12 +1454,10 @@ function FileBatchDialog({
 function SheetPicker({
   sheet,
   busy,
-  wantsSecondary,
   onPick,
 }: {
   sheet: Sheet | null;
   busy: boolean;
-  wantsSecondary: boolean;
   onPick: (file: File) => void;
 }) {
   const input = useRef<HTMLInputElement | null>(null);
@@ -1525,9 +1508,7 @@ function SheetPicker({
           <>
             <span className="strong">اختر ملف إكسل أو CSV، أو اسحبه هنا</span>
             <span className="fs-tiny dim">
-              {wantsSecondary
-                ? 'أول عمود الكارتات، والعمود الثاني القيمة الثانية'
-                : 'أول عمود بيه الكارتات — عمود واحد يكفي'}
+              أول عمود بيه الكارتات — عمود واحد يكفي
             </span>
           </>
         )}

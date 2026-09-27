@@ -213,7 +213,6 @@ export interface CodeInput {
   batchId: Id;
   categoryId: Id;
   primaryValue: string;
-  secondaryValue?: string | null;
   status?: CodeStatus;
 }
 
@@ -249,11 +248,11 @@ export interface StockRepository {
       fileName: string;
       status?: 'active' | 'disabled';
       notes?: string | null;
-      codes: { primaryValue: string; secondaryValue?: string | null }[];
+      codes: { primaryValue: string }[];
     }): Promise<Batch>;
   };
   codes: CrudRepository<Code, CodeInput, Partial<CodeInput>, CodeFilter>;
-  /** Finds codes by id, primary or secondary value — the support lookup. */
+  /** Finds codes by id or primary value — the support lookup. */
   lookup(q: string): Promise<Code[]>;
 }
 
