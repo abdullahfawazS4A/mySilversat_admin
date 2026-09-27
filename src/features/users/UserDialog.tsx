@@ -4,8 +4,13 @@
  * One dialog for both, because the fields are the same five and a second copy
  * is how the edit path ends up missing the server — the one field that
  * decides where this person's receivers are checked and activated, and which
- * province they count in. The picker names each server's province beside it,
- * because that is the only place the operator sees the province at all.
+ * province they count in.
+ *
+ * The operator picks the province first and then a server in it, because
+ * that is how they think about a subscriber. Only the server is sent: the API
+ * has no province on a subscriber and refuses a `provinceId` outright, so the
+ * province box is a filter over the servers, seeded from the current one.
+ * Servers with no province yet get their own entry rather than vanishing.
  *
  * Two things differ by mode, and both are about the password. On a create it
  * is required — the API refuses an account without one. On an edit a blank
@@ -23,6 +28,9 @@ import type { AppUserInput } from '@/data/repositories/types';
 
 /** The API's own floor. Enforced here so it is not a 400 with a field list. */
 const MIN_PASSWORD = 8;
+
+/** The province box's entry for servers not yet given a province. */
+const NO_PROVINCE = '__none__';
 
 export function UserDialog({
   user,
@@ -45,15 +53,37 @@ export function UserDialog({
 
   const regions = useAsync(() => repos.regions.all(), []);
   const provinces = useAsync(() => repos.geo.provinces.all(), []);
-  const regionOptions = useMemo(() => {
-    const names = new Map((provinces.data ?? []).map((row) => [row.id, row.name]));
-    return (regions.data ?? []).map((row) => ({
-      value: row.id,
-      label: `${row.name} — ${(row.provinceId && names.get(row.provinceId)) || 'بدون محافظة'}${
-        row.isActive ? '' : ' (متوقف)'
-      }`,
-    }));
-  }, [regions.data, provinces.data]);
+
+  // null until the operator touches it, so it can follow the current server
+  // once the server list arrives instead of being fixed at first render.
+  const [pickedProvince, setPickedProvince] = useState<string | null>(null);
+  const provinceOfRegion = (id: Id) => {
+    const region = (regions.data ?? []).find((row) => row.id === id);
+    return region ? (region.provinceId ?? NO_PROVINCE) : '';
+  };
+  const provinceId = pickedProvince ?? provinceOfRegion(draft.silversatRegionId);
+
+  const provinceOptions = useMemo(() => {
+    const rows = (provinces.data ?? []).map((row) => ({ value: row.id as string, label: row.name }));
+    const orphans = (regions.data ?? []).some((row) => !row.provinceId);
+    return orphans ? [...rows, { value: NO_PROVINCE, label: 'سيرفرات بدون محافظة' }] : rows;
+  }, [provinces.data, regions.data]);
+
+  const regionOptions = useMemo(
+    () =>
+      (regions.data ?? [])
+        .filter((row) => (row.provinceId ?? NO_PROVINCE) === provinceId)
+        .map((row) => ({
+          value: row.id,
+          label: `${row.name}${row.isActive ? '' : ' (متوقف)'}`,
+        })),
+    [regions.data, provinceId],
+  );
+
+  const pickProvince = (next: string) => {
+    setPickedProvince(next);
+    if (provinceOfRegion(draft.silversatRegionId) !== next) set('silversatRegionId', '');
+  };
   const [run, action] = useAction();
   const [invalid, setInvalid] = useState<string | null>(null);
 
@@ -64,13 +94,15 @@ export function UserDialog({
       ? 'اسم المشترك مطلوب'
       : !draft.phone.trim()
         ? 'رقم الهاتف مطلوب'
-        : !draft.silversatRegionId
-          ? 'اختر السيرفر'
-          : !user && !password
-            ? 'كلمة المرور مطلوبة'
-            : password && password.length < MIN_PASSWORD
-              ? `كلمة المرور لازم تكون ${MIN_PASSWORD} أحرف على الأقل`
-              : null;
+        : !provinceId
+          ? 'اختر المحافظة'
+          : !draft.silversatRegionId
+            ? 'اختر السيرفر'
+            : !user && !password
+              ? 'كلمة المرور مطلوبة'
+              : password && password.length < MIN_PASSWORD
+                ? `كلمة المرور لازم تكون ${MIN_PASSWORD} أحرف على الأقل`
+                : null;
     setInvalid(problem);
     if (problem) return;
 
@@ -84,9 +116,18 @@ export function UserDialog({
       password: password || undefined,
     };
 
-    const ok = await run(() =>
-      user ? repos.appUsers.update(user.id, payload) : repos.appUsers.create(payload),
-    );
+    // The API answers 200 to a server change it did not make — the other
+    // fields land, the server stays — so the reply is checked, not trusted.
+    const ok = await run(async () => {
+      if (!user) return repos.appUsers.create(payload);
+      const saved = await repos.appUsers.update(user.id, payload);
+      if (saved.silversatRegionId !== payload.silversatRegionId) {
+        throw new Error(
+          'انحفظت باقي البيانات، بس الـ API ما غيّر السيرفر — تغيير سيرفر المشترك ما مدعوم من الباك إند حالياً',
+        );
+      }
+      return saved;
+    });
     if (ok) onSaved();
   };
 
@@ -117,18 +158,29 @@ export function UserDialog({
             placeholder="07XXXXXXXXX"
           />
         </Field>
-        <Field
-          label="سيرفر سلفرسات"
-          hint={
-            user
-              ? 'أجهزته تنفحص وتتفعّل على هذا السيرفر، ومحافظته هي محافظة السيرفر. إذا عنده أجهزة، السيرفر ممكن يرفض التغيير'
-              : 'أجهزته تنفحص وتتفعّل على هذا السيرفر، ومحافظته هي محافظة السيرفر'
-          }
-        >
+        <Field label="المحافظة" hint="تحدد السيرفرات اللي تقدر تختار منها">
+          <Select<string>
+            value={provinceId}
+            onChange={pickProvince}
+            options={[{ value: '', label: 'اختر المحافظة' }, ...provinceOptions]}
+          />
+        </Field>
+        <Field label="سيرفر سلفرسات" hint="أجهزته تنفحص وتتفعّل على هذا السيرفر">
           <Select<Id>
             value={draft.silversatRegionId}
             onChange={(next) => set('silversatRegionId', next)}
-            options={[{ value: '', label: 'اختر السيرفر' }, ...regionOptions]}
+            disabled={!provinceId}
+            options={[
+              {
+                value: '',
+                label: !provinceId
+                  ? 'اختر المحافظة أولاً'
+                  : regionOptions.length
+                    ? 'اختر السيرفر'
+                    : 'ما في سيرفر بهذه المحافظة',
+              },
+              ...regionOptions,
+            ]}
           />
         </Field>
         <Field label="البريد الإلكتروني" hint="اختياري — فرّغه حتى تشيله">
