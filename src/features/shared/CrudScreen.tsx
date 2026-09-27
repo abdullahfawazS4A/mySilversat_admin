@@ -165,7 +165,7 @@ export function CrudScreen<T, C extends object, F extends object = Record<string
             ]}
             rows={state.data?.items ?? []}
             rowKey={rowKey}
-            loading={state.loading && !state.data}
+            loading={state.loading && (!state.data || state.stale)}
             page={state.data?.page}
             pageSize={state.data?.pageSize}
             total={state.data?.total}

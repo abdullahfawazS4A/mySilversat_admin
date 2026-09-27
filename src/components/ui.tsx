@@ -476,7 +476,13 @@ export function AsyncBlock<T>({
   emptyWhen,
   empty,
 }: {
-  state: { data: T | undefined; loading: boolean; error: string | null; reload: () => void };
+  state: {
+    data: T | undefined;
+    loading: boolean;
+    stale?: boolean;
+    error: string | null;
+    reload: () => void;
+  };
   children: (data: T) => ReactNode;
   skeleton?: ReactNode;
   emptyWhen?: (data: T) => boolean;
@@ -486,8 +492,10 @@ export function AsyncBlock<T>({
   // refetch whose previous answer was empty. Without the second case a screen
   // whose first query resolved to an empty page — a filter that had not been
   // resolved yet, say — flashed "no data" over a query that was still running.
+  // And on a load for a different question (another tab, filter or page), the
+  // rows on hand answer the old one, so they give way to the skeleton too.
   const emptyNow = state.data !== undefined && (emptyWhen?.(state.data) ?? isEmptyPage(state.data));
-  if (state.loading && (state.data === undefined || emptyNow)) {
+  if (state.loading && (state.data === undefined || emptyNow || state.stale)) {
     return <>{skeleton ?? <TableSkeleton />}</>;
   }
   if (state.error) {

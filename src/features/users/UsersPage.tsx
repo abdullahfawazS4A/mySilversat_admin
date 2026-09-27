@@ -125,7 +125,7 @@ export function UsersPage() {
         <DataTable
           rows={users.data?.items ?? []}
           rowKey={(row) => row.id}
-          loading={users.loading && !users.data}
+          loading={users.loading && (!users.data || users.stale)}
           onRowClick={(row) => navigate(`/users/${row.id}`)}
           page={users.data?.page}
           pageSize={users.data?.pageSize}

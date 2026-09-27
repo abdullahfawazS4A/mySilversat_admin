@@ -15,6 +15,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export interface AsyncState<T> {
   data: T | undefined;
   loading: boolean;
+  /**
+   * True while a load for *different* deps is in flight, so `data` still
+   * answers the previous question — a switched tab, filter or page. Screens
+   * show loading over it rather than the old rows. A `reload()` of the same
+   * question is not stale: its data is still right, only about to be fresher.
+   */
+  stale: boolean;
   error: string | null;
   /** Re-runs the loader. Safe to pass straight to an onClick. */
   reload: () => void;
@@ -31,9 +38,11 @@ export interface AsyncState<T> {
 export function useAsync<T>(loader: () => Promise<T>, deps: unknown[]): AsyncState<T> {
   const [data, setData] = useState<T | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [stale, setStale] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const runIdRef = useRef(0);
+  const nonceRef = useRef(nonce);
 
   // The loader is a fresh closure every render; deps are the real trigger.
   const loaderRef = useRef(loader);
@@ -44,7 +53,12 @@ export function useAsync<T>(loader: () => Promise<T>, deps: unknown[]): AsyncSta
     runIdRef.current = runId;
     let cancelled = false;
 
+    // A changed nonce alone is a reload; anything else moved the deps.
+    const isReload = nonceRef.current !== nonce;
+    nonceRef.current = nonce;
+
     setLoading(true);
+    setStale(!isReload);
     setError(null);
     loaderRef
       .current()
@@ -59,6 +73,7 @@ export function useAsync<T>(loader: () => Promise<T>, deps: unknown[]): AsyncSta
       .finally(() => {
         if (cancelled || runIdRef.current !== runId) return;
         setLoading(false);
+        setStale(false);
       });
 
     return () => {
@@ -69,7 +84,7 @@ export function useAsync<T>(loader: () => Promise<T>, deps: unknown[]): AsyncSta
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
-  return { data, loading, error, reload, setData };
+  return { data, loading, stale, error, reload, setData };
 }
 
 export interface ActionState {
