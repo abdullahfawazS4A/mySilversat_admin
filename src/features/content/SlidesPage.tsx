@@ -27,9 +27,45 @@ import { ImagePicker } from '../shared/ImagePicker';
 /** What `actionValue` holds, which depends entirely on `actionType`. */
 const ACTION_HINT: Record<AdAction, string | undefined> = {
   none: undefined,
-  url: 'الرابط اللي يفتح بالمتصفح',
-  screen: 'اسم الشاشة داخل التطبيق، مثل products — ما يطلع من التطبيق',
+  url: 'الرابط اللي يفتح بالمتصفح — لازم يبدي بـ https://',
+  screen: 'الشاشة اللي تنفتح بالتطبيق لما المشترك يضغط السلايد',
 };
+
+/**
+ * The screens a banner can open, keyed as the app routes them.
+ *
+ * This is the app's own list (`AppRoutes.deepLinkable` in the Flutter app),
+ * not a suggestion: the app ignores any other value and the tap does nothing,
+ * so the target is picked here rather than typed. The labels are the titles
+ * the subscriber sees on each screen. A screen added to the app has to be
+ * added here too.
+ */
+const APP_SCREENS: { value: string; label: string }[] = [
+  { value: 'home', label: 'الرئيسية' },
+  { value: 'renew', label: 'تجديد الاشتراك' },
+  { value: 'offers', label: 'العروض' },
+  { value: 'matches', label: 'المباريات' },
+  { value: 'predict', label: 'توقع واربح' },
+  { value: 'draws', label: 'جدد واربح' },
+  { value: 'account', label: 'حسابي' },
+  { value: 'tower', label: 'اتجاه البرج' },
+  { value: 'videos', label: 'مقاطع فيديو تعليمية' },
+  { value: 'faq', label: 'الأسئلة الشائعة' },
+  { value: 'notifications', label: 'الإشعارات' },
+];
+
+/** The Arabic name of a screen target, or null when the app has no such screen. */
+function screenName(value: string | null | undefined): string | null {
+  const key = (value ?? '').trim().toLowerCase().split('/').find(Boolean) ?? '';
+  return APP_SCREENS.find((screen) => screen.value === key)?.label ?? null;
+}
+
+/** A target as an operator reads it: the screen's name, or the raw value. */
+function targetLabel(ad: Pick<Ad, 'actionType' | 'actionValue'>): string | null {
+  if (!ad.actionValue) return null;
+  if (ad.actionType !== 'screen') return ad.actionValue;
+  return screenName(ad.actionValue) ?? `${ad.actionValue} (ما موجودة بالتطبيق)`;
+}
 
 export function SlidesPage() {
   const repos = useRepos();
@@ -93,7 +129,7 @@ export function SlidesPage() {
             <div className="col">
               <span className="fs-small">{AD_ACTION[row.actionType]}</span>
               {row.actionValue ? (
-                <span className="fs-tiny dim num truncate">{row.actionValue}</span>
+                <span className="fs-tiny dim truncate">{targetLabel(row)}</span>
               ) : null}
             </div>
           ),
@@ -147,7 +183,11 @@ export function SlidesPage() {
             ? 'صورة السلايد مطلوبة'
             : draft.actionType !== 'none' && !draft.actionValue?.trim()
               ? 'حدّد وجهة الضغط'
-              : null
+              : draft.actionType === 'screen' && !screenName(draft.actionValue)
+                ? 'اختر شاشة من القائمة — التطبيق ما يعرف غيرها'
+                : draft.actionType === 'url' && !/^https?:\/\//i.test(draft.actionValue?.trim() ?? '')
+                  ? 'الرابط لازم يبدي بـ https://'
+                  : null
       }
       form={(draft, set) => (
         <>
@@ -169,7 +209,12 @@ export function SlidesPage() {
           <Field label="عند الضغط">
             <Select<AdAction>
               value={draft.actionType ?? 'none'}
-              onChange={(next) => set('actionType', next)}
+              onChange={(next) => {
+                // A link and a screen name are different things; carrying one
+                // into the other type only leaves a value the app ignores.
+                if (next !== draft.actionType) set('actionValue', '');
+                set('actionType', next);
+              }}
               options={(Object.keys(AD_ACTION) as AdAction[]).map((value) => ({
                 value,
                 label: AD_ACTION[value],
@@ -177,11 +222,28 @@ export function SlidesPage() {
             />
           </Field>
           <Field label="وجهة الضغط" hint={ACTION_HINT[draft.actionType ?? 'none']}>
-            <TextInput
-              value={draft.actionValue ?? ''}
-              onChange={(next) => set('actionValue', next)}
-              disabled={(draft.actionType ?? 'none') === 'none'}
-            />
+            {draft.actionType === 'screen' ? (
+              <Select<string>
+                value={draft.actionValue ?? ''}
+                onChange={(next) => set('actionValue', next)}
+                options={[
+                  { value: '', label: 'اختر الشاشة' },
+                  // An older banner may hold a value typed before this list
+                  // existed; it is shown as what it is, not silently dropped.
+                  ...(draft.actionValue && !screenName(draft.actionValue)
+                    ? [{ value: draft.actionValue, label: `${draft.actionValue} (ما موجودة بالتطبيق)` }]
+                    : []),
+                  ...APP_SCREENS,
+                ]}
+              />
+            ) : (
+              <TextInput
+                value={draft.actionValue ?? ''}
+                onChange={(next) => set('actionValue', next)}
+                placeholder={draft.actionType === 'url' ? 'https://' : undefined}
+                disabled={(draft.actionType ?? 'none') === 'none'}
+              />
+            )}
           </Field>
 
           <Field label="الاستهداف" hint="خلّيها فارغة حتى يوصل كل المحافظات">
@@ -221,7 +283,7 @@ export function SlidesPage() {
               rows={[
                 ['العنوان بالكردي', preview.titleKu || '—'],
                 ['عند الضغط', AD_ACTION[preview.actionType]],
-                ['الوجهة', preview.actionValue ?? '—'],
+                ['الوجهة', targetLabel(preview) ?? '—'],
                 [
                   'الاستهداف',
                   preview.provinceId ? (preview.province?.name ?? 'محافظة') : 'كل المحافظات',
