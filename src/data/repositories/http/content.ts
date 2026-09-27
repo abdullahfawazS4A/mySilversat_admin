@@ -77,8 +77,24 @@ class HttpAdsRepository extends HttpCrudRepository<Ad, AdInput, Partial<AdInput>
     return api.post<Ad>('/ads', HttpAdsRepository.form(input));
   }
 
-  update(id: Id, input: Partial<AdInput>): Promise<Ad> {
-    return api.patch<Ad>(`/ads/${id}`, HttpAdsRepository.form(input));
+  /**
+   * Saves, then reads the banner back to check its province.
+   *
+   * The API answers 200 to a province change it did not make: once a banner
+   * has a province, moving it to another or clearing it keeps the old one, and
+   * the PATCH reply still carries the old relation even when the change did
+   * land. So neither the status nor the reply can be trusted here, and a read
+   * is the only way to tell the operator the truth.
+   */
+  async update(id: Id, input: Partial<AdInput>): Promise<Ad> {
+    await api.patch<Ad>(`/ads/${id}`, HttpAdsRepository.form(input));
+    const saved = await this.get(id);
+    if (input.provinceId !== undefined && (saved.provinceId ?? null) !== (input.provinceId ?? null)) {
+      throw new Error(
+        'انحفظت باقي التعديلات، بس الـ API ما غيّر المحافظة — تغيير محافظة إعلان عنده محافظة ما مدعوم من الباك إند حالياً',
+      );
+    }
+    return saved;
   }
 }
 
