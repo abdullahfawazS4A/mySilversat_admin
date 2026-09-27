@@ -131,6 +131,9 @@ function translate(message: string): string {
  * thrown domain error returns it as a string. Both end up readable.
  */
 function messageFrom(status: number, payload: unknown): string {
+  // The throttler words its refusal as `ThrottlerException: Too Many
+  // Requests`, which no table entry matches; the status alone says it all.
+  if (status === 429) return SERVER_MESSAGES['too many requests'];
   const body = payload as { message?: unknown; error?: unknown } | null;
   const raw = body?.message ?? body?.error;
   if (Array.isArray(raw) && raw.length) return raw.map(String).map(translate).join(' • ');

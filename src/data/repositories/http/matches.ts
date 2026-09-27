@@ -15,7 +15,7 @@
  * pays out on whatever `homeScore`/`awayScore` say at the moment it is called.
  */
 
-import { api, clampPageSize, fetchAll, fetchRange, type Query } from '@/data/http/client';
+import { MAX_PAGE_SIZE, api, clampPageSize, fetchAll, fetchRange, type Query } from '@/data/http/client';
 import type { Id, League, ListQuery, Match, MatchStatus, Page, Team } from '@/types';
 import type {
   CrudRepository,
@@ -208,6 +208,15 @@ const boundaries = new Map<string, { at: number; offset: number; total: number }
  */
 const BOUNDARY_PROBES = 8;
 
+/**
+ * The longest fixture list whose boundary is found by reading it whole.
+ *
+ * Five pages. Up to here reading every row is cheaper than the search, which
+ * spends about eight requests a round; past it the search wins, which is the
+ * case for the unfiltered feed of nine thousand fixtures.
+ */
+const READ_WHOLE_MAX = 5 * MAX_PAGE_SIZE;
+
 /** How many rows the filters the API cannot apply will read before giving up. */
 const LOCAL_FILTER_CAP = 3000;
 
@@ -363,11 +372,40 @@ class HttpMatchesCollection extends HttpCrudRepository<
       (await api.page<Match>('/matches', { ...filter, limit: 1, offset })).items[0];
     const isBehind = (row: Match | undefined) => !!row && new Date(row.matchAt).getTime() < from;
 
-    const head = await api.page<Match>('/matches', { ...filter, limit: 1, offset: 0 });
+    // The head is a full page rather than one row: it costs the same request,
+    // and for most single leagues it is the whole list already.
+    const head = await api.page<Match>('/matches', { ...filter, limit: MAX_PAGE_SIZE, offset: 0 });
     // Without a server total there is nothing to search over, and the caller
     // falls back to paging the list from the top.
     if (!head.hasTotal) return null;
     const total = head.total;
+
+    /*
+     * A short list is read whole and split here.
+     *
+     * A league's season is a few hundred fixtures — two to four pages — while
+     * the search below spends eight requests a round for three or four rounds
+     * on the same answer. Across «كل الدوريات» that difference is the rate
+     * limit: a hundred-odd probes for a dozen leagues against a budget of 120 a
+     * minute for the whole console, and the screen failed with a 429.
+     */
+    if (total <= READ_WHOLE_MAX) {
+      const rows =
+        total <= head.items.length
+          ? head.items
+          : [
+              ...head.items,
+              ...(await fetchRange<Match>(
+                '/matches',
+                filter,
+                head.items.length,
+                total - head.items.length,
+                total,
+              )),
+            ];
+      const index = rows.findIndex((row) => !isBehind(row));
+      return { offset: index === -1 ? rows.length : index, total };
+    }
 
     /*
      * Rows before `lo` are all behind `from`, rows from `hi` on are all at or
