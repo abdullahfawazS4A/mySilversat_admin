@@ -525,11 +525,11 @@ export interface TutorialVideo extends Entity {
 /**
  * A prize draw — the «جدّد واربح» campaign the app runs.
  *
- * The console authors the announcement and the date; the draw itself is not
- * held here. There is no route to run one and none to record a winner, so the
- * campaign that shows in the app is exactly this row: what it says, and when
- * it says the draw happens. The coupons that enter it are issued server-side
- * on a renewal and are only readable by the user who earned them.
+ * The console authors the announcement and the date, and holds the draw: the
+ * server picks one coupon at random from those issued for this draw, once, and
+ * records it with its owner. The coupons themselves are issued server-side on a
+ * renewal and are only listable by the user who earned them — the winning one
+ * is the only coupon an admin token can read.
  *
  * `drawAt` is what the app counts down to, so a draw whose date has passed
  * keeps showing a finished countdown until it is switched off — which is why
@@ -544,6 +544,21 @@ export interface PrizeDraw extends Entity {
   drawAt: IsoDate;
   /** Inactive draws are hidden from the app without losing the text. */
   isActive: boolean;
+  /** Set once the draw is held; null until then. */
+  winnerCouponId: Id | null;
+  winnerAppUserId: Id | null;
+  winnerSelectedAt: IsoDate | null;
+  /**
+   * The winning coupon itself. Only `GET /prize-draws/:id` joins it — the list
+   * route carries the id alone.
+   */
+  winnerCoupon?: WinnerCoupon | null;
+}
+
+/** The one coupon of a draw an admin can see: the one that won it. */
+export interface WinnerCoupon {
+  id: Id;
+  code: string;
 }
 
 /** A transmitter the app's compass points at. */

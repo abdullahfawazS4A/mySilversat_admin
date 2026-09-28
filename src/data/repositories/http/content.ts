@@ -6,8 +6,8 @@
  * every authored string — and most of them an `order` column the app sorts on.
  * The screens are built from the same editor for that reason.
  *
- * A prize draw sits here because that is all the API makes it: text, a date and
- * a switch. Holding the draw and recording a winner have no routes at all.
+ * A prize draw sits here because it is mostly text, a date and a switch. The
+ * one thing more is holding the draw, which the server does in a single call.
  */
 
 import { api } from '@/data/http/client';
@@ -19,6 +19,7 @@ import type {
   CrudRepository,
   FaqInput,
   PrizeDrawInput,
+  PrizeDrawsRepository,
   TowerInput,
   VideoInput,
 } from '../types';
@@ -98,6 +99,27 @@ class HttpAdsRepository extends HttpCrudRepository<Ad, AdInput, Partial<AdInput>
   }
 }
 
+/**
+ * Prize draws, plus the one route that holds the draw.
+ *
+ * `draw-winner` answers with the draw's bare columns, and only the single-draw
+ * read joins the winning coupon, so the draw is read back after it is held to
+ * give the screen the coupon's code rather than just its id.
+ */
+class HttpPrizeDrawsRepository
+  extends HttpCrudRepository<PrizeDraw, PrizeDrawInput>
+  implements PrizeDrawsRepository
+{
+  constructor() {
+    super('/prize-draws', (row) => `${row.titleAr} ${row.titleKu} ${row.bodyAr}`);
+  }
+
+  async drawWinner(id: Id): Promise<PrizeDraw> {
+    await api.post<PrizeDraw>(`/prize-draws/${id}/draw-winner`);
+    return this.get(id);
+  }
+}
+
 export class HttpContentRepository implements ContentRepository {
   readonly ads: CrudRepository<Ad, AdInput> = new HttpAdsRepository();
 
@@ -122,8 +144,5 @@ export class HttpContentRepository implements ContentRepository {
     ContactLinkInput
   >('/contact-links', (row) => `${row.label} ${row.labelKu} ${row.value} ${row.type}`);
 
-  readonly prizeDraws: CrudRepository<PrizeDraw, PrizeDrawInput> = new HttpCrudRepository<
-    PrizeDraw,
-    PrizeDrawInput
-  >('/prize-draws', (row) => `${row.titleAr} ${row.titleKu} ${row.bodyAr}`);
+  readonly prizeDraws: PrizeDrawsRepository = new HttpPrizeDrawsRepository();
 }

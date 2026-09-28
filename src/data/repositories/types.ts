@@ -598,6 +598,14 @@ export interface ContactLinkInput {
   isActive?: boolean;
 }
 
+export interface PrizeDrawsRepository extends CrudRepository<PrizeDraw, PrizeDrawInput> {
+  /**
+   * Picks the winning coupon at random. The server allows it once per draw and
+   * refuses a draw with no coupons. Resolves to the draw with its winner.
+   */
+  drawWinner(id: Id): Promise<PrizeDraw>;
+}
+
 export interface ContentRepository {
   ads: CrudRepository<Ad, AdInput>;
   faqs: CrudRepository<Faq, FaqInput>;
@@ -611,7 +619,7 @@ export interface ContentRepository {
    * gives them: bilingual text, a date and a switch, authored the same way a
    * banner or an FAQ is. Running a draw and naming a winner have no routes.
    */
-  prizeDraws: CrudRepository<PrizeDraw, PrizeDrawInput>;
+  prizeDraws: PrizeDrawsRepository;
 }
 
 // ------------------------------------------- silversat vendor operations ---

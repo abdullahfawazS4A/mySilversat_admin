@@ -2,14 +2,10 @@
  * Prize draws — the «جدّد واربح» campaign as the app shows it.
  *
  * What this screen owns is the announcement: the bilingual text, the date the
- * app counts down to, and whether the campaign is showing at all. That is the
- * whole of what the API exposes.
+ * app counts down to, and whether the campaign is showing at all.
  *
- * What it deliberately does not claim to do is run a draw. There is no route
- * to hold one and none to record a winner — the coupons that enter a draw are
- * issued server-side on a renewal and are readable only by the user who earned
- * them — so the screen says so once, at the top, rather than offering a button
- * that would have to lie.
+ * Holding the draw lives on the coupons screen, next to the winning coupons it
+ * produces, so this one stays an editor and says where the draw is run.
  *
  * A date that has already passed is called out in the table. The app counts
  * down to `drawAt` and a finished countdown does not hide itself, so a draw
@@ -18,6 +14,7 @@
  */
 
 import { Info } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Field, Notice, Pill, Switch, TextArea, TextInput } from '@/components/ui';
 import { useRepos } from '@/app/RepositoryContext';
 import type { PrizeDraw } from '@/types';
@@ -164,9 +161,12 @@ export function DrawsPage() {
       )}
     >
       <Notice tone="info" icon={<Info size={16} />}>
-        هذي الشاشة تكتب <span className="strong">إعلان السحب</span> بس — نصّه وموعده وظهوره
-        بالتطبيق. إجراء السحب نفسه وتسجيل الفائز ماكو إلهم endpoints بالسيرفر، والكوبونات تنطلع
-        تلقائياً عند التجديد وما تنقرأ إلا من حساب المشترك نفسه.
+        هذي الشاشة تكتب <span className="strong">إعلان السحب</span> — نصّه وموعده وظهوره بالتطبيق.
+        إجراء السحب ومعرفة الكوبون الفائز من شاشة{' '}
+        <Link to="/coupons" className="strong">
+          الكوبونات
+        </Link>
+        .
       </Notice>
     </CrudScreen>
   );
