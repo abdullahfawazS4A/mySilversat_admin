@@ -261,6 +261,36 @@ export const api = {
 const FETCH_ALL_CONCURRENCY = 5;
 
 /**
+ * Page requests in flight across *every* walk at once.
+ *
+ * `FETCH_ALL_CONCURRENCY` bounds one walk. A screen that runs several walks
+ * side by side — the dashboard runs eight — would multiply it into a burst the
+ * rate limiter answers with 429s. This is the ceiling over all of them, so
+ * independent reads can be started together and still queue politely.
+ */
+const MAX_PAGES_IN_FLIGHT = 8;
+let pagesInFlight = 0;
+const pageQueue: (() => void)[] = [];
+
+/** Runs one page request once a slot under `MAX_PAGES_IN_FLIGHT` is free. */
+async function throttledPage<T>(path: string, query: Query): Promise<ApiPage<T>> {
+  // A finished request hands its slot straight to the next in line rather
+  // than freeing it, so a newcomer can never slip in between and overshoot.
+  if (pagesInFlight >= MAX_PAGES_IN_FLIGHT) {
+    await new Promise<void>((resolve) => pageQueue.push(resolve));
+  } else {
+    pagesInFlight += 1;
+  }
+  try {
+    return await apiPage<T>(path, { query });
+  } finally {
+    const next = pageQueue.shift();
+    if (next) next();
+    else pagesInFlight -= 1;
+  }
+}
+
+/**
  * Fetches every page of a list route.
  *
  * Several screens (province pickers, league filters, the dashboard totals)
@@ -283,7 +313,7 @@ const FETCH_ALL_CONCURRENCY = 5;
 export async function fetchAll<T>(path: string, query?: Query, cap = 2000): Promise<T[]> {
   const pageSize = MAX_PAGE_SIZE;
   const pageAt = (offset: number) =>
-    apiPage<T>(path, { query: { ...query, limit: pageSize, offset } });
+    throttledPage<T>(path, { ...query, limit: pageSize, offset });
 
   const first = await pageAt(0);
   const out = [...first.items];
@@ -341,8 +371,10 @@ export async function fetchRange<T>(
   for (let i = 0; i < offsets.length; i += FETCH_ALL_CONCURRENCY) {
     const pages = await Promise.all(
       offsets.slice(i, i + FETCH_ALL_CONCURRENCY).map((offset) =>
-        apiPage<T>(path, {
-          query: { ...query, limit: Math.min(MAX_PAGE_SIZE, end - offset), offset },
+        throttledPage<T>(path, {
+          ...query,
+          limit: Math.min(MAX_PAGE_SIZE, end - offset),
+          offset,
         }),
       ),
     );

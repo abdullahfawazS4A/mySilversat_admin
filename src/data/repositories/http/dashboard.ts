@@ -85,16 +85,18 @@ async function liveMatchCount(): Promise<number> {
  * Narrowing to the active leagues first collapses all of it: five leagues hold
  * forty-six scheduled fixtures between them, a page each.
  *
- * Sequential rather than parallel, for the reason the fixtures screen gives:
- * the API rate-limits, and a burst buys nothing here.
+ * The leagues are read side by side. The API rate-limits, but `fetchAll`
+ * caps the pages in flight across every walk, so this queues behind the rest
+ * of the dashboard instead of bursting past it.
  */
 async function openForPredictionCount(leagues: League[]): Promise<number> {
-  let open = 0;
-  for (const league of leagues) {
-    const rows = await fetchAll<Match>('/matches', { status: 'scheduled', leagueId: league.id }, 500);
-    open += rows.filter((row) => row.isOpenForPrediction).length;
-  }
-  return open;
+  const perLeague = await Promise.all(
+    leagues.map(async (league) => {
+      const rows = await fetchAll<Match>('/matches', { status: 'scheduled', leagueId: league.id }, 500);
+      return rows.filter((row) => row.isOpenForPrediction).length;
+    }),
+  );
+  return perLeague.reduce((sum, count) => sum + count, 0);
 }
 
 /** `2026-09` — the bucket key every trend groups on. */
@@ -118,8 +120,55 @@ function recentMonths(count: number): { key: string; label: string }[] {
   return out;
 }
 
+/** Where the last summary is kept so a reload can show it while it refreshes. */
+const CACHE_KEY = 'silversat.dashboard.summary';
+
+/** Reads the last summary this tab computed, if storage allows it. */
+function readCached(): DashboardSummary | undefined {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as DashboardSummary) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeCached(summary: DashboardSummary): void {
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify(summary));
+  } catch {
+    // Storage full or blocked — the cache is a convenience, not a requirement.
+  }
+}
+
 export class HttpDashboardRepository implements DashboardRepository {
+  /**
+   * The last summary computed, so returning to the screen shows numbers at
+   * once while the fresh read runs. Session storage carries it across a page
+   * reload; the in-memory copy covers a browser that refuses storage.
+   */
+  private last: DashboardSummary | undefined = readCached();
+
+  cached(): DashboardSummary | undefined {
+    return this.last;
+  }
+
   async summary(): Promise<DashboardSummary> {
+    const result = await this.compute();
+    this.last = result;
+    writeCached(result);
+    return result;
+  }
+
+  private async compute(): Promise<DashboardSummary> {
+    // Every read starts now, together. They used to run in four stages —
+    // the counts, then the predictions, then the leagues' fixtures, then the
+    // available codes — each waiting on one it did not need, so the screen
+    // paid for the slowest read of every stage in turn. Only the fixtures
+    // depend on anything (the active leagues), and they chain off that one
+    // read alone. `fetchAll` caps the pages in flight across all of them, so
+    // starting them together does not turn into a burst.
+    const leaguesRead = fetchAll<League>('/leagues');
     const [
       users,
       soldCodes,
@@ -133,7 +182,9 @@ export class HttpDashboardRepository implements DashboardRepository {
       totalPredictions,
       notificationsSent,
       liveMatches,
-      leagues,
+      pendingPredictions,
+      openForPrediction,
+      availableRows,
     ] = await Promise.all([
       fetchAll<AppUser>('/app-users'),
       fetchAll<Code>('/codes', { status: 'sold' }, 10000),
@@ -147,14 +198,13 @@ export class HttpDashboardRepository implements DashboardRepository {
       countOf('/predictions'),
       countOf('/notifications'),
       liveMatchCount(),
-      fetchAll<League>('/leagues'),
+      // Unscored picks need the rows, not just a count.
+      fetchAll<Prediction>('/predictions', undefined, 5000),
+      leaguesRead.then((leagues) =>
+        openForPredictionCount(leagues.filter((league) => league.isActive)),
+      ),
+      fetchAll<Code>('/codes', { status: 'available' }, 10000),
     ]);
-
-    // Unscored picks need the rows, not just a count.
-    const pendingPredictions = await fetchAll<Prediction>('/predictions', undefined, 5000);
-    const openForPrediction = await openForPredictionCount(
-      leagues.filter((league) => league.isActive),
-    );
 
     const priceOf = new Map(categories.map((row) => [row.id, toAmount(row.unitPrice)]));
     const nameOf = new Map(categories.map((row) => [row.id, `${row.product?.displayName ?? ''} — ${row.name}`]));
@@ -201,7 +251,6 @@ export class HttpDashboardRepository implements DashboardRepository {
     // ------------------------------------------------------------- stock ---
     const availableByCategory = new Map<Id, number>();
     for (const category of categories) availableByCategory.set(category.id, 0);
-    const availableRows = await fetchAll<Code>('/codes', { status: 'available' }, 10000);
     for (const code of availableRows) {
       availableByCategory.set(code.categoryId, (availableByCategory.get(code.categoryId) ?? 0) + 1);
     }

@@ -650,6 +650,8 @@ export interface SilversatRepository {
 
 export interface DashboardRepository {
   summary(): Promise<DashboardSummary>;
+  /** The last summary computed, shown while a fresh one loads. */
+  cached(): DashboardSummary | undefined;
 }
 
 // ------------------------------------------------------------ the bundle ---

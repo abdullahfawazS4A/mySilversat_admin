@@ -3,13 +3,13 @@
  * into. Also the auth gate — an unauthenticated visitor never reaches a screen.
  */
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { LogOut, Menu, Satellite, Search, User } from 'lucide-react';
 import { useAuth } from '@/app/AuthContext';
 import { NAV_GROUPS, titleForPath } from './navigation';
 import { CommandPalette } from './CommandPalette';
-import { Button, Pill, Skeleton } from '@/components/ui';
+import { Button, Pill, Skeleton, TableSkeleton } from '@/components/ui';
 import { ADMIN_ROLE } from '@/lib/labels';
 import { cx } from '@/lib/utils';
 
@@ -128,7 +128,16 @@ export function AdminShell() {
           </div>
         </header>
 
-        <Outlet />
+        {/* Screens are loaded on first visit (see AppRouter); the frame stays up meanwhile. */}
+        <Suspense
+          fallback={
+            <div className="page">
+              <TableSkeleton />
+            </div>
+          }
+        >
+          <Outlet />
+        </Suspense>
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

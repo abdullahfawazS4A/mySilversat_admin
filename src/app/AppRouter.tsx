@@ -6,32 +6,50 @@
  * shell because it is the only screen an unauthenticated visitor may see.
  */
 
+import { lazy, type ComponentType } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AdminShell } from '@/layout/AdminShell';
 
 import { LoginPage } from '@/features/LoginPage';
 import { DashboardPage } from '@/features/DashboardPage';
-import { MatchesPage } from '@/features/matches/MatchesPage';
-import { LeaguesPage } from '@/features/matches/LeaguesPage';
-import { PredictionsPage } from '@/features/predictions/PredictionsPage';
-import { LeaderboardPage } from '@/features/predictions/LeaderboardPage';
-import { UsersPage } from '@/features/users/UsersPage';
-import { UserDetailPage } from '@/features/users/UserDetailPage';
-import { DevicesPage } from '@/features/devices/DevicesPage';
-import { SalesPage } from '@/features/billing/SalesPage';
-import { StockPage } from '@/features/stock/StockPage';
-import { DrawsPage } from '@/features/draws/DrawsPage';
-import { CouponsPage } from '@/features/draws/CouponsPage';
-import { SlidesPage } from '@/features/content/SlidesPage';
-import { VideosPage } from '@/features/content/VideosPage';
-import { FaqPage } from '@/features/content/FaqPage';
-import { TowersPage } from '@/features/content/TowersPage';
-import { ContactPage } from '@/features/content/ContactPage';
-import { NotificationsPage } from '@/features/notifications/NotificationsPage';
-import { ProvincesPage } from '@/features/system/ProvincesPage';
-import { ApiPage } from '@/features/system/ApiPage';
-import { AuditPage } from '@/features/system/AuditPage';
-import { SettingsPage } from '@/features/system/SettingsPage';
+
+/**
+ * A screen loaded on first visit rather than with the console.
+ *
+ * Login and the dashboard stay in the main bundle because one of them is what
+ * every visit opens on. The rest are split out, so opening the console no
+ * longer parses the code of twenty screens nobody has asked for yet. The
+ * `Suspense` that covers the wait lives around the shell's `Outlet`, so the
+ * sidebar and topbar stay put while a screen arrives.
+ */
+function page<K extends string>(
+  load: () => Promise<Record<K, ComponentType>>,
+  name: K,
+) {
+  return lazy(() => load().then((module) => ({ default: module[name] })));
+}
+
+const MatchesPage = page(() => import('@/features/matches/MatchesPage'), 'MatchesPage');
+const LeaguesPage = page(() => import('@/features/matches/LeaguesPage'), 'LeaguesPage');
+const PredictionsPage = page(() => import('@/features/predictions/PredictionsPage'), 'PredictionsPage');
+const LeaderboardPage = page(() => import('@/features/predictions/LeaderboardPage'), 'LeaderboardPage');
+const UsersPage = page(() => import('@/features/users/UsersPage'), 'UsersPage');
+const UserDetailPage = page(() => import('@/features/users/UserDetailPage'), 'UserDetailPage');
+const DevicesPage = page(() => import('@/features/devices/DevicesPage'), 'DevicesPage');
+const SalesPage = page(() => import('@/features/billing/SalesPage'), 'SalesPage');
+const StockPage = page(() => import('@/features/stock/StockPage'), 'StockPage');
+const DrawsPage = page(() => import('@/features/draws/DrawsPage'), 'DrawsPage');
+const CouponsPage = page(() => import('@/features/draws/CouponsPage'), 'CouponsPage');
+const SlidesPage = page(() => import('@/features/content/SlidesPage'), 'SlidesPage');
+const VideosPage = page(() => import('@/features/content/VideosPage'), 'VideosPage');
+const FaqPage = page(() => import('@/features/content/FaqPage'), 'FaqPage');
+const TowersPage = page(() => import('@/features/content/TowersPage'), 'TowersPage');
+const ContactPage = page(() => import('@/features/content/ContactPage'), 'ContactPage');
+const NotificationsPage = page(() => import('@/features/notifications/NotificationsPage'), 'NotificationsPage');
+const ProvincesPage = page(() => import('@/features/system/ProvincesPage'), 'ProvincesPage');
+const ApiPage = page(() => import('@/features/system/ApiPage'), 'ApiPage');
+const AuditPage = page(() => import('@/features/system/AuditPage'), 'AuditPage');
+const SettingsPage = page(() => import('@/features/system/SettingsPage'), 'SettingsPage');
 
 export function AppRouter() {
   // The v7 flags are opt-ins, not experiments — turning them on now keeps the

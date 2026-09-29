@@ -34,15 +34,23 @@ export function DashboardPage() {
   const repos = useRepos();
   const summary = useAsync(() => repos.dashboard.summary(), []);
 
+  // The summary takes a while to compose, so the last one computed is shown
+  // straight away and replaced when the fresh read lands. Not `stale`: those
+  // numbers answer the same question, they are only a little older.
+  const cached = repos.dashboard.cached();
+  const refreshing = summary.loading && summary.data === undefined && cached !== undefined;
+  const state = refreshing ? { ...summary, data: cached, stale: false } : summary;
+
   return (
     <>
       <PageHeader
         title="لوحة المعلومات"
         subtitle="صورة سريعة عن المشتركين والمخزن والمبيعات والتوقعات"
+        actions={refreshing ? <Pill dot>جاري تحديث الأرقام…</Pill> : undefined}
       />
 
       <div className="page">
-        <AsyncBlock state={summary}>{(data) => <Summary data={data} />}</AsyncBlock>
+        <AsyncBlock state={state}>{(data) => <Summary data={data} />}</AsyncBlock>
       </div>
     </>
   );
