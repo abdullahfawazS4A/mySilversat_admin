@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import {
   AlertTriangle,
+  BellRing,
   Boxes,
   CircleDollarSign,
   Radio,
@@ -142,6 +143,7 @@ function Summary({ data }: { data: DashboardSummary }) {
         <StatTile
           label="إشعارات مرسلة"
           value={formatNumber(data.notificationsSent)}
+          icon={<BellRing size={15} />}
           hint={`${formatNumber(data.totalProducts)} منتج و${formatNumber(data.totalCategories)} فئة`}
         />
       </div>
@@ -192,7 +194,7 @@ function Summary({ data }: { data: DashboardSummary }) {
             of their own, so the label ran straight into the number — "منذ
             البداية0 د.ع" — with nothing between them.
           */}
-          <div className="col mt-5" style={{ gap: 2 }}>
+          <div className="col mt-5 total-block">
             <span className="fs-small muted">إجمالي المبيعات منذ البداية</span>
             <span className="fs-stat strong num">{formatIqd(data.revenueAllTime)}</span>
             <span className="fs-tiny dim">
@@ -227,12 +229,12 @@ function Summary({ data }: { data: DashboardSummary }) {
 
         <Card pad>
           <CardHead title="طابور إعادة التجهيز" subtitle="أقل الفئات مخزوناً" />
-          <div className="mt-4 col row-gap-3">
+          <div className="mt-3 list-rows">
             {data.stockByCategory.length === 0 ? (
               <EmptyState title="ماكو فئات" />
             ) : (
               data.stockByCategory.slice(0, 7).map((row) => (
-                <div key={row.label} className="row between row-gap-3">
+                <div key={row.label} className="list-row">
                   <span className="fs-small truncate">{row.label}</span>
                   <span className="row row-gap-2">
                     <span className="num strong">{formatNumber(row.value)}</span>

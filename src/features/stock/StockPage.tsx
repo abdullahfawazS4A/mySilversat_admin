@@ -313,7 +313,7 @@ function Breadcrumb({
   if (batchId) crumbs.push({ label: 'الكارتات' });
 
   return (
-    <div className="page-wash" style={{ paddingBottom: 0 }}>
+    <div className="page-wash page-wash-lead">
       <nav className="row row-gap-2 wrap" aria-label="المسار">
         {crumbs.map((crumb, index) => (
           <span key={index} className="row row-gap-2">
@@ -404,7 +404,7 @@ function ProductsLevel({
       key: 'api',
       header: 'الـ API',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           {row.silversatRegion ? (
             <span className="fs-small">{row.silversatRegion.name}</span>
           ) : (
@@ -869,7 +869,7 @@ function BatchesLevel({
       key: 'uploadedBy',
       header: 'رفعها',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           <span className="fs-small">{row.uploadedByUser?.name ?? '—'}</span>
           <span className="fs-tiny dim">{formatDateAr(row.createdAt)}</span>
         </div>
@@ -1143,7 +1143,7 @@ function CodesLevel({ batchId, category }: { batchId: Id; category: Category }) 
       key: 'value',
       header: 'الكارت',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           <span className="fs-body strong num">{row.primaryValue}</span>
           {row.secondaryValue ? <span className="fs-tiny dim num">{row.secondaryValue}</span> : null}
         </div>

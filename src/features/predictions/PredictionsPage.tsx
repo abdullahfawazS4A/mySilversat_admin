@@ -120,7 +120,7 @@ export function PredictionsPage() {
       key: 'user',
       header: 'المشترك',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           <span className="fs-body">{row.appUser?.name ?? '—'}</span>
           <span className="fs-tiny dim num">{row.appUser ? formatPhone(row.appUser.phone) : ''}</span>
         </div>
@@ -135,7 +135,7 @@ export function PredictionsPage() {
         // reads as "this prediction has no match", which is never true.
         if (!match) return <Skeleton h={13} w={150} />;
         return (
-          <div className="col" style={{ lineHeight: 1.35 }}>
+          <div className="col lh-tight">
             <span className="fs-body">
               {teamName(match.homeTeam)} <span className="dim">ضد</span>{' '}
               {teamName(match.awayTeam)}

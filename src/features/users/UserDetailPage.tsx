@@ -148,7 +148,7 @@ export function UserDetailPage() {
             </div>
 
             <Card>
-              <div className="card-pad" style={{ paddingBottom: 0 }}>
+              <div className="card-pad pb-0">
                 <Tabs
                   value={tab}
                   onChange={setTab}

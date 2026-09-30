@@ -90,115 +90,117 @@ export function UsersPage() {
         }
       />
 
-      <Card>
-        <Toolbar>
-          <SearchInput
-            value={search}
-            placeholder="اسم أو رقم هاتف…"
-            onChange={(next) => {
-              setSearch(next);
-              setPage(1);
-            }}
-          />
-          <Select<Id>
-            value={provinceId}
-            onChange={(next) => {
-              setProvinceId(next);
-              setPage(1);
-            }}
-            options={[{ value: '', label: 'كل المحافظات' }, ...provinceOptions]}
-          />
-          <FilterChips<StatusFilter>
-            value={status}
-            onChange={(next) => {
-              setStatus(next);
-              setPage(1);
-            }}
-            items={[
-              { value: 'all', label: 'الكل' },
-              { value: 'active', label: 'فعّالون' },
-              { value: 'blocked', label: 'محظورون' },
+      <div className="page">
+        <Card>
+          <Toolbar>
+            <SearchInput
+              value={search}
+              placeholder="اسم أو رقم هاتف…"
+              onChange={(next) => {
+                setSearch(next);
+                setPage(1);
+              }}
+            />
+            <Select<Id>
+              value={provinceId}
+              onChange={(next) => {
+                setProvinceId(next);
+                setPage(1);
+              }}
+              options={[{ value: '', label: 'كل المحافظات' }, ...provinceOptions]}
+            />
+            <FilterChips<StatusFilter>
+              value={status}
+              onChange={(next) => {
+                setStatus(next);
+                setPage(1);
+              }}
+              items={[
+                { value: 'all', label: 'الكل' },
+                { value: 'active', label: 'فعّالون' },
+                { value: 'blocked', label: 'محظورون' },
+              ]}
+            />
+          </Toolbar>
+
+          <DataTable
+            rows={users.data?.items ?? []}
+            rowKey={(row) => row.id}
+            loading={users.loading && (!users.data || users.stale)}
+            onRowClick={(row) => navigate(`/users/${row.id}`)}
+            page={users.data?.page}
+            pageSize={users.data?.pageSize}
+            total={users.data?.total}
+            onPage={setPage}
+            columns={[
+              {
+                key: 'name',
+                header: 'المشترك',
+                render: (row) => (
+                  <div className="col">
+                    <span className="strong">{row.name}</span>
+                    <span className="fs-small dim num">{formatPhone(row.phone)}</span>
+                  </div>
+                ),
+              },
+              {
+                key: 'province',
+                header: 'المحافظة',
+                render: (row) => row.silversatRegion?.province?.name ?? '—',
+              },
+              {
+                key: 'points',
+                header: 'النقاط',
+                numeric: true,
+                width: 90,
+                render: (row) => <span className="num">{formatNumber(row.points)}</span>,
+              },
+              {
+                key: 'joined',
+                header: 'تاريخ الاشتراك',
+                render: (row) => <span className="fs-small">{formatDateAr(row.createdAt)}</span>,
+              },
+              {
+                key: 'status',
+                header: 'الحالة',
+                width: 100,
+                render: (row) =>
+                  row.isBlocked ? <Pill tone="danger">محظور</Pill> : <Pill tone="success">فعّال</Pill>,
+              },
+              {
+                key: '__actions',
+                header: '',
+                width: 92,
+                render: (row) => (
+                  <div className="row row-gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="تعديل البيانات"
+                      icon={<Pencil size={15} />}
+                      onClick={(event) => {
+                        // The row itself navigates; the action must not.
+                        event.stopPropagation();
+                        setEditing({ user: row });
+                      }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title={row.isBlocked ? 'فك الحظر' : 'حظر'}
+                      icon={row.isBlocked ? <ShieldCheck size={15} /> : <ShieldBan size={15} />}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setBlocking(row);
+                      }}
+                    />
+                  </div>
+                ),
+              },
             ]}
           />
-        </Toolbar>
-
-        <DataTable
-          rows={users.data?.items ?? []}
-          rowKey={(row) => row.id}
-          loading={users.loading && (!users.data || users.stale)}
-          onRowClick={(row) => navigate(`/users/${row.id}`)}
-          page={users.data?.page}
-          pageSize={users.data?.pageSize}
-          total={users.data?.total}
-          onPage={setPage}
-          columns={[
-            {
-              key: 'name',
-              header: 'المشترك',
-              render: (row) => (
-                <div className="col">
-                  <span className="strong">{row.name}</span>
-                  <span className="fs-small dim num">{formatPhone(row.phone)}</span>
-                </div>
-              ),
-            },
-            {
-              key: 'province',
-              header: 'المحافظة',
-              render: (row) => row.silversatRegion?.province?.name ?? '—',
-            },
-            {
-              key: 'points',
-              header: 'النقاط',
-              numeric: true,
-              width: 90,
-              render: (row) => <span className="num">{formatNumber(row.points)}</span>,
-            },
-            {
-              key: 'joined',
-              header: 'تاريخ الاشتراك',
-              render: (row) => <span className="fs-small">{formatDateAr(row.createdAt)}</span>,
-            },
-            {
-              key: 'status',
-              header: 'الحالة',
-              width: 100,
-              render: (row) =>
-                row.isBlocked ? <Pill tone="danger">محظور</Pill> : <Pill tone="success">فعّال</Pill>,
-            },
-            {
-              key: '__actions',
-              header: '',
-              width: 92,
-              render: (row) => (
-                <div className="row row-gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    title="تعديل البيانات"
-                    icon={<Pencil size={15} />}
-                    onClick={(event) => {
-                      // The row itself navigates; the action must not.
-                      event.stopPropagation();
-                      setEditing({ user: row });
-                    }}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    title={row.isBlocked ? 'فك الحظر' : 'حظر'}
-                    icon={row.isBlocked ? <ShieldCheck size={15} /> : <ShieldBan size={15} />}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setBlocking(row);
-                    }}
-                  />
-                </div>
-              ),
-            },
-          ]}
-        />
-      </Card>
+        </Card>
+      </div>
 
       {blocking ? (
         <ConfirmDialog

@@ -136,7 +136,7 @@ export function DevicesPage() {
       key: 'device',
       header: 'الجهاز',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           <span className="fs-body strong">{row.name}</span>
           <span className="fs-tiny dim num">{row.deviceNumber}</span>
         </div>
@@ -147,7 +147,7 @@ export function DevicesPage() {
       header: 'المشترك',
       render: (row) =>
         row.appUser ? (
-          <Link className="col" to={`/users/${row.appUserId}`} style={{ lineHeight: 1.35 }}>
+          <Link className="col lh-tight" to={`/users/${row.appUserId}`}>
             <span className="fs-body">{row.appUser.name}</span>
             <span className="fs-tiny dim num">{formatPhone(row.appUser.phone)}</span>
           </Link>
@@ -173,7 +173,7 @@ export function DevicesPage() {
           );
         }
         return (
-          <div className="col" style={{ lineHeight: 1.35 }}>
+          <div className="col lh-tight">
             <span className="fs-small">{route.region.name}</span>
             <span className="fs-tiny dim">
               {route.source === 'manual' ? 'اختيار يدوي' : 'سيرفر المشترك'}
@@ -377,7 +377,7 @@ function SubscriptionDialog({
         </Button>
       }
     >
-      <div className="col" style={{ gap: 'var(--sp-3)' }}>
+      <div className="col row-gap-3">
         <Notice tone={routing.problem ? 'warning' : 'info'}>
           الاستعلام راح لسيرفر <span className="strong">{routing.region?.name ?? '—'}</span>
           {routing.source === 'manual' ? ' (اختيار يدوي)' : ' — سيرفر المشترك'}.

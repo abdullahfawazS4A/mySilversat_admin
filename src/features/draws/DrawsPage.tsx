@@ -65,7 +65,7 @@ export function DrawsPage() {
             <div className="col">
               <span className="num">{formatDateTimeAr(row.drawAt)}</span>
               {isOver(row) ? (
-                <span className="fs-tiny" style={{ color: 'var(--danger)' }}>
+                <span className="fs-tiny text-danger">
                   انتهى موعده
                 </span>
               ) : (

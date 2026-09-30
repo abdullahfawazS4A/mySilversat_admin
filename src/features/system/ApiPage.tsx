@@ -50,7 +50,7 @@ export function ApiPage() {
 
   return (
     <>
-      <div className="page-wash" style={{ paddingBottom: 0 }}>
+      <div className="page-wash page-wash-lead">
         <Tabs
           value={tab}
           onChange={setTab}

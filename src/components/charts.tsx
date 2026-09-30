@@ -59,28 +59,19 @@ export function StatTile({
   delta?: number | null;
 }) {
   return (
-    <div className="card card-pad col" style={{ gap: 10, minWidth: 0 }}>
-      <div className="row between row-gap-3">
-        <span className="fs-small muted truncate">{label}</span>
-        {icon ? (
-          <span className={`chip-icon${tone ? ` chip-${tone}` : ''}`} style={{ width: 30, height: 30 }}>
-            {icon}
-          </span>
-        ) : null}
+    <div className="card stat-tile" data-tone={tone}>
+      <div className="stat-head">
+        {icon ? <span className={`chip-icon${tone ? ` chip-${tone}` : ''}`}>{icon}</span> : null}
+        <span className="stat-label truncate">{label}</span>
       </div>
-      <div className="fs-hero strong num" style={{ lineHeight: 1.25 }}>
-        {value}
-      </div>
-      <div className="row row-gap-2">
+      <div className="stat-value num">{value}</div>
+      <div className="stat-foot">
         {typeof delta === 'number' ? (
-          <span
-            className="fs-small strong num"
-            style={{ color: delta >= 0 ? 'var(--success)' : 'var(--danger)' }}
-          >
+          <span className={`stat-delta num ${delta >= 0 ? 'up' : 'down'}`}>
             {delta >= 0 ? '▲' : '▼'} {Math.abs(delta * 100).toFixed(1)}%
           </span>
         ) : null}
-        {hint ? <span className="fs-small dim truncate">{hint}</span> : null}
+        {hint ? <span className="truncate">{hint}</span> : null}
       </div>
     </div>
   );
@@ -330,10 +321,12 @@ export function SentimentMeter({
         <div style={{ width: pct(draw), background: 'var(--text-tertiary)', borderRadius: 4, minWidth: 2 }} />
         <div style={{ width: pct(awayWin), background: SERIES_COLORS[3], borderRadius: 4, minWidth: 2 }} />
       </div>
-      <div className="row between fs-small strong num">
-        <span>{pct(homeWin)}</span>
-        <span className="dim">{pct(draw)}</span>
-        <span>{pct(awayWin)}</span>
+      {/* `num` sits on each share, not the row: on the row it would turn the
+          flex row into an LTR inline block and bunch the three together. */}
+      <div className="row between fs-small strong">
+        <span className="num">{pct(homeWin)}</span>
+        <span className="dim num">{pct(draw)}</span>
+        <span className="num">{pct(awayWin)}</span>
       </div>
     </div>
   );

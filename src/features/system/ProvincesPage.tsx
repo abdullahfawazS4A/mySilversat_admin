@@ -61,7 +61,7 @@ export function ProvincesPage() {
 
   return (
     <>
-      <div className="page-wash" style={{ paddingBottom: 0 }}>
+      <div className="page-wash page-wash-lead">
         <Tabs
           value={tab}
           onChange={setTab}
@@ -115,7 +115,7 @@ function ProvincesTab() {
             key: 'name',
             header: 'المحافظة',
             render: (row) => (
-              <div className="col" style={{ lineHeight: 1.35 }}>
+              <div className="col lh-tight">
                 <span className="strong">{row.name}</span>
                 <span className="fs-tiny dim">
                   {row.code} · {row.country?.name ?? '—'}
@@ -314,7 +314,7 @@ function ProvinceDetailDialog({
         </Button>
       }
     >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
+      <div className="col row-gap-4">
         {servers.length === 0 ? (
           <Notice tone="danger">
             ماكو سيرفر سلفرسات مربوط بهذي المحافظة — فما ينباع بيها شي، ومستخدمي التطبيق ما يكدرون
@@ -335,7 +335,7 @@ function ProvinceDetailDialog({
             subtitle="منتجات ومشتركين هذي المحافظة على هذي السيرفرات — والاستعلام والتجديد يروحون إلها"
             actions={servers.length === 0 ? <Pill tone="danger">غير مربوط</Pill> : undefined}
           />
-          <div className="col mt-3" style={{ gap: 'var(--sp-3)' }}>
+          <div className="col mt-3 row-gap-3">
             {servers.map((region) => (
               <div key={region.id} className="row row-gap-2">
                 <span className="fs-body strong">{region.name}</span>
@@ -378,7 +378,7 @@ function ProvinceDetailDialog({
                 data.products.length === 0 ? (
                   <Notice tone="info">ماكو منتجات بهذي المحافظة بعد.</Notice>
                 ) : (
-                  <div className="col" style={{ gap: 'var(--sp-4)' }}>
+                  <div className="col row-gap-4">
                     {data.products.map((product) => (
                       <ProductPrices
                         key={product.id}
@@ -417,7 +417,7 @@ function ProductPrices({ product, categories }: { product: Product; categories: 
       key: 'name',
       header: 'الفئة',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           <span className="fs-body strong">{row.name}</span>
           <span className="fs-tiny dim">{row.nameKu || '—'}</span>
         </div>
@@ -451,7 +451,7 @@ function ProductPrices({ product, categories }: { product: Product; categories: 
   ];
 
   return (
-    <div className="col" style={{ gap: 'var(--sp-2)' }}>
+    <div className="col row-gap-2">
       <div className="row row-gap-2">
         <span className="fs-body strong">{product.displayName}</span>
         {product.silversatRegion ? (

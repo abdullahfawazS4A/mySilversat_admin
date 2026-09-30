@@ -20,15 +20,20 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
+  Boxes,
+  Gift,
+  Image,
   KeyRound,
   LifeBuoy,
   LogIn,
   MessageCircle,
   Satellite,
   ShieldCheck,
+  Trophy,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '@/app/AuthContext';
-import { Button, Card, Field, Notice, TextInput } from '@/components/ui';
+import { Button, Field, Notice, TextInput } from '@/components/ui';
 import type { OtpChallenge, ResetChallenge } from '@/types';
 
 /** The API refuses anything shorter, so the form does too. */
@@ -50,16 +55,55 @@ export function LoginPage() {
 
   return (
     <div className="login-page">
-      <Card className="login-card">
-        <div className="col" style={{ gap: 'var(--sp-4)' }}>
-          <div className="row row-gap-3">
-            <span className="brand-mark" style={{ width: 42, height: 42 }}>
-              <Satellite size={21} />
+      <div className="card login-shell">
+        <aside className="login-aside">
+          <span className="brand-mark brand-mark-lg">
+            <Satellite size={24} />
+          </span>
+          <div className="col row-gap-2">
+            <span className="login-title">لوحة تحكم سلفرسات</span>
+            <span className="section-sub">إدارة الاشتراكات والمسابقة والمحتوى</span>
+          </div>
+          {/* The console's main areas, named as the sidebar names them. */}
+          <ul className="login-features">
+            <li>
+              <span className="chip-icon chip-icon-sm"><Users size={16} /></span>
+              المشتركون والأجهزة
+            </li>
+            <li>
+              <span className="chip-icon chip-icon-sm"><Boxes size={16} /></span>
+              المخزن والمبيعات
+            </li>
+            <li>
+              <span className="chip-icon chip-icon-sm"><Trophy size={16} /></span>
+              توقع واربح
+            </li>
+            <li>
+              <span className="chip-icon chip-icon-sm"><Gift size={16} /></span>
+              السحوبات والجوائز
+            </li>
+            <li>
+              <span className="chip-icon chip-icon-sm"><Image size={16} /></span>
+              محتوى التطبيق
+            </li>
+          </ul>
+        </aside>
+
+        <main className="login-main">
+          <div className="login-brand-compact row row-gap-3">
+            <span className="brand-mark">
+              <Satellite size={19} />
             </span>
             <div className="col">
-              <span className="section-title">لوحة تحكم سلفرسات</span>
-              <span className="section-sub">إدارة الاشتراكات والمسابقة والمحتوى</span>
+              <span className="brand-name">لوحة تحكم سلفرسات</span>
+              <span className="brand-sub">إدارة الاشتراكات والمسابقة والمحتوى</span>
             </div>
+          </div>
+
+          <div className="col row-gap-1">
+            <h1 className="section-title">
+              {mode === 'signIn' ? 'تسجيل الدخول' : 'نسيت كلمة المرور'}
+            </h1>
           </div>
 
           {mode === 'signIn' ? (
@@ -77,8 +121,8 @@ export function LoginPage() {
               onCancel={() => setMode('signIn')}
             />
           )}
-        </div>
-      </Card>
+        </main>
+      </div>
     </div>
   );
 }
@@ -158,7 +202,7 @@ function SignInForm({
 
   if (challenge) {
     return (
-      <form className="col" style={{ gap: 'var(--sp-4)' }} onSubmit={submitCode}>
+      <form className="login-form" onSubmit={submitCode}>
         <Notice tone="info" icon={<ShieldCheck size={16} />}>
           انبعث رمز تحقّق من ٦ أرقام على <span className="num strong">{challenge.maskedPhone}</span>
         </Notice>
@@ -185,7 +229,7 @@ function SignInForm({
           {pending ? 'جاري التحقّق…' : 'تأكيد الرمز'}
         </Button>
 
-        <div className="row row-gap-2">
+        <div className="login-links">
           <Button variant="ghost" size="sm" onClick={resend} disabled={pending}>
             إرسال رمز جديد
           </Button>
@@ -208,7 +252,7 @@ function SignInForm({
   }
 
   return (
-    <form className="col" style={{ gap: 'var(--sp-4)' }} onSubmit={submitPassword}>
+    <form className="login-form" onSubmit={submitPassword}>
       {handover ? <Notice tone="success">{handover}</Notice> : null}
 
       <Field label="رقم الهاتف" hint="بصيغة 07XXXXXXXXX">
@@ -235,7 +279,7 @@ function SignInForm({
         {pending ? 'جاري الإرسال…' : 'إرسال رمز التحقّق'}
       </Button>
 
-      <div className="row row-gap-2">
+      <div className="login-links">
         <Button
           variant="ghost"
           size="sm"
@@ -352,7 +396,7 @@ function ResetForm({
     const ready = code.length === 6 && password.length >= MIN_PASSWORD && password === confirm;
 
     return (
-      <form className="col" style={{ gap: 'var(--sp-4)' }} onSubmit={submitReset}>
+      <form className="login-form" onSubmit={submitReset}>
         <Notice tone="info" icon={<MessageCircle size={16} />}>
           إذا هذا الرقم عنده حساب، يوصله رمز من ٦ أرقام على{' '}
           <span className="strong">واتساب</span>
@@ -407,7 +451,7 @@ function ResetForm({
           {pending ? 'جاري الحفظ…' : 'تعيين كلمة المرور'}
         </Button>
 
-        <div className="row row-gap-2">
+        <div className="login-links">
           <Button variant="ghost" size="sm" onClick={resend} disabled={pending}>
             إرسال رمز جديد
           </Button>
@@ -430,7 +474,7 @@ function ResetForm({
   }
 
   return (
-    <form className="col" style={{ gap: 'var(--sp-4)' }} onSubmit={requestCode}>
+    <form className="login-form" onSubmit={requestCode}>
       <Notice tone="info" icon={<LifeBuoy size={16} />}>
         اكتب رقم هاتفك وراح يوصلك رمز على <span className="strong">واتساب</span> تغيّر بيه كلمة
         المرور.
@@ -456,7 +500,7 @@ function ResetForm({
         {pending ? 'جاري الإرسال…' : 'إرسال رمز الاسترجاع'}
       </Button>
 
-      <div className="row row-gap-2">
+      <div className="login-links">
         <Button
           variant="ghost"
           size="sm"
@@ -485,7 +529,7 @@ function Countdown({ seconds }: { seconds: number }) {
   }, [seconds]);
 
   if (left === 0) {
-    return <span className="fs-small" style={{ color: 'var(--danger)' }}>انتهت صلاحية الرمز — اطلب رمز جديد.</span>;
+    return <span className="fs-small text-danger">انتهت صلاحية الرمز — اطلب رمز جديد.</span>;
   }
 
   const mm = String(Math.floor(left / 60)).padStart(2, '0');

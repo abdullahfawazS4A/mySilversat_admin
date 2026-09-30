@@ -26,11 +26,11 @@ export function PageHeader({
   return (
     <div className="page-wash">
       <div className="page-head">
-        <div className="col">
-          <span className="section-title">{title}</span>
-          {subtitle ? <span className="section-sub">{subtitle}</span> : null}
+        <div className="page-head-text">
+          <h2 className="section-title">{title}</h2>
+          {subtitle ? <p className="section-sub">{subtitle}</p> : null}
         </div>
-        {actions ? <div className="row row-gap-2 wrap">{actions}</div> : null}
+        {actions ? <div className="page-actions">{actions}</div> : null}
       </div>
     </div>
   );
@@ -115,7 +115,7 @@ export function DataTable<T>({
           <thead>
             <tr>
               {selectable ? (
-                <th style={{ width: 38 }}>
+                <th className="cell-check">
                   <input
                     type="checkbox"
                     className="checkbox"
@@ -129,10 +129,16 @@ export function DataTable<T>({
                 <th
                   key={column.key}
                   style={{ width: column.width }}
-                  className={cx(column.sortable && 'sortable')}
+                  className={cx(
+                    column.sortable && 'sortable',
+                    sort?.by === column.key && 'sorted',
+                  )}
                   onClick={() => clickSort(column)}
+                  aria-sort={
+                    sort?.by === column.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined
+                  }
                 >
-                  <span className="row row-gap-1" style={{ display: 'inline-flex' }}>
+                  <span className="th-inner">
                     {column.header}
                     {column.sortable && sort?.by === column.key ? (
                       sort.dir === 'asc' ? (
@@ -156,7 +162,7 @@ export function DataTable<T>({
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                 >
                   {selectable ? (
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td className="cell-check" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         className="checkbox"

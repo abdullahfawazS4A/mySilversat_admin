@@ -68,7 +68,7 @@ export function MatchPredictionsDialog({ match, onClose }: { match: Match; onClo
       key: 'user',
       header: 'المشترك',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           <span className="fs-body">{row.appUser?.name ?? '—'}</span>
           <span className="fs-tiny dim num">
             {row.appUser ? formatPhone(row.appUser.phone) : ''}
@@ -141,10 +141,10 @@ export function MatchPredictionsDialog({ match, onClose }: { match: Match; onClo
         </>
       }
     >
-      <div className="col" style={{ gap: 'var(--sp-5)' }}>
+      <div className="col row-gap-5">
         <AsyncBlock state={stats}>
           {(data) => (
-            <div className="col" style={{ gap: 'var(--sp-4)' }}>
+            <div className="col row-gap-4">
               <div className="row between">
                 <span className="fs-body strong">توزيع التوقعات</span>
                 <span className="fs-small muted">
@@ -162,7 +162,7 @@ export function MatchPredictionsDialog({ match, onClose }: { match: Match; onClo
               />
 
               {data.topScorelines.length > 0 ? (
-                <div className="col" style={{ gap: 'var(--sp-2)' }}>
+                <div className="col row-gap-2">
                   <span className="fs-small muted">أكثر النتائج توقعاً</span>
                   <div className="row wrap row-gap-2">
                     {data.topScorelines.map((line) => (

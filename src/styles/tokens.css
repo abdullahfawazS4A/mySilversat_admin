@@ -20,6 +20,10 @@
   --bg-surface: #ffffff;
   --bg-subtle: #eef5fc;
   --bg-tint: #e8f2fc;
+  /* Row hover and quiet fills: a step between the app ground and the subtle tint. */
+  --bg-hover: #f3f7fc;
+  /* Frosted topbar: the app ground at 85% so content scrolls softly beneath. */
+  --bg-glass: rgba(247, 250, 253, 0.85);
 
   /* Brand */
   --brand-primary: #5b97d5;
@@ -32,6 +36,10 @@
   --text-secondary: #5a7391;
   --text-tertiary: #8fa5bc;
   --text-disabled: #b6c4d4;
+  /* Role aliases some component rules were written against. */
+  --text-muted: var(--text-secondary);
+  --text-strong: var(--text-primary);
+  --text-body: var(--text-primary);
 
   /* Semantic — one meaning each */
   --success: #2fa97c;
@@ -50,6 +58,8 @@
   /* Hairlines */
   --hairline: #e4ecf4;
   --divider: #eef3f8;
+  /* A hairline that has to read on a tinted ground: inputs, dashed dropzones. */
+  --hairline-strong: #d6e2ee;
 
   /* Skeleton shimmer */
   --shimmer-base: #e7ebf3;
@@ -87,6 +97,8 @@
   --sp-10: 40px;
 
   /* Radius set — matches AppSpacing */
+  --r-xs: 6px;
+  --r-sm: 10px;
   --r-chip: 12px;
   --r-button: 14px;
   --r-card: 16px;
@@ -94,17 +106,37 @@
   --r-pill: 999px;
 
   /* Elevation — soft, blue-tinted, never a hard grey drop shadow */
-  --shadow-card: 0 1px 2px rgba(20, 48, 77, 0.04), 0 6px 20px rgba(20, 48, 77, 0.06);
+  --shadow-xs: 0 1px 2px rgba(20, 48, 77, 0.06);
+  --shadow-card: 0 1px 2px rgba(20, 48, 77, 0.04), 0 4px 14px rgba(20, 48, 77, 0.045);
+  --shadow-hover: 0 2px 4px rgba(20, 48, 77, 0.05), 0 10px 26px rgba(20, 48, 77, 0.08);
+  --shadow-brand: 0 1px 2px rgba(46, 107, 168, 0.18), 0 4px 12px rgba(91, 151, 213, 0.28);
   --shadow-raised: 0 2px 6px rgba(20, 48, 77, 0.06), 0 14px 36px rgba(20, 48, 77, 0.1);
   --shadow-pop: 0 18px 50px rgba(20, 48, 77, 0.18);
+
+  /* Focus: one ring everywhere — a surface gap, then the brand. */
+  --focus-ring: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--brand-primary);
+  --focus-halo: 0 0 0 3px rgba(91, 151, 213, 0.22);
+
+  /* Dialog scrim — the text ink, dimmed. */
+  --scrim: rgba(20, 48, 77, 0.36);
+
+  /* Letter crests and avatars sit on art, so they take the on-brand ink. */
+  --crest-ink: #ffffff;
+  --crest-shade: inset 0 -2px 6px rgba(0, 0, 0, 0.15);
 
   /* The one header gradient the app allows (bgTint -> bgApp) */
   --header-wash: linear-gradient(180deg, var(--bg-tint) 0%, var(--bg-app) 100%);
 
   /* Layout metrics */
-  --sidebar-w: 272px;
+  --sidebar-w: 264px;
   --sidebar-w-collapsed: 76px;
-  --topbar-h: 68px;
+  --topbar-h: 64px;
+  /* Content never stretches past this on a wide monitor; tables stay scannable. */
+  --page-max: 1560px;
+  --gutter: var(--sp-6);
+  /* Default control height; small variant for dense rows. */
+  --control-h: 42px;
+  --control-h-sm: 34px;
 
   /* Motion */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);

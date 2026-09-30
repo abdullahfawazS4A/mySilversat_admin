@@ -93,7 +93,7 @@ export function LeaderboardPage() {
       key: 'user',
       header: 'المشترك',
       render: (row) => (
-        <Link className="col" to={`/users/${row.user.id}`} style={{ lineHeight: 1.35 }}>
+        <Link className="col lh-tight" to={`/users/${row.user.id}`}>
           <span className="fs-body strong">{row.user.name}</span>
           <span className="fs-tiny dim num">{formatPhone(row.user.phone)}</span>
         </Link>

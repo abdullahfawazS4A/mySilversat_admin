@@ -108,7 +108,11 @@ a {
 :focus-visible {
   outline: 2px solid var(--brand-primary);
   outline-offset: 2px;
-  border-radius: 6px;
+}
+
+::selection {
+  background: var(--brand-soft);
+  color: var(--text-primary);
 }
 
 /* ---------------------------------------------------------------- utilities */
@@ -121,11 +125,21 @@ a {
 .row-gap-2 { gap: var(--sp-2); }
 .row-gap-3 { gap: var(--sp-3); }
 .row-gap-4 { gap: var(--sp-4); }
+.row-gap-5 { gap: var(--sp-5); }
+.row-gap-6 { gap: var(--sp-6); }
 .col {
   display: flex;
   flex-direction: column;
 }
 .grow { flex: 1 1 auto; min-width: 0; }
+/* A two-line stack (title over hint) that may truncate inside a flex row. */
+.truncate-col { min-width: 0; line-height: 1.35; }
+/* A table cell holding a long value (a URL): capped so it ellipsizes instead of widening the table. */
+.cell-clamp { min-width: 0; max-width: 28rem; }
+.cell-clamp > * { max-width: 100%; }
+.lh-tight { line-height: 1.35; }
+.nowrap { white-space: nowrap; }
+.text-danger { color: var(--danger); }
 .wrap { flex-wrap: wrap; }
 .muted { color: var(--text-secondary); }
 .dim { color: var(--text-tertiary); }
@@ -158,3 +172,12 @@ a {
 .mt-4 { margin-top: var(--sp-4); }
 .mt-5 { margin-top: var(--sp-5); }
 .mt-6 { margin-top: var(--sp-6); }
+
+/*
+ * A Latin number stacked in a column (a phone under a name) would otherwise
+ * stretch to the column's width and, being LTR, sit against the far edge.
+ */
+.col > .num {
+  align-self: flex-start;
+}
+.pb-0 { padding-bottom: 0; }

@@ -408,9 +408,7 @@ export function EmptyState({
     <div className="empty">
       <span className="empty-icon">{icon ?? <Inbox size={22} />}</span>
       <div className="col center">
-        <span className="strong" style={{ color: 'var(--text-primary)' }}>
-          {title}
-        </span>
+        <span className="empty-title">{title}</span>
         {hint ? <span className="fs-small mt-1">{hint}</span> : null}
       </div>
       {action}
@@ -442,9 +440,9 @@ export function Skeleton({ w, h = 14, className }: { w?: number | string; h?: nu
 /** Placeholder rows sized like the table they stand in for. */
 export function TableSkeleton({ rows = 6, cols = 5 }: { rows?: number; cols?: number }) {
   return (
-    <div style={{ padding: 'var(--sp-4)' }}>
+    <div className="table-skeleton" aria-busy="true">
       {Array.from({ length: rows }).map((_, r) => (
-        <div key={r} className="row row-gap-4" style={{ padding: '9px 0' }}>
+        <div key={r} className="table-skeleton-row">
           {Array.from({ length: cols }).map((__, c) => (
             <Skeleton key={c} w={c === 0 ? '22%' : `${Math.max(10, 60 / cols)}%`} h={12} />
           ))}
@@ -504,9 +502,7 @@ export function AsyncBlock<T>({
         <span className="empty-icon chip-danger">
           <X size={22} />
         </span>
-        <span className="strong" style={{ color: 'var(--danger)' }}>
-          {state.error}
-        </span>
+        <span className="empty-error">{state.error}</span>
         <Button variant="outline" size="sm" onClick={state.reload}>
           إعادة المحاولة
         </Button>
@@ -594,9 +590,7 @@ export function ConfirmDialog({
         </>
       }
     >
-      <div className="fs-body" style={{ lineHeight: 1.7 }}>
-        {message}
-      </div>
+      <div className="fs-body confirm-message">{message}</div>
     </Modal>
   );
 }

@@ -50,7 +50,7 @@ export function NotificationsPage() {
         // Both lines are free text an operator typed, so both are capped and
         // carry the full value in a tooltip rather than being lost to the
         // ellipsis.
-        <div className="col cell-text" style={{ lineHeight: 1.35 }} title={`${row.titleAr}
+        <div className="col cell-text lh-tight" title={`${row.titleAr}
 ${row.bodyAr}`}>
           <span className="fs-body strong truncate">{row.titleAr}</span>
           <span className="fs-tiny dim truncate">{row.bodyAr}</span>
@@ -61,7 +61,7 @@ ${row.bodyAr}`}>
       key: 'target',
       header: 'الجمهور',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           <span className="fs-small">{NOTIFICATION_TARGET[row.targetType]}</span>
           <span className="fs-tiny dim">
             {row.targetProvince?.name ?? row.targetUser?.name ?? ''}
@@ -86,7 +86,7 @@ ${row.bodyAr}`}>
       key: 'source',
       header: 'المصدر',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           <span className="fs-small">{row.source === 'admin' ? 'من اللوحة' : row.source}</span>
           <span className="fs-tiny dim">{row.createdByUser?.name ?? ''}</span>
         </div>
@@ -239,14 +239,14 @@ function ComposeDialog({ onClose, onSent }: { onClose: () => void; onSent: () =>
           </>
         }
       >
-        <div className="col" style={{ gap: 'var(--sp-4)' }}>
+        <div className="col row-gap-4">
           <Notice tone="warning">
             راح يوصل الإشعار لـ{' '}
             <span className="strong num">{formatNumber(audience.data ?? 0)}</span> مشترك
             ({NOTIFICATION_TARGET[draft.targetType]}). الإرسال فوري وما تكدر تتراجع عنه.
           </Notice>
 
-          <div className="card card-pad col" style={{ gap: 4 }}>
+          <div className="card card-pad col row-gap-1">
             <span className="fs-body strong">{draft.titleAr}</span>
             <span className="fs-small">{draft.bodyAr}</span>
           </div>

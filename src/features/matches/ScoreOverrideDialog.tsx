@@ -50,7 +50,13 @@ function Stepper({
   return (
     <div className="col center" style={{ gap: 'var(--sp-3)', flex: 1 }}>
       <TeamCrest name={label} seed={seed} logoUrl={logoUrl} size={44} />
-      <span className="fs-body truncate" style={{ maxWidth: 140, textAlign: 'center' }}>
+      {/* dir=auto: a Latin team name truncates at its end, not its start. */}
+      <span
+        className="fs-body truncate"
+        dir="auto"
+        title={label}
+        style={{ maxWidth: 180, textAlign: 'center' }}
+      >
         {label}
       </span>
       <div className="row row-gap-3">
@@ -139,7 +145,7 @@ export function ScoreOverrideDialog({
         </>
       }
     >
-      <div className="col" style={{ gap: 'var(--sp-5)' }}>
+      <div className="col row-gap-5">
         {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
 
         <div className="col" style={{ gap: 2 }}>
@@ -155,7 +161,7 @@ export function ScoreOverrideDialog({
           وما يرجع يلمس توقع محتسب.
         </Notice>
 
-        <div className="row" style={{ gap: 'var(--sp-4)' }}>
+        <div className="row row-gap-4">
           <Stepper
             label={teamName(match.homeTeam)}
             seed={crestSeed(match.homeTeamId)}

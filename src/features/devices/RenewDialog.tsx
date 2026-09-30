@@ -87,7 +87,7 @@ export function RenewDialog({
         </>
       }
     >
-      <div className="col" style={{ gap: 'var(--sp-4)' }}>
+      <div className="col row-gap-4">
         <Notice tone="warning">
           الكارت لازم يكون مباع مسبقاً لنفس المشترك صاحب هذا الجهاز، والسيرفر ينتخب تلقائياً من
           منتج الكارت. الإجراء مباشر وما ننحفظ عدنا سجل إله.
@@ -132,7 +132,7 @@ export function RenewDialog({
         ) : null}
 
         {result ? (
-          <div className="col" style={{ gap: 'var(--sp-2)' }}>
+          <div className="col row-gap-2">
             <span className="fs-small muted">رد السيرفر</span>
             <VendorPayload data={result} />
           </div>

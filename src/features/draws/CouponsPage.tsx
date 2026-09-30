@@ -214,7 +214,7 @@ export function CouponsPage() {
           onCancel={() => setDrawing(null)}
           onConfirm={() => void hold()}
           message={
-            <div className="col" style={{ gap: 'var(--sp-3)' }}>
+            <div className="col row-gap-3">
               <span>
                 السيرفر راح يختار كوبون واحد عشوائياً من كوبونات سحب{' '}
                 <span className="strong">{drawing.titleAr}</span> ويسجّل صاحبه فائز، ويخفي السحب من

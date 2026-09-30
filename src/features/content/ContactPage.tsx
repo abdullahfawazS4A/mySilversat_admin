@@ -74,8 +74,10 @@ export function ContactPage() {
           key: 'value',
           header: 'القيمة',
           render: (row) => (
-            <div className="col">
-              <span className="fs-small num truncate">{row.value}</span>
+            <div className="col cell-clamp">
+              <span className="fs-small num truncate" title={row.value}>
+                {row.value}
+              </span>
               {row.subLabel ? <span className="fs-tiny dim">{row.subLabel}</span> : null}
             </div>
           ),

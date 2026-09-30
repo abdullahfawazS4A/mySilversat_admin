@@ -109,7 +109,7 @@ export function SalesPage() {
       key: 'category',
       header: 'الفئة',
       render: (row) => (
-        <div className="col" style={{ lineHeight: 1.35 }}>
+        <div className="col lh-tight">
           <span className="fs-body">{row.category?.name ?? '—'}</span>
           <span className="fs-tiny dim">{productOf(row)?.displayName ?? ''}</span>
         </div>

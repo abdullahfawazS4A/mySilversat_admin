@@ -118,14 +118,14 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                   onMouseEnter={() => setCursor(index)}
                   onClick={() => go(hit)}
                 >
-                  <span className="chip-icon" style={{ width: 30, height: 30 }}>
+                  <span className="chip-icon chip-icon-sm">
                     <Icon size={15} />
                   </span>
-                  <span className="col grow" style={{ minWidth: 0, lineHeight: 1.35 }}>
+                  <span className="col grow truncate-col">
                     <span className="fs-body strong truncate">{hit.label}</span>
                     <span className="fs-tiny dim truncate">{hit.hint}</span>
                   </span>
-                  <span className="fs-tiny muted">{hit.group}</span>
+                  <span className="palette-group">{hit.group}</span>
                   {index === cursor ? <CornerDownLeft size={13} className="dim" /> : null}
                 </button>
               );

@@ -5,9 +5,9 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { LogOut, Menu, Satellite, Search, User } from 'lucide-react';
+import { ChevronLeft, LogOut, Menu, Satellite, Search } from 'lucide-react';
 import { useAuth } from '@/app/AuthContext';
-import { NAV_GROUPS, titleForPath } from './navigation';
+import { NAV_GROUPS, groupForPath, titleForPath } from './navigation';
 import { CommandPalette } from './CommandPalette';
 import { Button, Pill, Skeleton, TableSkeleton } from '@/components/ui';
 import { ADMIN_ROLE } from '@/lib/labels';
@@ -36,7 +36,7 @@ export function AdminShell() {
   if (status === 'unknown') {
     return (
       <div className="login-page">
-        <div className="card login-card col" style={{ gap: 12 }}>
+        <div className="card login-card col row-gap-3">
           <Skeleton h={18} w="55%" />
           <Skeleton h={12} />
           <Skeleton h={12} w="75%" />
@@ -48,6 +48,11 @@ export function AdminShell() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
+
+  const pageTitle = titleForPath(location.pathname);
+  // The dashboard's group ("عام") says nothing the title doesn't, so the
+  // breadcrumb only appears on screens that live inside a real section.
+  const crumbGroup = location.pathname === '/' ? null : groupForPath(location.pathname);
 
   return (
     <div className={cx('shell', collapsed && 'collapsed')}>
@@ -64,7 +69,7 @@ export function AdminShell() {
 
         <nav className="sidebar-nav">
           {NAV_GROUPS.map((group) => (
-            <div key={group.title}>
+            <div key={group.title} className="nav-group">
               <div className="nav-group-title">{group.title}</div>
               {group.items.map((item) => (
                 <NavLink
@@ -74,7 +79,7 @@ export function AdminShell() {
                   title={item.label}
                   className={({ isActive }) => cx('nav-link', isActive && 'active')}
                 >
-                  <item.icon size={17} />
+                  <item.icon size={18} strokeWidth={1.9} />
                   <span>{item.label}</span>
                 </NavLink>
               ))}
@@ -83,8 +88,8 @@ export function AdminShell() {
         </nav>
 
         <div className="sidebar-foot">
-          <button className="nav-link" onClick={() => void signOut()} style={{ width: '100%' }}>
-            <LogOut size={17} />
+          <button type="button" className="nav-link" title="تسجيل الخروج" onClick={() => void signOut()}>
+            <LogOut size={18} strokeWidth={1.9} />
             <span>تسجيل الخروج</span>
           </button>
         </div>
@@ -95,32 +100,43 @@ export function AdminShell() {
           <Button
             variant="ghost"
             size="sm"
-            icon={<Menu size={17} />}
+            icon={<Menu size={18} />}
             title="طي القائمة"
             onClick={() => setCollapsed((c) => !c)}
           />
-          <h1 className="truncate">{titleForPath(location.pathname)}</h1>
+          <div className="topbar-crumb">
+            {crumbGroup && crumbGroup !== pageTitle ? (
+              <>
+                <span className="crumb-group">{crumbGroup}</span>
+                <ChevronLeft size={14} />
+              </>
+            ) : null}
+            <h1 className="truncate">{pageTitle}</h1>
+          </div>
+
+          <span className="topbar-spacer" />
 
           {/*
             The palette trigger sits in the header rather than only on the
             keyboard: an operator who never learns the shortcut still gets the
             fast path, and the visible shortcut teaches it.
           */}
-          <button className="palette-trigger grow" onClick={() => setPaletteOpen(true)}>
-            <Search size={14} />
+          <button type="button" className="palette-trigger" onClick={() => setPaletteOpen(true)}>
+            <Search size={15} />
             <span className="grow truncate">روح لأي شاشة…</span>
-            <kbd className="kbd">Ctrl</kbd>
-            <kbd className="kbd">K</kbd>
+            <span className="kbd-combo" dir="ltr">
+              <kbd className="kbd">Ctrl</kbd>
+              <kbd className="kbd">K</kbd>
+            </span>
           </button>
 
-
-          <div className="row row-gap-2">
-            <span className="chip-icon" style={{ width: 32, height: 32 }}>
-              <User size={16} />
+          <div className="topbar-user">
+            <span className="avatar" aria-hidden="true">
+              {session.admin.name.trim().charAt(0) || '؟'}
             </span>
-            <div className="col" style={{ lineHeight: 1.3 }}>
-              <span className="fs-small strong">{session.admin.name}</span>
-              <span className="fs-tiny dim num">{session.admin.phone}</span>
+            <div className="topbar-user-text">
+              <span className="fs-small strong truncate">{session.admin.name}</span>
+              <span className="fs-micro dim num">{session.admin.phone}</span>
             </div>
             <Pill tone={ADMIN_ROLE[session.admin.role].tone}>
               {ADMIN_ROLE[session.admin.role].label}

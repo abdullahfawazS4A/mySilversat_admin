@@ -219,3 +219,13 @@ export function titleForPath(pathname: string): string {
   )[0];
   return prefix?.label ?? 'لوحة تحكم سلفرسات';
 }
+
+/** The nav group a pathname belongs to — the topbar shows it as a breadcrumb. */
+export function groupForPath(pathname: string): string | null {
+  const group = NAV_GROUPS.find((g) =>
+    g.items.some((item) =>
+      item.path === '/' ? pathname === '/' : pathname === item.path || pathname.startsWith(`${item.path}/`),
+    ),
+  );
+  return group?.title ?? null;
+}

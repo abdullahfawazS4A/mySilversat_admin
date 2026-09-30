@@ -271,7 +271,7 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
               seed={crestSeed(match.homeTeamId)}
               logoUrl={match.homeTeam?.logoUrl}
             />
-            <div className="col" style={{ lineHeight: 1.35 }}>
+            <div className="col lh-tight">
               <span className="fs-body strong">
                 {teamName(match.homeTeam)} <span className="dim">ضد</span>{' '}
                 {teamName(match.awayTeam)}
@@ -293,8 +293,8 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
         key: 'matchAt',
         header: 'موعد الانطلاق',
         render: (match) => (
-          <div className="col" style={{ lineHeight: 1.35 }}>
-            <span className="fs-body">{formatDateAr(match.matchAt)}</span>
+          <div className="col lh-tight">
+            <span className="fs-body nowrap">{formatDateAr(match.matchAt)}</span>
             <span className="fs-tiny dim num">{formatTimeAr(match.matchAt)}</span>
           </div>
         ),
