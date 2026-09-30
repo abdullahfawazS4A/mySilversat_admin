@@ -333,9 +333,7 @@ export interface LeagueInput {
 /**
  * How the leagues list is narrowed.
  *
- * `countryId` is server-side. `isActive` is not — `/leagues` accepts the
- * parameter and ignores it, answering 1,237 rows either way — so the
- * repository applies it over the fetched rows.
+ * Both are server-side.
  */
 export interface LeagueFilter {
   countryId?: Id;
@@ -413,9 +411,9 @@ export type MatchWindow = 'upcoming' | 'past' | 'all';
 /**
  * How the fixtures table is narrowed.
  *
- * `leagueId` and `status` are server-side. `isOpenForPrediction` is not, so
- * the repository applies it over the fetched rows, and `window` is not either
- * — the API has no date parameter, so the repository turns it into an offset.
+ * `leagueId`, `status` and `isOpenForPrediction` are server-side. `window` is
+ * not — the API has no date parameter, so the repository turns it into an
+ * offset.
  */
 export interface MatchFilter {
   leagueId?: Id;

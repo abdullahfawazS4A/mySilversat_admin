@@ -655,7 +655,7 @@ export function Pagination({
     const wanted = Number(raw);
     setSize('');
     if (!Number.isFinite(wanted) || wanted < 1) return;
-    // The API refuses a limit over 100 with a 400 rather than a clamped page,
+    // The API refuses a limit over 500 with a 400 rather than a clamped page,
     // so a larger number is held here instead of being sent and failing.
     onPageSize?.(Math.min(MAX_PAGE_SIZE, Math.floor(wanted)));
   };

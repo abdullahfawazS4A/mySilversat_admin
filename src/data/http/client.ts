@@ -21,12 +21,12 @@ export const API_BASE: string = (
 /**
  * The largest `limit` the API accepts.
  *
- * Every list DTO validates `limit` as 1..100 and rejects anything above it
- * with `limit must be between 1 and 100` — a 400, not a clamped page. So the
+ * Every list DTO validates `limit` as 1..500 and rejects anything above it
+ * with `limit must be between 1 and 500` — a 400, not a clamped page. So the
  * ceiling lives here and everything that builds a range clamps to it, rather
  * than each call site remembering a number the server owns.
  */
-export const MAX_PAGE_SIZE = 100;
+export const MAX_PAGE_SIZE = 500;
 
 /** Clamps a requested page size into the range the API will accept. */
 export function clampPageSize(pageSize: number): number {
@@ -302,8 +302,8 @@ async function throttledPage<T>(path: string, query: Query): Promise<ApiPage<T>>
  *
  *  - when the envelope carried a **total**, every remaining offset is known up
  *    front, so they are fetched a few at a time instead of one after another —
- *    at 100 rows per page the dashboard's ten-thousand-row reads are a hundred
- *    requests, and a hundred sequential round trips is a visibly slow screen;
+ *    a ten-thousand-row read is twenty pages even at 500 rows each, and twenty
+ *    sequential round trips is a visibly slow screen;
  *  - when it did not, there is nothing to plan from, so the pages are walked
  *    one by one until a short page ends it.
  *

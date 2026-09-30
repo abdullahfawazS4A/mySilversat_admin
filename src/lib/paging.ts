@@ -3,7 +3,7 @@
  *
  * The CSV exports need every row, and the obvious way to ask for that —
  * `pageSize: 100000` — is a request the API refuses outright: every list DTO
- * validates `limit` as 1..100, so an oversized page is a 400 rather than a big
+ * validates `limit` as 1..500, so an oversized page is a 400 rather than a big
  * answer. The pages are walked instead, at the largest size it will accept.
  *
  * The caller composes the query itself and spreads the paging in, which keeps

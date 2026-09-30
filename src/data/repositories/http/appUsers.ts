@@ -62,10 +62,7 @@ export class HttpAppUsersRepository
       this.get(id),
       fetchAll<Device>('/devices/all', { appUserId: id }),
       fetchAll<Prediction>('/predictions', { appUserId: id }, 500),
-      // No `soldTo` filter exists, so the sold codes are scanned and matched.
-      fetchAll<Code>('/codes', { status: 'sold' }, 5000).then((codes) =>
-        codes.filter((code) => code.soldToAppUserId === id),
-      ),
+      fetchAll<Code>('/codes', { status: 'sold', soldToAppUserId: id }),
     ]);
 
     predictions.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

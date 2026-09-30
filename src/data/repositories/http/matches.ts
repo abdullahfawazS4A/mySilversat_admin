@@ -56,41 +56,6 @@ class HttpLeaguesRepository
     super('/leagues', (row) => `${row.name} ${row.nameAr ?? ''} ${row.country?.name ?? ''}`);
   }
 
-  /** Only `countryId` reaches the API; `isActive` is applied over the rows. */
-  protected filterQuery(filter: LeagueFilter | undefined): Query {
-    const { isActive: _active, ...rest } = filter ?? {};
-    return clean(rest);
-  }
-
-  /**
-   * Lists leagues, narrowing by whether the app shows them.
-   *
-   * `/leagues` takes `isActive` and ignores it — both `true` and `false`
-   * answer with all 1,237 rows — so an unfiltered page is served straight from
-   * the API and a filtered one is built from every row. The split matters:
-   * the common case stays a single paged request rather than thirteen.
-   */
-  async list(query?: ListQuery & LeagueFilter): Promise<Page<League>> {
-    const { isActive, ...rest } = query ?? {};
-    if (isActive === undefined) return super.list(rest);
-
-    const rows = (await fetchAll<League>('/leagues', this.filterQuery(rest))).filter(
-      (row) => row.isActive === isActive,
-    );
-    return localPage(
-      rows,
-      rest,
-      (row) => `${row.name} ${row.nameAr ?? ''} ${row.country?.name ?? ''}`,
-    );
-  }
-
-  async all(filter?: LeagueFilter): Promise<League[]> {
-    const rows = await fetchAll<League>('/leagues', this.filterQuery(filter));
-    return filter?.isActive === undefined
-      ? rows
-      : rows.filter((row) => row.isActive === filter.isActive);
-  }
-
   create(input: LeagueInput): Promise<League> {
     return super.create(withNameAr(input));
   }
@@ -217,7 +182,7 @@ const BOUNDARY_PROBES = 8;
  */
 const READ_WHOLE_MAX = 5 * MAX_PAGE_SIZE;
 
-/** How many rows the filters the API cannot apply will read before giving up. */
+/** How many rows a text search will read before giving up. */
 const LOCAL_FILTER_CAP = 3000;
 
 /**
@@ -312,7 +277,8 @@ class HttpMatchesCollection extends HttpCrudRepository<
   }
 
   /**
-   * Only `leagueId` and `status` reach the API; the rest are applied here.
+   * `leagueId`, `status` and `isOpenForPrediction` reach the API; `window` and
+   * `leagueIds` are resolved here.
    *
    * Named rather than "everything except the ones we handle", because `list`
    * hands its whole query in — paging included — and a leftover `pageSize` in
@@ -323,15 +289,18 @@ class HttpMatchesCollection extends HttpCrudRepository<
    * rows for seconds, and a single rate-limited probe failed the read outright.
    */
   protected filterQuery(filter: MatchFilter | undefined): Query {
-    return clean({ leagueId: filter?.leagueId, status: filter?.status });
+    return clean({
+      leagueId: filter?.leagueId,
+      status: filter?.status,
+      isOpenForPrediction: filter?.isOpenForPrediction,
+    });
   }
 
   /**
    * Where today begins in a fixture list, memoised.
    *
-   * `/matches` accepts `leagueId`, `status`, `limit` and `offset` and nothing
-   * else — no date range and no sort key, and every other parameter is accepted
-   * and silently ignored — but it does return rows ordered by `matchAt`
+   * `/matches` has no date range and no sort key, but it does return rows
+   * ordered by `matchAt`
    * ascending. So the table cannot ask the API for "today onward"; it has to
    * find where today starts and page from there.
    *
@@ -453,7 +422,7 @@ class HttpMatchesCollection extends HttpCrudRepository<
     return { offset: lo, total };
   }
 
-  /** The rows a window covers, for the filters the API cannot apply. */
+  /** The rows a window covers, for a text search the API cannot apply. */
   private async windowRows(
     filter: Query,
     window: MatchWindow,
@@ -503,33 +472,27 @@ class HttpMatchesCollection extends HttpCrudRepository<
 
     const slices: { filter: Query; range: Boundary | null }[] = [];
     for (const leagueId of ids) {
-      const filter = this.filterQuery({ leagueId, status });
+      const filter = this.filterQuery({ leagueId, status, isOpenForPrediction });
       slices.push({ filter, range: windowed ? await this.boundary(filter) : null });
     }
 
     /*
-     * A filter the API cannot apply has to see every row of the window, the
-     * same way the single-league path does — a page of the wrong rows cannot
-     * be re-filtered into the right ones.
+     * A text search has to see every row of the window, the same way the
+     * single-league path does — a page of the wrong rows cannot be re-filtered
+     * into the right ones.
      *
      * The row budget is shared out rather than handed to each league whole, so
      * this costs about what one league does instead of multiplying by the size
      * of the set. The floor keeps a wide set from cutting every league down to
      * a page or two.
      */
-    if (search?.trim() || isOpenForPrediction !== undefined) {
+    if (search?.trim()) {
       const cap = Math.max(200, Math.ceil(LOCAL_FILTER_CAP / ids.length));
       const rows: Match[] = [];
       for (const { filter, range } of slices) {
         rows.push(...(await this.windowRows(filter, window, range, cap)));
       }
-      const filtered = rows
-        .filter(
-          (row) =>
-            isOpenForPrediction === undefined || row.isOpenForPrediction === isOpenForPrediction,
-        )
-        .sort(byTime);
-      return localPage(filtered, { search, page, pageSize }, matchSearchText);
+      return localPage(rows.sort(byTime), { search, page, pageSize }, matchSearchText);
     }
 
     /*
@@ -580,15 +543,13 @@ class HttpMatchesCollection extends HttpCrudRepository<
   /**
    * Lists fixtures within a time window.
    *
-   * Two of the three filters are ours rather than the API's. `window` becomes
-   * an offset via `boundary`; `isOpenForPrediction` — which `/matches` accepts
-   * and ignores — has to be applied over the rows themselves, since a page of
-   * the wrong rows cannot be re-filtered into the right ones. `search` is in
-   * the same position. Both therefore read the window rather than a page of it,
-   * up to `LOCAL_FILTER_CAP`.
+   * `window` is ours rather than the API's: it becomes an offset via
+   * `boundary`. `search` is too, and has to be applied over the rows, since a
+   * page of the wrong rows cannot be re-filtered into the right ones — so it
+   * reads the window rather than a page of it, up to `LOCAL_FILTER_CAP`.
    */
   async list(query?: ListQuery & MatchFilter): Promise<Page<Match>> {
-    const { search, page, pageSize, isOpenForPrediction, status, window = 'all' } = query ?? {};
+    const { search, page, pageSize, status, window = 'all' } = query ?? {};
 
     /*
      * A set of leagues is not something the API can be asked for, so it is
@@ -618,10 +579,8 @@ class HttpMatchesCollection extends HttpCrudRepository<
     const windowed = window !== 'all' && status !== 'live';
     const range = windowed ? await this.boundary(filter) : null;
 
-    if (search?.trim() || isOpenForPrediction !== undefined) {
-      const rows = (await this.windowRows(filter, window, range)).filter(
-        (row) => isOpenForPrediction === undefined || row.isOpenForPrediction === isOpenForPrediction,
-      );
+    if (search?.trim()) {
+      const rows = await this.windowRows(filter, window, range);
       return localPage(rows, { search, page, pageSize }, matchSearchText);
     }
 
