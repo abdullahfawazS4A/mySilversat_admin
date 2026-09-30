@@ -200,7 +200,10 @@ async function send(path: string, options: RequestOptions = {}): Promise<Record<
     try {
       payload = JSON.parse(text);
     } catch {
-      payload = { message: text };
+      // A crashed route can answer with the framework's HTML error page — a
+      // stack trace, not a sentence. That falls back to the status's own
+      // message rather than being shown to the operator.
+      payload = /^\s*</.test(text) ? null : { message: text };
     }
   }
 
