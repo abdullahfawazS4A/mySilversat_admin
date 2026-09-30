@@ -555,10 +555,19 @@ export interface PrizeDraw extends Entity {
   winnerCoupon?: WinnerCoupon | null;
 }
 
-/** The one coupon of a draw an admin can see: the one that won it. */
+/** The coupon that won a draw, as the single-draw read joins it. */
 export interface WinnerCoupon {
   id: Id;
   code: string;
+}
+
+/** A draw entry, issued to a subscriber on every renewal. */
+export interface Coupon extends Entity {
+  code: string;
+  prizeDrawId: Id;
+  appUserId: Id;
+  orderId: Id | null;
+  appUser?: Pick<AppUser, 'id' | 'name' | 'phone'>;
 }
 
 /** A transmitter the app's compass points at. */

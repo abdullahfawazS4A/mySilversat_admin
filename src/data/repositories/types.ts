@@ -24,6 +24,7 @@ import type {
   Category,
   Code,
   CodeStatus,
+  Coupon,
   ContactChannel,
   ContactLink,
   Country,
@@ -258,6 +259,17 @@ export interface StockRepository {
   codes: CrudRepository<Code, CodeInput, Partial<CodeInput>, CodeFilter>;
   /** Finds codes by id or primary value — the support lookup. */
   lookup(q: string): Promise<Code[]>;
+  /**
+   * Sold codes counted and valued at their category's list and cost price.
+   * `soldFrom` is inclusive, `soldTo` exclusive.
+   */
+  salesSummary(filter?: { categoryId?: Id; soldFrom?: string; soldTo?: string }): Promise<SalesSummary>;
+}
+
+export interface SalesSummary {
+  count: number;
+  revenue: number;
+  cost: number;
 }
 
 // ---------------------------------------------------------- app users ------
@@ -298,7 +310,7 @@ export interface AppUsersRepository
   /** Blocks and invalidates the user's live sessions immediately. */
   block(id: Id): Promise<AppUser>;
   unblock(id: Id): Promise<AppUser>;
-  /** App users ranked by points. Built from the user list, newest first. */
+  /** App users ranked by points, with prediction count and accuracy. */
   leaderboard(query?: ListQuery & { provinceId?: Id }): Promise<Page<LeaderboardRow>>;
 }
 
@@ -411,9 +423,8 @@ export type MatchWindow = 'upcoming' | 'past' | 'all';
 /**
  * How the fixtures table is narrowed.
  *
- * `leagueId`, `status` and `isOpenForPrediction` are server-side. `window` is
- * not — the API has no date parameter, so the repository turns it into an
- * offset.
+ * All server-side: `leagueId`, `status` and `isOpenForPrediction` as they are,
+ * `window` as a `from`/`to` bound on `matchAt`.
  */
 export interface MatchFilter {
   leagueId?: Id;
@@ -618,6 +629,10 @@ export interface ContentRepository {
    * banner or an FAQ is. Running a draw and naming a winner have no routes.
    */
   prizeDraws: PrizeDrawsRepository;
+  /** Every draw entry. `search` matches the code and the subscriber's phone. */
+  coupons: {
+    list(query?: ListQuery & { prizeDrawId?: Id; appUserId?: Id }): Promise<Page<Coupon>>;
+  };
 }
 
 // ------------------------------------------- silversat vendor operations ---

@@ -6,13 +6,12 @@
  * `soldToAppUserId` is set. So this screen is `/codes?status=sold` read as a
  * ledger, which is the closest thing to one that exists.
  *
- * Two honest limits come with that, and both are stated on the screen rather
- * than papered over:
+ * One honest limit comes with that, and it is stated on the screen rather than
+ * papered over: the amount is the category's **current** list price, not what
+ * was charged at the time — a reprice moves the historical figures.
  *
- *  - the amount is the category's **current** list price, not what was charged
- *    at the time — a reprice moves the historical figures;
- *  - the totals are over the loaded page, because the API has no aggregate
- *    route and summing every sold code on every render would be a heavy read.
+ * The totals are `/codes/sales-summary` under the category filter, so they
+ * cover every sale in it rather than the page on screen.
  */
 
 import { useMemo, useState } from 'react';
@@ -79,14 +78,11 @@ export function SalesPage() {
   );
 
   const rows = sales.data?.items ?? [];
-  const pageRevenue = useMemo(
-    () => rows.reduce((sum, row) => sum + toAmount(row.category?.unitPrice), 0),
-    [rows],
+  const summary = useAsync(
+    () => repos.stock.salesSummary({ categoryId: categoryId === 'all' ? undefined : categoryId }),
+    [categoryId],
   );
-  const pageCost = useMemo(
-    () => rows.reduce((sum, row) => sum + toAmount(row.category?.costPrice), 0),
-    [rows],
-  );
+  const scope = categoryId === 'all' ? 'كل المبيعات' : 'مبيعات الفئة';
 
   const exportCsv = () => {
     downloadCsv('sales.csv', [
@@ -166,14 +162,16 @@ export function SalesPage() {
       <div className="page">
         <Notice tone="info">
           ماكو جدول معاملات بالـ API — سجل البيع هو حالة الكارت نفسه. المبالغ محسوبة على{' '}
-          <span className="strong">سعر الفئة الحالي</span>، يعني تغيير السعر يغيّر أرقام الماضي،
-          والمجاميع تحت محسوبة على الصفحة المعروضة بس.
+          <span className="strong">سعر الفئة الحالي</span>، يعني تغيير السعر يغيّر أرقام الماضي.
         </Notice>
 
         <div className="grid grid-kpi-3">
-          <StatTile label="مبيعات هذه الصفحة" value={formatNumber(rows.length)} />
-          <StatTile label="قيمة هذه الصفحة" value={formatIqd(pageRevenue)} />
-          <StatTile label="هامش هذه الصفحة" value={formatIqd(pageRevenue - pageCost)} />
+          <StatTile label={scope} value={summary.data ? formatNumber(summary.data.count) : '—'} />
+          <StatTile label={`قيمة ${scope}`} value={summary.data ? formatIqd(summary.data.revenue) : '—'} />
+          <StatTile
+            label={`هامش ${scope}`}
+            value={summary.data ? formatIqd(summary.data.revenue - summary.data.cost) : '—'}
+          />
         </div>
 
         <Card>

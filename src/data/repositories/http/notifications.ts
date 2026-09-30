@@ -9,11 +9,10 @@
  * so the composer cannot let one of them be blank.
  */
 
-import { api, fetchAll } from '@/data/http/client';
-import { provinceOfUser } from '@/types';
-import type { AppUser, Id, ListQuery, NotificationRecord, NotificationTarget, Page } from '@/types';
+import { api } from '@/data/http/client';
+import type { Id, ListQuery, NotificationRecord, NotificationTarget, Page } from '@/types';
 import type { NotificationInput, NotificationsRepository } from '../types';
-import { toPage, toRange } from './crud';
+import { clean, toPage, toRange } from './crud';
 
 export class HttpNotificationsRepository implements NotificationsRepository {
   async list(query?: ListQuery): Promise<Page<NotificationRecord>> {
@@ -30,19 +29,18 @@ export class HttpNotificationsRepository implements NotificationsRepository {
   }
 
   /**
-   * How many app users the chosen target covers.
+   * How many app users the chosen target reaches.
    *
-   * Counted from the user list because the API exposes no audience-size route.
-   * It is an upper bound on reach, not on delivery: a user without an FCM
-   * token is counted here and will show up in the send's `failureCount`.
+   * `/notifications/audience` counts users with an FCM token, which is who a
+   * push can actually land on — tighter than counting every unblocked user.
    */
   async audienceSize(targetType: NotificationTarget, provinceId?: Id): Promise<number> {
     if (targetType === 'user') return 1;
-    const users = await fetchAll<AppUser>('/app-users');
-    const reachable = users.filter((user) => !user.isBlocked);
-    if (targetType === 'province' && provinceId) {
-      return reachable.filter((user) => provinceOfUser(user) === provinceId).length;
-    }
-    return reachable.length;
+    if (targetType === 'province' && !provinceId) return 0;
+    const result = await api.get<{ count: number }>(
+      '/notifications/audience',
+      clean({ targetType, provinceId: targetType === 'province' ? provinceId : undefined }),
+    );
+    return result.count;
   }
 }

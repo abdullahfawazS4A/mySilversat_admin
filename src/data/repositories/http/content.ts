@@ -11,7 +11,7 @@
  */
 
 import { api } from '@/data/http/client';
-import type { Ad, ContactLink, Faq, Id, PrizeDraw, Tower, TutorialVideo } from '@/types';
+import type { Ad, ContactLink, Coupon, Faq, Id, PrizeDraw, Tower, TutorialVideo } from '@/types';
 import type {
   AdInput,
   ContactLinkInput,
@@ -120,6 +120,20 @@ class HttpPrizeDrawsRepository
   }
 }
 
+/** Draw entries. Listed only — the server issues them on renewal. */
+class HttpCouponsRepository extends HttpCrudRepository<
+  Coupon,
+  never,
+  never,
+  { prizeDrawId?: Id; appUserId?: Id }
+> {
+  protected readonly serverSearch = true;
+
+  constructor() {
+    super('/coupons');
+  }
+}
+
 export class HttpContentRepository implements ContentRepository {
   readonly ads: CrudRepository<Ad, AdInput> = new HttpAdsRepository();
 
@@ -145,4 +159,6 @@ export class HttpContentRepository implements ContentRepository {
   >('/contact-links', (row) => `${row.label} ${row.labelKu} ${row.value} ${row.type}`);
 
   readonly prizeDraws: PrizeDrawsRepository = new HttpPrizeDrawsRepository();
+
+  readonly coupons = new HttpCouponsRepository();
 }

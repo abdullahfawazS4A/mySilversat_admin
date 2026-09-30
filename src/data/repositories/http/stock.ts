@@ -26,9 +26,10 @@ import type {
   CodeFilter,
   CodeInput,
   CrudRepository,
+  SalesSummary,
   StockRepository,
 } from '../types';
-import { HttpCrudRepository, toPage, toRange } from './crud';
+import { HttpCrudRepository, clean, toPage, toRange } from './crud';
 
 class HttpBatchesRepository extends HttpCrudRepository<
   Batch,
@@ -92,5 +93,14 @@ export class HttpStockRepository implements StockRepository {
 
   lookup(q: string): Promise<Code[]> {
     return api.get<Code[]>('/codes/lookup', { q });
+  }
+
+  async salesSummary(filter?: { categoryId?: Id; soldFrom?: string; soldTo?: string }): Promise<SalesSummary> {
+    const raw = await api.get<Record<keyof SalesSummary, number | string>>(
+      '/codes/sales-summary',
+      clean(filter),
+    );
+    // SQL sums can arrive as decimal strings.
+    return { count: Number(raw.count) || 0, revenue: Number(raw.revenue) || 0, cost: Number(raw.cost) || 0 };
   }
 }

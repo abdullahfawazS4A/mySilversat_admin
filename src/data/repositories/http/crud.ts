@@ -91,6 +91,12 @@ export class HttpCrudRepository<T, C, U = Partial<C>, F extends object = Record<
     protected readonly searchable?: (row: T) => string,
   ) {}
 
+  /**
+   * Whether the route takes `search` itself. When it does, a search is one
+   * paged request; when it does not, `searchable` is matched over every row.
+   */
+  protected readonly serverSearch: boolean = false;
+
   /** Query params sent on list/all. Subclasses widen this when needed. */
   protected filterQuery(filter: F | undefined): Query {
     return clean(filter);
@@ -99,9 +105,19 @@ export class HttpCrudRepository<T, C, U = Partial<C>, F extends object = Record<
   async list(query?: ListQuery & F): Promise<Page<T>> {
     const { search, page, pageSize, ...filter } = (query ?? {}) as ListQuery & Record<string, unknown>;
     const filterQuery = this.filterQuery(filter as F);
+    const needle = search?.trim();
 
-    // A text search has to see every row, since the API cannot do it for us.
-    if (search?.trim() && this.searchable) {
+    if (needle && this.serverSearch) {
+      const result = await api.page<T>(this.path, {
+        ...filterQuery,
+        search: needle,
+        ...toRange({ page, pageSize }),
+      });
+      return toPage(result.items, result.total, { page, pageSize });
+    }
+
+    // Without a server search, a text search has to see every row.
+    if (needle && this.searchable) {
       const rows = await fetchAll<T>(this.path, filterQuery);
       return localPage(rows, { search, page, pageSize }, this.searchable);
     }

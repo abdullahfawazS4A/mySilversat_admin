@@ -7,9 +7,10 @@
  * rows whose `pointsEarned` is still null, so calling it twice cannot
  * double-pay — and for the same reason it cannot re-pay a corrected score.
  *
- * `stats` has no endpoint behind it; the distribution is computed from the
- * match's own picks, which is cheap because `/predictions?matchId=` is already
- * filtered server-side.
+ * `stats` is computed from the match's own picks rather than read from
+ * `/predictions/stats`: that route counts exact / correct / wrong / unscored,
+ * and the dialog shows the home-win / draw / away-win split, which it does not
+ * return. The read is one match's picks, already filtered server-side.
  */
 
 import { api, fetchAll } from '@/data/http/client';
@@ -29,23 +30,10 @@ function scoredCount(raw: unknown): number {
 export class HttpPredictionsRepository implements PredictionsRepository {
   async list(query?: ListQuery & { appUserId?: Id; matchId?: Id }): Promise<Page<Prediction>> {
     const { search, page, pageSize, ...filter } = query ?? {};
-
-    // No text search server-side, so a search reads the filtered set and cuts.
-    if (search?.trim()) {
-      const needle = search.trim().toLowerCase();
-      const rows = (await fetchAll<Prediction>('/predictions', clean(filter), 5000)).filter(
-        (row) =>
-          (row.appUser?.name ?? '').toLowerCase().includes(needle) ||
-          (row.appUser?.phone ?? '').includes(needle) ||
-          (row.match?.homeTeam?.name ?? '').toLowerCase().includes(needle) ||
-          (row.match?.awayTeam?.name ?? '').toLowerCase().includes(needle),
-      );
-      const { limit, offset } = toRange({ page, pageSize });
-      return toPage(rows.slice(offset, offset + limit), rows.length, { page, pageSize });
-    }
-
+    // `search` matches the user's name and phone and both teams' names.
     const result = await api.page<Prediction>('/predictions', {
       ...clean(filter),
+      ...(search?.trim() ? { search: search.trim() } : {}),
       ...toRange({ page, pageSize }),
     });
     return toPage(result.items, result.total, { page, pageSize });

@@ -1,11 +1,10 @@
 /**
- * Draw coupons — what an admin token can see of them, and the draw itself.
+ * Draw coupons, and the draw itself.
  *
- * The server issues a coupon on every renewal, and the only route that lists
- * them is `/coupons/my`, which answers for the signed-in app user and refuses
- * an admin. So this screen cannot show every coupon, or how many a draw has.
- * What it can show is each draw's winning coupon: the server records it when
- * the draw is held, and the single-draw read joins its code.
+ * The server issues a coupon on every renewal. The screen has two parts: each
+ * draw with its winning coupon (the single-draw read joins the code), and the
+ * full list of coupons from `/coupons`, searchable by code or phone and
+ * filterable by draw.
  *
  * Holding the draw is here too. It is the one irreversible thing on the screen:
  * the server picks a coupon at random, once per draw, and switches the draw off
@@ -14,15 +13,25 @@
  * still counting down to it.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Info, Shuffle, Ticket, Trophy } from 'lucide-react';
-import { DataTable, PageHeader, type Column } from '@/components/page';
-import { AsyncBlock, Button, Card, ConfirmDialog, EmptyState, Notice, Pill } from '@/components/ui';
+import { DataTable, PageHeader, Toolbar, type Column } from '@/components/page';
+import {
+  AsyncBlock,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  Notice,
+  Pill,
+  SearchInput,
+  Select,
+} from '@/components/ui';
 import { useRepos } from '@/app/RepositoryContext';
-import { useAction, useAsync } from '@/app/useAsync';
+import { useAction, useAsync, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import type { AppUser, PrizeDraw } from '@/types';
+import type { AppUser, Coupon, Id, PrizeDraw } from '@/types';
 import { countdownAr, formatDateTimeAr } from '@/lib/format';
 
 /** A draw with its winner's name, when it has one. */
@@ -168,13 +177,11 @@ export function CouponsPage() {
 
   return (
     <>
-      <PageHeader title="الكوبونات" subtitle="الكوبونات الفائزة بكل سحب، وإجراء السحب نفسه" />
+      <PageHeader title="الكوبونات" subtitle="الكوبونات الفائزة بكل سحب، وإجراء السحب، وكل الكوبونات" />
 
       <div className="page">
         <Notice tone="info" icon={<Info size={16} />}>
-          الكوبون ينطلع للمشترك تلقائياً عند كل تجديد. الـ API ما يعرض للأدمن كل الكوبونات ولا عددها
-          بكل سحب — المسار الوحيد اللي يقرأها هو <span className="num">/coupons/my</span> وهو للمشترك
-          نفسه — فهنا يبين الكوبون الفائز بس، بعد ما ينسحب.
+          الكوبون ينطلع للمشترك تلقائياً عند كل تجديد.
         </Notice>
 
         <Card>
@@ -195,6 +202,8 @@ export function CouponsPage() {
             )}
           </AsyncBlock>
         </Card>
+
+        <AllCoupons draws={rows.data?.map((row) => row.draw) ?? []} />
       </div>
 
       {drawing ? (
@@ -226,5 +235,106 @@ export function CouponsPage() {
         />
       ) : null}
     </>
+  );
+}
+
+/** Every coupon, paged on the server. */
+function AllCoupons({ draws }: { draws: PrizeDraw[] }) {
+  const repos = useRepos();
+  const [search, setSearch] = useState('');
+  const debounced = useDebounced(search);
+  const [drawId, setDrawId] = useState<Id | 'all'>('all');
+  const [page, setPage] = useState(1);
+
+  const titleOf = useMemo(() => new Map(draws.map((draw) => [draw.id, draw.titleAr])), [draws]);
+  const coupons = useAsync(
+    () =>
+      repos.content.coupons.list({
+        search: debounced,
+        prizeDrawId: drawId === 'all' ? undefined : drawId,
+        page,
+        pageSize: 25,
+      }),
+    [debounced, drawId, page],
+  );
+
+  const columns: Column<Coupon>[] = [
+    {
+      key: 'code',
+      header: 'الكوبون',
+      render: (row) => (
+        <span className="strong num" dir="ltr">
+          {row.code}
+        </span>
+      ),
+    },
+    {
+      key: 'user',
+      header: 'المشترك',
+      render: (row) => (
+        <Link className="col" to={`/users/${row.appUserId}`}>
+          <span className="fs-small strong">{row.appUser?.name || 'فتح سجل المشترك'}</span>
+          {row.appUser?.phone ? (
+            <span className="fs-tiny dim num" dir="ltr">
+              {row.appUser.phone}
+            </span>
+          ) : null}
+        </Link>
+      ),
+    },
+    {
+      key: 'draw',
+      header: 'السحب',
+      // A coupon outlives its draw: deleting a draw leaves its coupons listed.
+      render: (row) => titleOf.get(row.prizeDrawId) ?? <span className="dim">سحب محذوف</span>,
+    },
+    {
+      key: 'createdAt',
+      header: 'تاريخ الإصدار',
+      render: (row) => <span className="fs-small num">{formatDateTimeAr(row.createdAt)}</span>,
+    },
+  ];
+
+  return (
+    <Card>
+      <Toolbar>
+        <SearchInput
+          value={search}
+          onChange={(next) => {
+            setSearch(next);
+            setPage(1);
+          }}
+          placeholder="ابحث برقم الكوبون أو الهاتف…"
+        />
+        <Select
+          value={drawId}
+          onChange={(next) => {
+            setDrawId(next);
+            setPage(1);
+          }}
+          options={[
+            { value: 'all' as const, label: 'كل السحوبات' },
+            ...draws.map((draw) => ({ value: draw.id, label: draw.titleAr })),
+          ]}
+        />
+      </Toolbar>
+
+      <AsyncBlock state={coupons}>
+        {(data) => (
+          <DataTable
+            columns={columns}
+            rows={data.items}
+            rowKey={(row) => row.id}
+            page={data.page}
+            pageSize={data.pageSize}
+            total={data.total}
+            onPage={setPage}
+            empty={
+              <EmptyState icon={<Ticket size={20} />} title="ماكو كوبونات" hint="ما في كوبون بهذه الفلاتر" />
+            }
+          />
+        )}
+      </AsyncBlock>
+    </Card>
   );
 }

@@ -273,7 +273,7 @@ let pagesInFlight = 0;
 const pageQueue: (() => void)[] = [];
 
 /** Runs one page request once a slot under `MAX_PAGES_IN_FLIGHT` is free. */
-async function throttledPage<T>(path: string, query: Query): Promise<ApiPage<T>> {
+export async function throttledPage<T>(path: string, query: Query): Promise<ApiPage<T>> {
   // A finished request hands its slot straight to the next in line rather
   // than freeing it, so a newcomer can never slip in between and overshoot.
   if (pagesInFlight >= MAX_PAGES_IN_FLIGHT) {

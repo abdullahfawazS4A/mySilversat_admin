@@ -15,7 +15,7 @@
  * pays out on whatever `homeScore`/`awayScore` say at the moment it is called.
  */
 
-import { MAX_PAGE_SIZE, api, clampPageSize, fetchAll, fetchRange, type Query } from '@/data/http/client';
+import { MAX_PAGE_SIZE, api, clampPageSize, fetchRange, throttledPage, type Query } from '@/data/http/client';
 import type { Id, League, ListQuery, Match, MatchStatus, Page, Team } from '@/types';
 import type {
   CrudRepository,
@@ -28,7 +28,7 @@ import type {
   MatchesRepository,
   TeamInput,
 } from '../types';
-import { DEFAULT_PAGE_SIZE, HttpCrudRepository, clean, localPage, toPage } from './crud';
+import { DEFAULT_PAGE_SIZE, HttpCrudRepository, clean, toPage, toRange } from './crud';
 
 /**
  * An Arabic name on its way to the API.
@@ -52,6 +52,8 @@ class HttpLeaguesRepository
   extends HttpCrudRepository<League, LeagueInput, Partial<LeagueInput>, LeagueFilter>
   implements LeaguesRepository
 {
+  protected readonly serverSearch = true;
+
   constructor() {
     super('/leagues', (row) => `${row.name} ${row.nameAr ?? ''} ${row.country?.name ?? ''}`);
   }
@@ -102,6 +104,8 @@ class HttpTeamsRepository extends HttpCrudRepository<
   Partial<TeamInput>,
   { leagueId?: Id }
 > {
+  protected readonly serverSearch = true;
+
   constructor() {
     super('/teams', (row) => `${row.name} ${row.nameAr ?? ''} ${row.league?.name ?? ''}`);
   }
@@ -140,50 +144,32 @@ class HttpTeamsRepository extends HttpCrudRepository<
   }
 }
 
-/** Midnight today, local time — the instant "upcoming" is measured from. */
-function startOfToday(): number {
+/**
+ * Midnight today, local time, as the instant "upcoming" and "past" split on.
+ *
+ * `/matches` takes `from` (inclusive) and `to` (exclusive) on `matchAt`, so the
+ * two windows meet here without overlapping.
+ */
+function startOfToday(): string {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
 }
 
 /**
- * Cached window boundaries, keyed by the day and the filter they were measured
- * under.
+ * The query a window becomes.
  *
- * Finding a boundary costs a binary search, and the table re-reads on every
- * page turn; without this, turning to page three would pay for the search
- * again. Entries are short-lived because the boundary genuinely moves — a
- * fixture kicks off, a sync adds rows above it — and the key carries the day,
- * so yesterday's answer can never be served for today.
+ * Past fixtures read newest first — the finished match an operator is about to
+ * correct is the one that just ended, not the oldest in the feed. Live is never
+ * windowed: a match that kicked off before midnight sorts into the past while
+ * it is still being played, and the feed leaves rows marked live for a day or
+ * two after, so windowing it would answer "what is live now?" with nothing.
  */
-const BOUNDARY_TTL_MS = 60_000;
-const boundaries = new Map<string, { at: number; offset: number; total: number }>();
-
-/**
- * Probes sent at once when locating a window boundary.
- *
- * Eight-way splitting turns a fourteen-round search into a five-round one, at a
- * fan-out the API already sees from the paged reads elsewhere.
- *
- * Do not raise this. Sixteen trips the rate limiter — measured against the live
- * API, nineteen of thirty-two probes came back refused — and a refused probe is
- * not a slower search, it is a failed screen: the reads are awaited together, so
- * one rejection fails the whole list. Twelve happened to survive a run, which is
- * not the same as being safe.
- */
-const BOUNDARY_PROBES = 8;
-
-/**
- * The longest fixture list whose boundary is found by reading it whole.
- *
- * Five pages. Up to here reading every row is cheaper than the search, which
- * spends about eight requests a round; past it the search wins, which is the
- * case for the unfiltered feed of nine thousand fixtures.
- */
-const READ_WHOLE_MAX = 5 * MAX_PAGE_SIZE;
-
-/** How many rows a text search will read before giving up. */
-const LOCAL_FILTER_CAP = 3000;
+function windowQuery(window: MatchWindow, status: MatchStatus | undefined): Query {
+  if (window === 'all' || status === 'live') return {};
+  return window === 'upcoming'
+    ? { from: startOfToday(), order: 'asc' }
+    : { to: startOfToday(), order: 'desc' };
+}
 
 /**
  * Fixtures fetched one id at a time, and how long they may be reused.
@@ -254,17 +240,10 @@ function matchSearchText(row: Match): string {
 /**
  * Fixtures fetched at once when resolving ids.
  *
- * Well under the fan-out the boundary search uses, because this runs on screens
- * that are already reading a table — it should stay out of the way rather than
- * race it for the rate limit.
+ * Kept low because this runs on screens that are already reading a table — it
+ * should stay out of the way rather than race it for the rate limit.
  */
 const BY_ID_CONCURRENCY = 4;
-
-/** A fixture list split in two at "now": `offset` rows behind, the rest ahead. */
-interface Boundary {
-  offset: number;
-  total: number;
-}
 
 class HttpMatchesCollection extends HttpCrudRepository<
   Match,
@@ -277,16 +256,9 @@ class HttpMatchesCollection extends HttpCrudRepository<
   }
 
   /**
-   * `leagueId`, `status` and `isOpenForPrediction` reach the API; `window` and
-   * `leagueIds` are resolved here.
-   *
-   * Named rather than "everything except the ones we handle", because `list`
-   * hands its whole query in — paging included — and a leftover `pageSize` in
-   * here is not a harmless spare parameter. It rides along into `boundary`'s
-   * cache key, so changing the rows-per-page threw the memoised boundary away
-   * and re-ran a twenty-request binary search against a rate-limited API for
-   * an answer that had nothing to do with page size. The table sat on its old
-   * rows for seconds, and a single rate-limited probe failed the read outright.
+   * The filters `/matches` applies itself. Named rather than spread, because
+   * `list` hands its whole query in — paging and `window` included — and only
+   * these are query parameters.
    */
   protected filterQuery(filter: MatchFilter | undefined): Query {
     return clean({
@@ -297,256 +269,65 @@ class HttpMatchesCollection extends HttpCrudRepository<
   }
 
   /**
-   * Where today begins in a fixture list, memoised.
-   *
-   * `/matches` has no date range and no sort key, but it does return rows
-   * ordered by `matchAt`
-   * ascending. So the table cannot ask the API for "today onward"; it has to
-   * find where today starts and page from there.
-   *
-   * This is what keeps the screen off the oldest row in the table. On the live
-   * feed that row is nine days of finished football, so page one was a single
-   * league in a single status and today's fixtures began on page 146 of 376.
-   */
-  private async boundary(filter: Query): Promise<Boundary | null> {
-    const from = startOfToday();
-    const key = `${from}|${JSON.stringify(filter)}`;
-    const cached = boundaries.get(key);
-    if (cached && Date.now() - cached.at < BOUNDARY_TTL_MS) {
-      return { offset: cached.offset, total: cached.total };
-    }
-
-    const found = await this.search(filter, from);
-    if (found) boundaries.set(key, { at: Date.now(), offset: found.offset, total: found.total });
-    return found;
-  }
-
-  /**
-   * Finds the first row at or after `from` in a list sorted by `matchAt`.
-   *
-   * This is a binary search widened to ask eight questions at once. Each probe
-   * costs a round trip and almost no bandwidth — one row, no matter where it
-   * lands — so the cost of the search is very nearly the number of *rounds*,
-   * not the number of requests. Halving one row at a time takes fourteen
-   * sequential trips over nine thousand fixtures and most of four seconds;
-   * splitting into nine at a time settles in five rounds and about one, for
-   * requests that are individually tiny.
-   *
-   * Interpolating the probe positions on time was tried and is worse: fixtures
-   * cluster hard on the half hour, so hundreds of rows share a timestamp and
-   * the guess stalls exactly where the bracket is tightest.
-   */
-  private async search(filter: Query, from: number): Promise<Boundary | null> {
-    const rowAt = async (offset: number): Promise<Match | undefined> =>
-      (await api.page<Match>('/matches', { ...filter, limit: 1, offset })).items[0];
-    const isBehind = (row: Match | undefined) => !!row && new Date(row.matchAt).getTime() < from;
-
-    // The head is a full page rather than one row: it costs the same request,
-    // and for most single leagues it is the whole list already.
-    const head = await api.page<Match>('/matches', { ...filter, limit: MAX_PAGE_SIZE, offset: 0 });
-    // Without a server total there is nothing to search over, and the caller
-    // falls back to paging the list from the top.
-    if (!head.hasTotal) return null;
-    const total = head.total;
-
-    /*
-     * A short list is read whole and split here.
-     *
-     * A league's season is a few hundred fixtures — two to four pages — while
-     * the search below spends eight requests a round for three or four rounds
-     * on the same answer. Across «كل الدوريات» that difference is the rate
-     * limit: a hundred-odd probes for a dozen leagues against a budget of 120 a
-     * minute for the whole console, and the screen failed with a 429.
-     */
-    if (total <= READ_WHOLE_MAX) {
-      const rows =
-        total <= head.items.length
-          ? head.items
-          : [
-              ...head.items,
-              ...(await fetchRange<Match>(
-                '/matches',
-                filter,
-                head.items.length,
-                total - head.items.length,
-                total,
-              )),
-            ];
-      const index = rows.findIndex((row) => !isBehind(row));
-      return { offset: index === -1 ? rows.length : index, total };
-    }
-
-    /*
-     * Rows before `lo` are all behind `from`, rows from `hi` on are all at or
-     * after it, and the answer is somewhere in between. Each round probes
-     * points spread across that bracket and keeps the tightest pair the
-     * answers allow, so the span shrinks by roughly `PROBES` every round.
-     */
-    let lo = 0;
-    let hi = total;
-
-    while (lo < hi) {
-      const span = hi - lo;
-      const count = Math.min(BOUNDARY_PROBES, span);
-
-      const offsets: number[] = [];
-      for (let i = 0; i < count; i += 1) {
-        const offset = lo + Math.floor((span * i) / count);
-        if (!offsets.length || offset > offsets[offsets.length - 1]) offsets.push(offset);
-      }
-
-      const rows = await Promise.all(
-        offsets.map((offset) => (offset === 0 ? Promise.resolve(head.items[0]) : rowAt(offset))),
-      );
-
-      let nextLo = lo;
-      let nextHi = hi;
-      for (let i = 0; i < offsets.length; i += 1) {
-        // A row that is behind us puts the answer after it; the first row that
-        // is not caps the bracket, and everything past it is already known.
-        if (isBehind(rows[i])) nextLo = offsets[i] + 1;
-        else {
-          nextHi = offsets[i];
-          break;
-        }
-      }
-
-      // The probes always include an index inside the bracket, so one of the
-      // two ends must have moved; this guard is for a list that changed under
-      // the search rather than an expected outcome.
-      if (nextLo === lo && nextHi === hi) break;
-      lo = nextLo;
-      hi = nextHi;
-    }
-
-    return { offset: lo, total };
-  }
-
-  /** The rows a window covers, for a text search the API cannot apply. */
-  private async windowRows(
-    filter: Query,
-    window: MatchWindow,
-    range: Boundary | null,
-    cap = LOCAL_FILTER_CAP,
-  ): Promise<Match[]> {
-    if (!range) return fetchAll<Match>('/matches', filter, cap);
-    if (window === 'upcoming') {
-      return fetchRange<Match>('/matches', filter, range.offset, range.total - range.offset, cap);
-    }
-    /*
-     * Past fixtures read newest first, the same way their pages do below — and
-     * when the cap bites it has to bite the far end of the archive, not the
-     * near one. Reading from row zero would spend the whole budget on the
-     * oldest fixtures in the feed and never reach the ones a search is
-     * actually looking for.
-     */
-    const start = Math.max(0, range.offset - cap);
-    const rows = await fetchRange<Match>('/matches', filter, start, range.offset - start, cap);
-    return rows.reverse();
-  }
-
-  /**
    * Lists fixtures across several leagues at once.
    *
    * `/matches` takes one `leagueId` and has no list form, so a page spanning
    * three leagues cannot be requested — each league is read on its own and the
-   * rows are merged here. Order has to be rebuilt on the merged rows: each
-   * league comes back sorted on its own, and interleaving two sorted lists
-   * does not keep either order.
-   *
-   * The leagues are read one after another rather than together on purpose.
-   * `boundary` already fans out `BOUNDARY_PROBES` requests per league, and
-   * running two of those searches side by side is exactly the burst the rate
-   * limiter refuses — a refused probe does not slow the search down, it fails
-   * the screen.
+   * rows are merged here. The first `need` rows of the merged list can only
+   * come from the first `need` rows of each league, so that is all that is
+   * read: page one of two leagues is two small requests. Order is rebuilt on
+   * the merged rows, since interleaving sorted lists does not keep the order.
    */
   private async listAcross(ids: Id[], query: ListQuery & MatchFilter): Promise<Page<Match>> {
-    const { search, page, pageSize, isOpenForPrediction, status, window = 'all' } = query;
-    const windowed = window !== 'all' && status !== 'live';
-
-    // Past fixtures read newest first, the same way the single-league path
-    // hands them back; everything else keeps the feed's own ascending order.
-    const direction = window === 'past' ? -1 : 1;
-    const byTime = (a: Match, b: Match) =>
-      direction * (new Date(a.matchAt).getTime() - new Date(b.matchAt).getTime());
-
-    const slices: { filter: Query; range: Boundary | null }[] = [];
-    for (const leagueId of ids) {
-      const filter = this.filterQuery({ leagueId, status, isOpenForPrediction });
-      slices.push({ filter, range: windowed ? await this.boundary(filter) : null });
-    }
-
-    /*
-     * A text search has to see every row of the window, the same way the
-     * single-league path does — a page of the wrong rows cannot be re-filtered
-     * into the right ones.
-     *
-     * The row budget is shared out rather than handed to each league whole, so
-     * this costs about what one league does instead of multiplying by the size
-     * of the set. The floor keeps a wide set from cutting every league down to
-     * a page or two.
-     */
-    if (search?.trim()) {
-      const cap = Math.max(200, Math.ceil(LOCAL_FILTER_CAP / ids.length));
-      const rows: Match[] = [];
-      for (const { filter, range } of slices) {
-        rows.push(...(await this.windowRows(filter, window, range, cap)));
-      }
-      return localPage(rows.sort(byTime), { search, page, pageSize }, matchSearchText);
-    }
-
-    /*
-     * Nothing local to apply, so the merge only has to be deep enough to answer
-     * the page being asked for.
-     *
-     * The first `need` rows of the merged list can only come from the first
-     * `need` rows of each league, so that is all that is read — page one of two
-     * leagues is two small requests, not two whole seasons. Reading the full
-     * window here instead was the same answer for roughly twenty times the
-     * traffic, on the screen that gets opened most.
-     */
+    const { search, page, pageSize, status, window = 'all' } = query;
     const size = clampPageSize(pageSize ?? DEFAULT_PAGE_SIZE);
     const wanted = Math.max(1, page ?? 1);
     const need = wanted * size;
 
-    const heads: Match[][] = [];
-    let total = 0;
-    for (const { filter, range } of slices) {
-      if (range && window === 'upcoming') {
-        total += range.total - range.offset;
-        heads.push(await fetchRange<Match>('/matches', filter, range.offset, need, need));
-        continue;
-      }
-      if (range) {
-        // The archive ends at the boundary, so its newest page is the slice
-        // that stops there — read forwards, then flipped.
-        total += range.offset;
-        const start = Math.max(0, range.offset - need);
-        const rows = await fetchRange<Match>('/matches', filter, start, range.offset - start, need);
-        heads.push(rows.reverse());
-        continue;
-      }
-      // No boundary — either the whole archive was asked for, or the league's
-      // list came back without a total to search over. Both read from the top.
-      const head = await api.page<Match>('/matches', { ...filter, limit: size, offset: 0 });
-      total += head.hasTotal ? head.total : head.items.length;
-      heads.push(
-        need <= size ? head.items : await fetchRange<Match>('/matches', filter, 0, need, need),
-      );
-    }
+    const direction = window === 'past' && status !== 'live' ? -1 : 1;
+    // Fixtures that share a kickoff are ordered by id, so a page boundary
+    // between them falls in the same place on every read.
+    const byTime = (a: Match, b: Match) =>
+      direction * (new Date(a.matchAt).getTime() - new Date(b.matchAt).getTime()) ||
+      a.id.localeCompare(b.id);
 
-    const merged = heads.flat().sort(byTime);
+    const perLeague = await Promise.all(
+      ids.map(async (leagueId) => {
+        const params: Query = {
+          ...this.filterQuery({ ...query, leagueId }),
+          ...windowQuery(window, status),
+          ...(search?.trim() ? { search: search.trim() } : {}),
+        };
+        // Through the shared cap on pages in flight, so a wide set of leagues
+        // queues rather than bursting into the rate limit.
+        const head = await throttledPage<Match>('/matches', {
+          ...params,
+          limit: Math.min(need, MAX_PAGE_SIZE),
+          offset: 0,
+        });
+        const rows =
+          need <= MAX_PAGE_SIZE || head.items.length < MAX_PAGE_SIZE
+            ? head.items
+            : [
+                ...head.items,
+                ...(await fetchRange<Match>('/matches', params, MAX_PAGE_SIZE, need - MAX_PAGE_SIZE)),
+              ];
+        return { rows, total: head.total };
+      }),
+    );
+
+    const merged = perLeague.flatMap((league) => league.rows).sort(byTime);
+    const total = perLeague.reduce((sum, league) => sum + league.total, 0);
     const offset = (wanted - 1) * size;
     return toPage(merged.slice(offset, offset + size), total, { page, pageSize });
   }
 
   /**
-   * Lists fixtures within a time window.
+   * Lists fixtures, one paged request.
    *
-   * `window` is ours rather than the API's: it becomes an offset via
-   * `boundary`. `search` is too, and has to be applied over the rows, since a
-   * page of the wrong rows cannot be re-filtered into the right ones — so it
-   * reads the window rather than a page of it, up to `LOCAL_FILTER_CAP`.
+   * Every filter is the API's: `leagueId`, `status` and `isOpenForPrediction`
+   * as they are, `window` as a `from`/`to` bound on `matchAt` with an order,
+   * and `search` over both spellings of the team names.
    */
   async list(query?: ListQuery & MatchFilter): Promise<Page<Match>> {
     const { search, page, pageSize, status, window = 'all' } = query ?? {};
@@ -565,62 +346,13 @@ class HttpMatchesCollection extends HttpCrudRepository<
       return this.list({ ...query, leagueIds: undefined, leagueId: ids[0] });
     }
 
-    const filter = this.filterQuery(query);
-
-    /*
-     * A live fixture is current whatever its kickoff time says.
-     *
-     * The window is measured on `matchAt`, so a match that kicked off before
-     * midnight sorts into the past while it is still being played — and the
-     * feed leaves rows marked live for a day or two after. Windowing the live
-     * view would therefore answer "what is live right now?" with nothing, so
-     * it is the one view the window does not apply to.
-     */
-    const windowed = window !== 'all' && status !== 'live';
-    const range = windowed ? await this.boundary(filter) : null;
-
-    if (search?.trim()) {
-      const rows = await this.windowRows(filter, window, range);
-      return localPage(rows, { search, page, pageSize }, matchSearchText);
-    }
-
-    const size = clampPageSize(pageSize ?? DEFAULT_PAGE_SIZE);
-    const wanted = Math.max(1, page ?? 1);
-
-    if (!range) {
-      const result = await api.page<Match>('/matches', {
-        ...filter,
-        limit: size,
-        offset: (wanted - 1) * size,
-      });
-      return toPage(result.items, result.total, { page, pageSize });
-    }
-
-    if (window === 'upcoming') {
-      const count = range.total - range.offset;
-      const offset = range.offset + (wanted - 1) * size;
-      const limit = Math.min(size, range.total - offset);
-      if (limit <= 0) return toPage<Match>([], count, { page, pageSize });
-      const result = await api.page<Match>('/matches', { ...filter, limit, offset });
-      return toPage(result.items, count, { page, pageSize });
-    }
-
-    /*
-     * Past fixtures, newest first.
-     *
-     * The API only counts up from the oldest row, so the most recent finished
-     * match is the last one before the boundary. Page one is therefore the
-     * slice that *ends* there, read forwards and then reversed — which is what
-     * an operator correcting a score that just went wrong actually wants,
-     * instead of a match from the start of the archive.
-     */
-    const count = range.offset;
-    const end = count - (wanted - 1) * size;
-    const offset = Math.max(0, end - size);
-    const limit = Math.min(size, end - offset);
-    if (limit <= 0) return toPage<Match>([], count, { page, pageSize });
-    const result = await api.page<Match>('/matches', { ...filter, limit, offset });
-    return toPage(result.items.reverse(), count, { page, pageSize });
+    const result = await api.page<Match>('/matches', {
+      ...this.filterQuery(query),
+      ...windowQuery(window, status),
+      ...(search?.trim() ? { search: search.trim() } : {}),
+      ...toRange({ page, pageSize }),
+    });
+    return toPage(result.items, result.total, { page, pageSize });
   }
 
   /** Runs `job` over `ids` a few at a time, keeping clear of the rate limit. */

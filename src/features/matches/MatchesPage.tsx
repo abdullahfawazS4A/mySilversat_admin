@@ -104,11 +104,10 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
   /*
    * The table opens on fixtures from today onward.
    *
-   * `/matches` returns the whole archive ordered oldest-first and takes no date
-   * parameter, so "no filter" means page one is the oldest rows in the feed —
-   * in practice nine days of finished football in a single league. The screen's
-   * question is which *upcoming* fixtures to open for predictions, so that is
-   * where it starts; the archive is still one chip away.
+   * `/matches` returns the whole archive oldest-first unless given a date
+   * bound, so "no filter" means page one is the oldest rows in the feed. The
+   * screen's question is which *upcoming* fixtures to open for predictions, so
+   * that is where it starts; the archive is still one chip away.
    */
   const [timeWindow, setTimeWindow] = useState<MatchWindow>('upcoming');
   const [page, setPage] = useState(1);

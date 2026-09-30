@@ -5,25 +5,15 @@
  * to a province, a province to a country. Neither collection is large, so both are
  * searched client-side.
  *
- * `overview` is the exception that is not reference data at all. There is no
- * province summary route, and there is no province column on a code, a
- * category, a product or a subscriber — so the one view the business is actually run from
- * ("what does Ninawa own, sell and have left") has to be composed here out of
- * five list routes. It is a deliberate, one-shot read: the province screen
- * calls it once and pages over the result, never once per row.
+ * `overview` is the exception that is not reference data at all: what each
+ * province owns, sells and has left. `/provinces/overview` counts it on the
+ * server; the servers themselves and the catalogue split (categories, and
+ * products whose activation bypasses SilverSat) come from the small reference
+ * reads, which the route does not return.
  */
 
-import { fetchAll } from '@/data/http/client';
-import type {
-  AppUser,
-  Code,
-  Country,
-  Id,
-  Province,
-  ProvinceOverview,
-  SilversatRegion,
-} from '@/types';
-import { provinceOfUser, toAmount } from '@/types';
+import { api, fetchAll } from '@/data/http/client';
+import type { Country, Id, Province, ProvinceOverview, SilversatRegion } from '@/types';
 import type { CountryInput, GeoRepository, ProvinceInput } from '../types';
 import { HttpCrudRepository } from './crud';
 import { catalogScope } from './scope';
@@ -45,13 +35,25 @@ class HttpProvincesRepository extends HttpCrudRepository<
   }
 }
 
+/** A row of `/provinces/overview`, as measured against the live API. */
+interface ProvinceCounts {
+  provinceId: Id;
+  provinceName: string;
+  usersCount: number;
+  regionsCount: number;
+  productsCount: number;
+  codesAvailable: number;
+  codesSold: number;
+  stockValue: number | string;
+  lowStockCategoriesCount: number;
+}
+
 /**
  * The last overview, memoised.
  *
- * It costs two full walks of `/codes` — a hundred-odd requests — and two
- * screens ask for it: the province table, and the stock screen the province
- * table links into. Reading it twice inside a few seconds because the operator
- * followed that link is the one case worth spending a cache on.
+ * Two screens ask for it: the province table, and the stock screen the
+ * province table links into. Reading it twice inside a few seconds because the
+ * operator followed that link is not worth the requests.
  */
 const OVERVIEW_TTL_MS = 30_000;
 let overviewCache: { at: number; rows: ProvinceOverview[] } | null = null;
@@ -79,17 +81,16 @@ export class HttpGeoRepository implements GeoRepository {
   }
 
   private async readOverview(): Promise<ProvinceOverview[]> {
-    const [provinces, regions, scope, availableCodes, soldCodes, users] = await Promise.all([
+    const [counts, provinces, regions, scope] = await Promise.all([
+      api.get<ProvinceCounts[]>('/provinces/overview'),
       fetchAll<Province>('/provinces'),
       fetchAll<SilversatRegion>('/silversat-regions'),
       catalogScope(),
-      fetchAll<Code>('/codes', { status: 'available' }, 10000),
-      fetchAll<Code>('/codes', { status: 'sold' }, 10000),
-      fetchAll<AppUser>('/app-users'),
     ]);
 
-    // The binding, indexed the other way round: a server names its province,
-    // so a province's servers have to be gathered rather than read.
+    const countsOf = new Map(counts.map((row) => [row.provinceId, row]));
+
+    // A server names its province, so a province's servers are gathered.
     const regionsByProvince = new Map<Id, SilversatRegion[]>();
     for (const region of regions) {
       if (!region.provinceId) continue;
@@ -98,53 +99,20 @@ export class HttpGeoRepository implements GeoRepository {
       else regionsByProvince.set(region.provinceId, [region]);
     }
 
-    // Counted per category first, because the low-stock rule is a category's
-    // own threshold — a province total cannot answer "which shelf is empty".
-    const availableByCategory = new Map<Id, number>();
-    for (const code of availableCodes) {
-      availableByCategory.set(code.categoryId, (availableByCategory.get(code.categoryId) ?? 0) + 1);
-    }
-
-    const soldByProvince = new Map<Id, number>();
-    for (const code of soldCodes) {
-      const provinceId = scope.provinceOfCategory(code.categoryId);
-      if (!provinceId) continue;
-      soldByProvince.set(provinceId, (soldByProvince.get(provinceId) ?? 0) + 1);
-    }
-
-    const usersByProvince = new Map<Id, number>();
-    for (const user of users) {
-      const provinceId = provinceOfUser(user);
-      if (provinceId) usersByProvince.set(provinceId, (usersByProvince.get(provinceId) ?? 0) + 1);
-    }
-
     return provinces.map((province) => {
+      const row = countsOf.get(province.id);
       const products = scope.productsOf(province.id);
-      const categories = scope.categoriesOf(province.id);
-
-      let codesAvailable = 0;
-      let lowStockCategories = 0;
-      let stockValue = 0;
-      for (const category of categories) {
-        const count = availableByCategory.get(category.id) ?? 0;
-        codesAvailable += count;
-        stockValue += count * toAmount(category.unitPrice);
-        if (category.lowStockThreshold !== null && count <= category.lowStockThreshold) {
-          lowStockCategories += 1;
-        }
-      }
-
       return {
         province,
         regions: regionsByProvince.get(province.id) ?? [],
         unroutedProducts: products.filter((product) => product.activationApi !== 'silvers').length,
-        productCount: products.length,
-        categoryCount: categories.length,
-        codesAvailable,
-        codesSold: soldByProvince.get(province.id) ?? 0,
-        lowStockCategories,
-        stockValue,
-        userCount: usersByProvince.get(province.id) ?? 0,
+        productCount: row?.productsCount ?? products.length,
+        categoryCount: scope.categoriesOf(province.id).length,
+        codesAvailable: row?.codesAvailable ?? 0,
+        codesSold: row?.codesSold ?? 0,
+        lowStockCategories: row?.lowStockCategoriesCount ?? 0,
+        stockValue: Number(row?.stockValue ?? 0),
+        userCount: row?.usersCount ?? 0,
       };
     });
   }
