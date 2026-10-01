@@ -58,12 +58,12 @@ export function AdminShell() {
     <div className={cx('shell', collapsed && 'collapsed')}>
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-mark">
+          {/* The wordmark needs the full sidebar; a collapsed one keeps the square mark. */}
+          <span className="brand-mark brand-mark-collapsed">
             <Satellite size={18} />
           </span>
-          <div className="col brand-text">
-            <span className="brand-name">سلفرسات</span>
-            <span className="brand-sub">لوحة التحكم</span>
+          <div className="brand-text">
+            <img className="brand-logo brand-logo-sidebar" src="/brand/logo.png" alt="MY SILVERSAT" />
           </div>
         </div>
 

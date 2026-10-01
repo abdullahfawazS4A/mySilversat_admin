@@ -54,10 +54,35 @@
   border-radius: var(--r-card);
 }
 
-.brand-name {
-  font-weight: 700;
-  font-size: var(--fs-base);
-  line-height: 1.35;
+/*
+ * The MY SILVERSAT wordmark (public/brand/logo.png): the supplied artwork with
+ * its white lettering recoloured to --text-primary so it reads on light
+ * surfaces; the MY gradient is the original.
+ */
+.brand-logo {
+  display: block;
+  height: 34px;
+  width: auto;
+  align-self: flex-start;
+}
+
+.brand-logo-sidebar {
+  height: 42px;
+}
+
+.brand-logo-lg {
+  height: 64px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Only shown when the sidebar is too narrow for the wordmark. */
+.brand-mark-collapsed {
+  display: none;
+}
+
+.collapsed .brand-mark-collapsed {
+  display: flex;
 }
 
 .brand-sub {
@@ -671,6 +696,9 @@
   .shell .nav-link span,
   .shell .brand-text {
     display: none;
+  }
+  .shell .brand-mark-collapsed {
+    display: flex;
   }
   .shell .nav-group-title {
     font-size: 0;

@@ -27,7 +27,6 @@ import {
   LifeBuoy,
   LogIn,
   MessageCircle,
-  Satellite,
   ShieldCheck,
   Trophy,
   Users,
@@ -57,9 +56,7 @@ export function LoginPage() {
     <div className="login-page">
       <div className="card login-shell">
         <aside className="login-aside">
-          <span className="brand-mark brand-mark-lg">
-            <Satellite size={24} />
-          </span>
+          <img className="brand-logo brand-logo-lg" src="/brand/logo.png" alt="MY SILVERSAT" />
           <div className="col row-gap-2">
             <span className="login-title">لوحة تحكم سلفرسات</span>
             <span className="section-sub">إدارة الاشتراكات والمسابقة والمحتوى</span>
@@ -90,14 +87,9 @@ export function LoginPage() {
         </aside>
 
         <main className="login-main">
-          <div className="login-brand-compact row row-gap-3">
-            <span className="brand-mark">
-              <Satellite size={19} />
-            </span>
-            <div className="col">
-              <span className="brand-name">لوحة تحكم سلفرسات</span>
-              <span className="brand-sub">إدارة الاشتراكات والمسابقة والمحتوى</span>
-            </div>
+          <div className="login-brand-compact col row-gap-2">
+            <img className="brand-logo" src="/brand/logo.png" alt="MY SILVERSAT" />
+            <span className="brand-sub">إدارة الاشتراكات والمسابقة والمحتوى</span>
           </div>
 
           <div className="col row-gap-1">
