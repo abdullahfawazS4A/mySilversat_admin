@@ -102,6 +102,24 @@ export function matchesSearch(haystack: string, needle: string): boolean {
   return normalize(haystack).includes(normalize(needle));
 }
 
+/**
+ * A URL safe to put in an `href`, or `undefined` when it is not.
+ *
+ * Only `http(s)` is allowed through: an operator-entered link (a video or a
+ * banner target) could otherwise be a `javascript:` URL that runs when another
+ * admin clicks it. Anything else — including a blank value — returns
+ * `undefined`, which renders as a non-navigating link rather than a trap.
+ */
+export function safeHttpUrl(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value, window.location.origin);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Downloads a client-side CSV. Used by every table export button. */
 export function downloadCsv(filename: string, rows: (string | number)[][]): void {
   const escape = (cell: string | number) => {

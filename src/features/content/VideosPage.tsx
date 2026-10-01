@@ -12,6 +12,7 @@ import { Field, Switch, TextInput } from '@/components/ui';
 import { useRepos } from '@/app/RepositoryContext';
 import type { TutorialVideo } from '@/types';
 import type { VideoInput } from '@/data/repositories/types';
+import { safeHttpUrl } from '@/lib/utils';
 import { CrudScreen } from '../shared/CrudScreen';
 
 /** Seconds as `m:ss`, the way the app badges a thumbnail. */
@@ -59,7 +60,12 @@ export function VideosPage() {
           key: 'url',
           header: 'الرابط',
           render: (row) => (
-            <a className="fs-small num truncate" href={row.videoUrl} target="_blank" rel="noreferrer">
+            <a
+              className="fs-small num truncate"
+              href={safeHttpUrl(row.videoUrl)}
+              target="_blank"
+              rel="noreferrer"
+            >
               {row.videoUrl}
             </a>
           ),
