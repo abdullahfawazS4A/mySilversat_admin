@@ -7,16 +7,23 @@
  * rows whose `pointsEarned` is still null, so calling it twice cannot
  * double-pay — and for the same reason it cannot re-pay a corrected score.
  *
- * `stats` is computed from the match's own picks rather than read from
- * `/predictions/stats`: that route counts exact / correct / wrong / unscored,
- * and the dialog shows the home-win / draw / away-win split, which it does not
- * return. The read is one match's picks, already filtered server-side.
+ * `stats` reads `/predictions/stats`, which counts the home-win / draw /
+ * away-win split and the most-picked scorelines on the server.
  */
 
-import { api, fetchAll } from '@/data/http/client';
+import { api } from '@/data/http/client';
 import type { Id, ListQuery, MatchPredictionStats, Page, Prediction } from '@/types';
 import type { PredictionsRepository } from '../types';
 import { clean, toPage, toRange } from './crud';
+
+/** What `/predictions/stats` returns, the fields the dialog reads. */
+interface PredictionStatsResponse {
+  total: number;
+  homeWinCount: number;
+  drawCount: number;
+  awayWinCount: number;
+  topScorelines: { home: number; away: number; count: number }[];
+}
 
 /** Reads a scored count out of whatever shape the score route returned. */
 function scoredCount(raw: unknown): number {
@@ -44,32 +51,15 @@ export class HttpPredictionsRepository implements PredictionsRepository {
   }
 
   async stats(matchId: Id): Promise<MatchPredictionStats> {
-    const rows = await fetchAll<Prediction>('/predictions', { matchId }, 5000);
-
-    const scorelines = new Map<string, number>();
-    let homeWin = 0;
-    let draw = 0;
-    let awayWin = 0;
-
-    for (const row of rows) {
-      const { predictedHomeScore: home, predictedAwayScore: away } = row;
-      if (home > away) homeWin += 1;
-      else if (home < away) awayWin += 1;
-      else draw += 1;
-
-      const key = `${home}-${away}`;
-      scorelines.set(key, (scorelines.get(key) ?? 0) + 1);
-    }
-
-    const topScorelines = [...scorelines.entries()]
-      .map(([key, count]) => {
-        const [home, away] = key.split('-').map(Number);
-        return { home, away, count };
-      })
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-
-    return { matchId, total: rows.length, homeWin, draw, awayWin, topScorelines };
+    const stats = await api.get<PredictionStatsResponse>('/predictions/stats', { matchId });
+    return {
+      matchId,
+      total: stats.total,
+      homeWin: stats.homeWinCount,
+      draw: stats.drawCount,
+      awayWin: stats.awayWinCount,
+      topScorelines: stats.topScorelines,
+    };
   }
 
   async scorePending(): Promise<{ scored: number }> {

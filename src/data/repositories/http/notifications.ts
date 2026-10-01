@@ -7,11 +7,15 @@
  *
  * Every push is bilingual — Arabic and Kurdish are both required by the DTO,
  * so the composer cannot let one of them be blank.
+ *
+ * A sent notification can be edited or deleted afterwards, but only its copy in
+ * the app's inbox (`/notifications/me`) changes: the push already on phones
+ * stays as it was delivered.
  */
 
 import { api } from '@/data/http/client';
 import type { Id, ListQuery, NotificationRecord, NotificationTarget, Page } from '@/types';
-import type { NotificationInput, NotificationsRepository } from '../types';
+import type { NotificationInput, NotificationTextInput, NotificationsRepository } from '../types';
 import { clean, toPage, toRange } from './crud';
 
 export class HttpNotificationsRepository implements NotificationsRepository {
@@ -26,6 +30,14 @@ export class HttpNotificationsRepository implements NotificationsRepository {
 
   send(input: NotificationInput): Promise<NotificationRecord> {
     return api.post<NotificationRecord>('/notifications/send', input);
+  }
+
+  update(id: Id, input: NotificationTextInput): Promise<NotificationRecord> {
+    return api.patch<NotificationRecord>(`/notifications/${id}`, input);
+  }
+
+  async remove(id: Id): Promise<void> {
+    await api.delete(`/notifications/${id}`);
   }
 
   /**

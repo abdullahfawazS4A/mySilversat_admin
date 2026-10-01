@@ -9,10 +9,13 @@
  * The audience count is an upper bound on reach, not on delivery — a user with
  * no FCM token is counted before sending and lands in `failureCount` after. The
  * table shows both numbers for that reason.
+ *
+ * Editing or deleting a sent notification changes only the copy in the app's
+ * inbox. The push already on phones cannot be recalled, and both dialogs say so.
  */
 
 import { useState } from 'react';
-import { BellRing, Check, Send } from 'lucide-react';
+import { BellRing, Check, Pencil, Send, Trash2 } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAction, useAsync } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
@@ -21,6 +24,7 @@ import {
   AsyncBlock,
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   Field,
   Modal,
@@ -33,14 +37,27 @@ import {
 import { formatDateTimeAr, formatNumber } from '@/lib/format';
 import { NOTIFICATION_TARGET } from '@/lib/labels';
 import type { AppUser, Id, NotificationRecord, NotificationTarget } from '@/types';
-import type { NotificationInput } from '@/data/repositories/types';
+import type { NotificationInput, NotificationTextInput } from '@/data/repositories/types';
 
 export function NotificationsPage() {
   const repos = useRepos();
+  const { toast } = useToast();
+  const [run, action] = useAction();
   const [page, setPage] = useState(1);
   const [composing, setComposing] = useState(false);
+  const [editing, setEditing] = useState<NotificationRecord | null>(null);
+  const [deleting, setDeleting] = useState<NotificationRecord | null>(null);
 
   const sent = useAsync(() => repos.notifications.list({ page, pageSize: 20 }), [page]);
+
+  const remove = async () => {
+    if (!deleting) return;
+    const ok = await run(() => repos.notifications.remove(deleting.id));
+    if (!ok) return;
+    setDeleting(null);
+    toast('انحذف الإشعار');
+    sent.reload();
+  };
 
   const columns: Column<NotificationRecord>[] = [
     {
@@ -97,6 +114,32 @@ ${row.bodyAr}`}>
       header: 'وقت الإرسال',
       render: (row) => <span className="fs-small">{formatDateTimeAr(row.createdAt)}</span>,
     },
+    {
+      key: 'actions',
+      header: '',
+      width: 96,
+      render: (row) => (
+        <div className="row row-gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Pencil size={14} />}
+            title="تعديل"
+            onClick={() => setEditing(row)}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Trash2 size={14} />}
+            title="حذف"
+            onClick={() => {
+              action.clearError();
+              setDeleting(row);
+            }}
+          />
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -146,7 +189,141 @@ ${row.bodyAr}`}>
           }}
         />
       ) : null}
+
+      {editing ? (
+        <EditDialog
+          notification={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            sent.reload();
+          }}
+        />
+      ) : null}
+
+      {deleting ? (
+        <ConfirmDialog
+          title="حذف الإشعار"
+          confirmLabel="حذف"
+          danger
+          pending={action.pending}
+          message={
+            <div className="col row-gap-3">
+              <span>
+                راح ينحذف <span className="strong">{deleting.titleAr}</span> من صندوق الإشعارات عند كل
+                المشتركين اللي وصلهم.
+              </span>
+              <Notice tone="warning">الإشعار اللي وصل للموبايلات ما ينسحب.</Notice>
+              {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
+            </div>
+          }
+          onConfirm={() => void remove()}
+          onCancel={() => setDeleting(null)}
+        />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * Editing a sent notification's text.
+ *
+ * Only the four text fields can change — the audience is fixed once it has
+ * been sent to. The same rules as composing apply: Arabic is required and a
+ * blank Kurdish field falls back to it.
+ */
+function EditDialog({
+  notification,
+  onClose,
+  onSaved,
+}: {
+  notification: NotificationRecord;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const repos = useRepos();
+  const { toast } = useToast();
+  const [run, action] = useAction();
+
+  const [draft, setDraft] = useState<NotificationTextInput>({
+    titleAr: notification.titleAr,
+    titleKu: notification.titleKu,
+    bodyAr: notification.bodyAr,
+    bodyKu: notification.bodyKu,
+  });
+  const set = (key: keyof NotificationTextInput, value: string) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+  const [invalid, setInvalid] = useState<string | null>(null);
+
+  const save = async () => {
+    const found = !draft.titleAr.trim()
+      ? 'العنوان بالعربي مطلوب'
+      : !draft.bodyAr.trim()
+        ? 'نص الإشعار بالعربي مطلوب'
+        : null;
+    setInvalid(found);
+    if (found) return;
+
+    const ok = await run(() =>
+      repos.notifications.update(notification.id, {
+        ...draft,
+        titleKu: draft.titleKu.trim() || draft.titleAr,
+        bodyKu: draft.bodyKu.trim() || draft.bodyAr,
+      }),
+    );
+    if (!ok) return;
+    toast('انحفظ التعديل');
+    onSaved();
+  };
+
+  return (
+    <Modal
+      title="تعديل الإشعار"
+      size="lg"
+      onClose={onClose}
+      footer={
+        <>
+          <Button
+            variant="primary"
+            icon={<Check size={15} />}
+            disabled={action.pending}
+            onClick={() => void save()}
+          >
+            {action.pending ? 'جاري الحفظ…' : 'حفظ'}
+          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={action.pending}>
+            إلغاء
+          </Button>
+        </>
+      }
+    >
+      <Notice tone="info">
+        التعديل يتغيّر بصندوق الإشعارات داخل التطبيق بس — الإشعار اللي وصل للموبايلات يبقى مثل ما انرسل.
+      </Notice>
+
+      <div className="grid grid-form mt-3">
+        <Field label="العنوان بالعربي">
+          <TextInput value={draft.titleAr} onChange={(next) => set('titleAr', next)} />
+        </Field>
+        <Field label="العنوان بالكردي" hint="إذا تركته فارغ ينحفظ العربي">
+          <TextInput value={draft.titleKu} onChange={(next) => set('titleKu', next)} />
+        </Field>
+
+        <Field label="النص بالعربي" className="span-2">
+          <TextArea rows={3} value={draft.bodyAr} onChange={(next) => set('bodyAr', next)} />
+        </Field>
+        <Field label="النص بالكردي" className="span-2" hint="إذا تركته فارغ ينحفظ العربي">
+          <TextArea rows={3} value={draft.bodyKu} onChange={(next) => set('bodyKu', next)} />
+        </Field>
+      </div>
+
+      {invalid ? <div className="field-error mt-2">{invalid}</div> : null}
+      {action.error ? (
+        <div className="mt-3">
+          <Notice tone="danger">{action.error}</Notice>
+        </div>
+      ) : null}
+    </Modal>
   );
 }
 

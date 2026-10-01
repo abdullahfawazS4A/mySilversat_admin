@@ -452,7 +452,9 @@ export interface MatchPredictionStats {
 /** A leaderboard row, built by ranking app users on `points`. */
 export interface LeaderboardRow {
   rank: number;
-  user: AppUser;
+  user: Pick<AppUser, 'id' | 'name' | 'phone'>;
+  /** The province of the user's server, or null when it has none. */
+  provinceName: string | null;
   points: number;
   predictionCount: number;
   /** Share of scored picks that earned anything, 0..1. */

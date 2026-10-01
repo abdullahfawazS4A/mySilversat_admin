@@ -285,11 +285,11 @@ class HttpMatchesCollection extends HttpCrudRepository<
     const need = wanted * size;
 
     const direction = window === 'past' && status !== 'live' ? -1 : 1;
-    // Fixtures that share a kickoff are ordered by id, so a page boundary
-    // between them falls in the same place on every read.
+    // The API's order: kickoff, then id, both reversed for a descending read.
+    // Matching it keeps each league's head a prefix of the merged order.
     const byTime = (a: Match, b: Match) =>
-      direction * (new Date(a.matchAt).getTime() - new Date(b.matchAt).getTime()) ||
-      a.id.localeCompare(b.id);
+      direction *
+      (new Date(a.matchAt).getTime() - new Date(b.matchAt).getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
     const perLeague = await Promise.all(
       ids.map(async (leagueId) => {
@@ -327,7 +327,7 @@ class HttpMatchesCollection extends HttpCrudRepository<
    *
    * Every filter is the API's: `leagueId`, `status` and `isOpenForPrediction`
    * as they are, `window` as a `from`/`to` bound on `matchAt` with an order,
-   * and `search` over both spellings of the team names.
+   * and `search` over both spellings of the team and league names.
    */
   async list(query?: ListQuery & MatchFilter): Promise<Page<Match>> {
     const { search, page, pageSize, status, window = 'all' } = query ?? {};

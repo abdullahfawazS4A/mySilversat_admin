@@ -7,8 +7,7 @@
  *
  *  - **`detail`** fans out to devices, predictions and purchased codes so the
  *    detail screen mounts with one call instead of four waterfalls.
- *  - **`leaderboard`** works around the route's paging (see there) and fills in
- *    each row's province, which the route does not return.
+ *  - **`leaderboard`** reshapes the route's flat rows into `LeaderboardRow`.
  */
 
 import { api, fetchAll } from '@/data/http/client';
@@ -25,6 +24,8 @@ interface LeaderboardEntry {
   points: number;
   predictionCount: number;
   accuracy: number;
+  provinceId: Id | null;
+  provinceName: string | null;
 }
 
 export class HttpAppUsersRepository
@@ -65,42 +66,26 @@ export class HttpAppUsersRepository
   /**
    * Users ranked on points, one page at a time.
    *
-   * `/app-users/leaderboard` filters and ranks on the server, but its paging is
-   * broken: it ignores `limit` and answers with every row from the top, adding
-   * `offset` to each rank. A response longer than the page asked for is that
-   * bug, so the page is cut out of it here and the ranks put back. Once the
-   * route honours `limit`, the response is already the page and passes through.
-   *
-   * The rows carry no province, so the users behind the page are read from
-   * `/app-users` under the same filter — one request — for their server's
-   * province name.
+   * `/app-users/leaderboard` filters, ranks and pages on the server, and each
+   * row carries the province of the user's server.
    */
   async leaderboard(query?: ListQuery & { provinceId?: Id }): Promise<Page<LeaderboardRow>> {
-    const { limit, offset } = toRange(query);
-    const filter = clean({ provinceId: query?.provinceId, search: query?.search?.trim() });
+    const board = await api.page<LeaderboardEntry>('/app-users/leaderboard', {
+      ...clean({ provinceId: query?.provinceId, search: query?.search?.trim() }),
+      ...toRange(query),
+    });
 
-    const [board, users] = await Promise.all([
-      api.page<LeaderboardEntry>('/app-users/leaderboard', { ...filter, limit, offset }),
-      fetchAll<AppUser>('/app-users', filter),
-    ]);
-
-    const rows =
-      board.items.length > limit
-        ? board.items.slice(offset, offset + limit).map((row) => ({ ...row, rank: row.rank - offset }))
-        : board.items;
-
-    const userById = new Map(users.map((user) => [user.id, user]));
     return toPage(
-      rows.map((row): LeaderboardRow => {
-        const user = userById.get(row.id);
-        return {
+      board.items.map(
+        (row): LeaderboardRow => ({
           rank: row.rank,
-          user: user ?? ({ id: row.id, name: row.name, phone: row.phone } as AppUser),
+          user: { id: row.id, name: row.name, phone: row.phone },
+          provinceName: row.provinceName,
           points: row.points,
           predictionCount: row.predictionCount,
           accuracy: row.accuracy,
-        };
-      }),
+        }),
+      ),
       board.total,
       query,
     );

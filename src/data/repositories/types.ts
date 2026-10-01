@@ -520,11 +520,18 @@ export interface NotificationInput {
   data?: Record<string, unknown>;
 }
 
+/** The text of a sent notification, the only part that can be edited. */
+export type NotificationTextInput = Pick<NotificationInput, 'titleAr' | 'titleKu' | 'bodyAr' | 'bodyKu'>;
+
 /** The API has no drafts — sending is what creates the record. */
 export interface NotificationsRepository {
   list(query?: ListQuery): Promise<Page<import('@/types').NotificationRecord>>;
   get(id: Id): Promise<import('@/types').NotificationRecord>;
   send(input: NotificationInput): Promise<import('@/types').NotificationRecord>;
+  /** Rewrites the inbox copy every recipient sees; the push already delivered stays as it was. */
+  update(id: Id, input: NotificationTextInput): Promise<import('@/types').NotificationRecord>;
+  /** Removes it from every recipient's inbox and unread count. */
+  remove(id: Id): Promise<void>;
   /** How many app users a target currently covers, for the confirm step. */
   audienceSize(targetType: NotificationTarget, provinceId?: Id): Promise<number>;
 }
