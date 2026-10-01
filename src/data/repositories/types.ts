@@ -302,6 +302,8 @@ export interface AppUserDetail {
   predictions: Prediction[];
   /** Codes this user has bought — their purchase history. */
   purchases: Code[];
+  /** Why `purchases` could not be read, when it could not; the rest of the page still loads. */
+  purchasesError: string | null;
 }
 
 export interface AppUsersRepository

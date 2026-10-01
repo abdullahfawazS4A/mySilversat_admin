@@ -21,6 +21,7 @@ import {
   ConfirmDialog,
   EmptyState,
   KeyValue,
+  Notice,
   Pill,
   Skeleton,
   Tabs,
@@ -135,15 +136,22 @@ export function UserDetailPage() {
             <div className="grid grid-kpi">
               <StatTile label="النقاط" value={formatNumber(data.user.points)} />
               <StatTile label="الأجهزة" value={formatNumber(data.devices.length)} />
-              <StatTile label="الكارتات المشتراة" value={formatNumber(data.purchases.length)} />
+              <StatTile
+                label="الكارتات المشتراة"
+                value={data.purchasesError ? '—' : formatNumber(data.purchases.length)}
+              />
               <StatTile
                 label="قيمة المشتريات"
-                value={formatIqd(
-                  data.purchases.reduce(
-                    (sum, code) => sum + toAmount(code.category?.unitPrice),
-                    0,
-                  ),
-                )}
+                value={
+                  data.purchasesError
+                    ? '—'
+                    : formatIqd(
+                        data.purchases.reduce(
+                          (sum, code) => sum + toAmount(code.category?.unitPrice),
+                          0,
+                        ),
+                      )
+                }
               />
             </div>
 
@@ -154,14 +162,25 @@ export function UserDetailPage() {
                   onChange={setTab}
                   items={[
                     { value: 'devices', label: `الأجهزة (${data.devices.length})` },
-                    { value: 'purchases', label: `المشتريات (${data.purchases.length})` },
+                    {
+                      value: 'purchases',
+                      label: data.purchasesError ? 'المشتريات' : `المشتريات (${data.purchases.length})`,
+                    },
                     { value: 'predictions', label: `التوقعات (${data.predictions.length})` },
                   ]}
                 />
               </div>
 
               {tab === 'devices' ? <DevicesTable rows={data.devices} /> : null}
-              {tab === 'purchases' ? <PurchasesTable rows={data.purchases} /> : null}
+              {tab === 'purchases' ? (
+                data.purchasesError ? (
+                  <div className="card-pad">
+                    <Notice tone="danger">ما قدرنا نحمّل المشتريات: {data.purchasesError}</Notice>
+                  </div>
+                ) : (
+                  <PurchasesTable rows={data.purchases} />
+                )
+              ) : null}
               {tab === 'predictions' ? <PredictionsTable rows={data.predictions} /> : null}
             </Card>
 

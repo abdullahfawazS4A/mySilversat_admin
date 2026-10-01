@@ -42,17 +42,30 @@ export class HttpAppUsersRepository
     );
   }
 
+  /**
+   * The user with everything the detail screen shows.
+   *
+   * Purchases are read on their own terms: when `/codes` fails, the user,
+   * devices and predictions still load and the screen says purchases are
+   * missing, rather than the whole profile failing with them.
+   */
   async detail(id: Id): Promise<AppUserDetail> {
     const [user, devices, predictions, purchases] = await Promise.all([
       this.get(id),
       fetchAll<Device>('/devices/all', { appUserId: id }),
       fetchAll<Prediction>('/predictions', { appUserId: id }, 500),
-      fetchAll<Code>('/codes', { status: 'sold', soldToAppUserId: id }),
+      fetchAll<Code>('/codes', { status: 'sold', soldToAppUserId: id }).then(
+        (rows) => ({ rows, error: null }),
+        (error: unknown) => ({
+          rows: [] as Code[],
+          error: error instanceof Error ? error.message : 'تعذّر تحميل المشتريات',
+        }),
+      ),
     ]);
 
     predictions.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    purchases.sort((a, b) => (b.soldAt ?? '').localeCompare(a.soldAt ?? ''));
-    return { user, devices, predictions, purchases };
+    purchases.rows.sort((a, b) => (b.soldAt ?? '').localeCompare(a.soldAt ?? ''));
+    return { user, devices, predictions, purchases: purchases.rows, purchasesError: purchases.error };
   }
 
   block(id: Id): Promise<AppUser> {
