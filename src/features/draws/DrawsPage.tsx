@@ -1,8 +1,9 @@
 /**
  * Prize draws — the «جدّد واربح» campaign as the app shows it.
  *
- * What this screen owns is the announcement: the bilingual text, the date the
- * app counts down to, and whether the campaign is showing at all.
+ * What this screen owns is the announcement: the bilingual text, an optional
+ * picture, the date the app counts down to, and whether the campaign is
+ * showing at all.
  *
  * Holding the draw lives on the coupons screen, next to the winning coupons it
  * produces, so this one stays an editor and says where the draw is run.
@@ -20,7 +21,9 @@ import { useRepos } from '@/app/RepositoryContext';
 import type { PrizeDraw } from '@/types';
 import type { PrizeDrawInput } from '@/data/repositories/types';
 import { countdownAr, formatDateTimeAr, fromLocalInput, toLocalInput } from '@/lib/format';
+import { mediaCrossOrigin, mediaUrl } from '@/lib/media';
 import { CrudScreen } from '../shared/CrudScreen';
+import { ImagePicker } from '../shared/ImagePicker';
 
 /** Whether the announced date is behind us. */
 function isOver(draw: PrizeDraw): boolean {
@@ -47,9 +50,22 @@ export function DrawsPage() {
           key: 'title',
           header: 'السحب',
           render: (row) => (
-            <div className="col">
-              <span className="strong">{row.titleAr}</span>
-              <span className="fs-small dim truncate">{row.bodyAr}</span>
+            <div className="row row-gap-2">
+              {row.imageUrl ? (
+                <span className="thumb-frame">
+                  <img
+                    className="thumb"
+                    src={mediaUrl(row.imageUrl)}
+                    crossOrigin={mediaCrossOrigin(mediaUrl(row.imageUrl))}
+                    alt=""
+                    loading="lazy"
+                  />
+                </span>
+              ) : null}
+              <div className="col grow">
+                <span className="strong">{row.titleAr}</span>
+                <span className="fs-small dim truncate">{row.bodyAr}</span>
+              </div>
             </div>
           ),
         },
@@ -96,6 +112,8 @@ export function DrawsPage() {
         bodyKu: '',
         drawAt: '',
         isActive: true,
+        image: null,
+        imageUrl: '',
       })}
       toInput={(row) => ({
         titleAr: row.titleAr,
@@ -104,6 +122,9 @@ export function DrawsPage() {
         bodyKu: row.bodyKu,
         drawAt: row.drawAt,
         isActive: row.isActive,
+        // No file yet: an edit that does not touch the picture keeps it.
+        image: null,
+        imageUrl: mediaUrl(row.imageUrl),
       })}
       validate={(draft) =>
         !draft.titleAr.trim()
@@ -141,6 +162,13 @@ export function DrawsPage() {
           <Field label="الشرح بالكردي" className="span-2">
             <TextArea rows={3} value={draft.bodyKu} onChange={(next) => set('bodyKu', next)} />
           </Field>
+          <ImagePicker
+            label="صورة السحب (اختياري)"
+            className="span-2"
+            file={draft.image}
+            currentUrl={draft.imageUrl}
+            onPick={(next) => set('image', next)}
+          />
           <Field label="موعد السحب" hint="بتوقيتك — التطبيق يعد له تنازلياً">
             <TextInput
               type="datetime-local"

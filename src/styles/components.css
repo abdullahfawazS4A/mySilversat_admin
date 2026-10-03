@@ -1315,6 +1315,16 @@
   border-color: var(--brand-primary);
 }
 
+/** The same frame on a thumbnail that is only shown, not clicked. */
+.thumb-frame {
+  display: block;
+  flex: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-chip);
+  background: var(--bg-app);
+  overflow: hidden;
+}
+
 .thumb {
   display: block;
   width: 64px;

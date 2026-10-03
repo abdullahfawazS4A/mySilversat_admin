@@ -105,6 +105,10 @@ class HttpAdsRepository extends HttpCrudRepository<Ad, AdInput, Partial<AdInput>
  * `draw-winner` answers with the draw's bare columns, and only the single-draw
  * read joins the winning coupon, so the draw is read back after it is held to
  * give the screen the coupon's code rather than just its id.
+ *
+ * The routes take an optional picture as a multipart `image` part. A save with
+ * no new picture still goes as JSON, the shape these routes have always taken,
+ * so the multipart path only carries the cases that need it.
  */
 class HttpPrizeDrawsRepository
   extends HttpCrudRepository<PrizeDraw, PrizeDrawInput>
@@ -112,6 +116,28 @@ class HttpPrizeDrawsRepository
 {
   constructor() {
     super('/prize-draws', (row) => `${row.titleAr} ${row.titleKu} ${row.bodyAr}`);
+  }
+
+  /** The draft as the server takes it: the file as multipart, otherwise JSON. */
+  private static body(input: Partial<PrizeDrawInput>): FormData | Record<string, unknown> {
+    // `imageUrl` is the form's copy of the stored picture and has nowhere to go.
+    const { image, imageUrl: _shown, ...fields } = input;
+    if (!image) return fields;
+
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined) form.append(key, value === null ? '' : String(value));
+    }
+    form.append('image', image, image.name);
+    return form;
+  }
+
+  create(input: PrizeDrawInput): Promise<PrizeDraw> {
+    return api.post<PrizeDraw>('/prize-draws', HttpPrizeDrawsRepository.body(input));
+  }
+
+  update(id: Id, input: Partial<PrizeDrawInput>): Promise<PrizeDraw> {
+    return api.patch<PrizeDraw>(`/prize-draws/${id}`, HttpPrizeDrawsRepository.body(input));
   }
 
   async drawWinner(id: Id): Promise<PrizeDraw> {

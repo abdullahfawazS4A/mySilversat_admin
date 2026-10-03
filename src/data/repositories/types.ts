@@ -314,6 +314,16 @@ export interface AppUsersRepository
   unblock(id: Id): Promise<AppUser>;
   /** App users ranked by points, with prediction count and accuracy. */
   leaderboard(query?: ListQuery & { provinceId?: Id }): Promise<Page<LeaderboardRow>>;
+  /**
+   * Sets every app user's points balance to 0. Super admin only. The scored
+   * predictions are kept, so history and accuracy survive the reset.
+   */
+  resetPoints(): Promise<void>;
+  /**
+   * Last calendar month (Baghdad time), ranked on the points earned by
+   * predictions on that month's matches. Not paged: one list of up to 500.
+   */
+  lastMonthLeaderboard(): Promise<LeaderboardRow[]>;
 }
 
 // ------------------------------------------------------------ devices ------
@@ -595,6 +605,13 @@ export interface PrizeDrawInput {
   /** ISO-8601, UTC. The app counts down to it. */
   drawAt: IsoDate;
   isActive?: boolean;
+  /**
+   * A picture for the draw, sent as a file with the save the same way `/ads`
+   * takes one. Optional; null on an edit keeps the picture already stored.
+   */
+  image: File | null;
+  /** The picture already stored, for the form to show. Display only, never sent. */
+  imageUrl: string;
 }
 
 export interface TowerInput {

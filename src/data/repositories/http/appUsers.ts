@@ -7,7 +7,8 @@
  *
  *  - **`detail`** fans out to devices, predictions and purchased codes so the
  *    detail screen mounts with one call instead of four waterfalls.
- *  - **`leaderboard`** reshapes the route's flat rows into `LeaderboardRow`.
+ *  - **`leaderboard`** and **`lastMonthLeaderboard`** reshape the routes'
+ *    flat rows into `LeaderboardRow`.
  */
 
 import { api, fetchAll } from '@/data/http/client';
@@ -74,6 +75,31 @@ export class HttpAppUsersRepository
 
   unblock(id: Id): Promise<AppUser> {
     return api.patch<AppUser>(`/app-users/${id}/unblock`);
+  }
+
+  /**
+   * Last month's board. The route takes only a `limit` (max 500) and does not
+   * search, filter or page, so the screen does those over this one list.
+   * Contact and province fields are read if present and left empty if not.
+   */
+  async lastMonthLeaderboard(): Promise<LeaderboardRow[]> {
+    const rows = await api.get<Partial<LeaderboardEntry>[]>('/app-users/leaderboard/last-month', {
+      limit: 500,
+    });
+    return (rows ?? []).map(
+      (row, i): LeaderboardRow => ({
+        rank: row.rank ?? i + 1,
+        user: { id: row.id ?? '', name: row.name ?? '', phone: row.phone ?? '' },
+        provinceName: row.provinceName ?? null,
+        points: row.points ?? 0,
+        predictionCount: row.predictionCount ?? 0,
+        accuracy: row.accuracy ?? 0,
+      }),
+    );
+  }
+
+  async resetPoints(): Promise<void> {
+    await api.post('/app-users/reset-points');
   }
 
   /**

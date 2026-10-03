@@ -546,6 +546,8 @@ export interface PrizeDraw extends Entity {
   drawAt: IsoDate;
   /** Inactive draws are hidden from the app without losing the text. */
   isActive: boolean;
+  /** The draw's picture, if one was uploaded. Optional on the API. */
+  imageUrl?: string | null;
   /** Set once the draw is held; null until then. */
   winnerCouponId: Id | null;
   winnerAppUserId: Id | null;
