@@ -169,11 +169,12 @@ function LeaguesTab() {
     try {
       await repos.matches.leagues.bulkSetActive([...selected], next);
       toast(`${next ? 'انفعّل' : 'انخفى'} ${selected.size} دوري`);
-      refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : 'تعذّر التغيير', 'error');
     } finally {
       setBusy(false);
+      // Reload either way, so the table shows what the server actually holds.
+      refresh();
     }
   };
 

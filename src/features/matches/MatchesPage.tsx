@@ -251,11 +251,12 @@ export function MatchesBoard({ scope }: { scope: MatchesScope }) {
     try {
       await repos.matches.matches.bulkSetOpenForPrediction([...selected], open);
       toast(`${open ? 'انفتح' : 'انغلق'} التوقع على ${selected.size} مباراة`);
-      refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : 'تعذّر التغيير', 'error');
     } finally {
       setBusy(false);
+      // Reload either way, so the table shows what the server actually holds.
+      refresh();
     }
   };
 

@@ -15,7 +15,7 @@
  * pays out on whatever `homeScore`/`awayScore` say at the moment it is called.
  */
 
-import { MAX_PAGE_SIZE, api, clampPageSize, fetchRange, throttledPage, type Query } from '@/data/http/client';
+import { ApiError, MAX_PAGE_SIZE, api, clampPageSize, fetchRange, throttledPage, type Query } from '@/data/http/client';
 import type { Id, League, ListQuery, Match, MatchStatus, Page, Team } from '@/types';
 import type {
   CrudRepository,
@@ -29,6 +29,36 @@ import type {
   TeamInput,
 } from '../types';
 import { DEFAULT_PAGE_SIZE, HttpCrudRepository, clean, toPage, toRange } from './crud';
+
+/** The bulk routes take at most this many ids per call. */
+const BULK_LIMIT = 500;
+
+/**
+ * One PATCH on a `/bulk` route, per 500 ids.
+ *
+ * The server applies each call in one transaction: every row changes or none
+ * does. A call that names a row that no longer exists comes back 400 with
+ * `missingIds`, and nothing in that call changed — said so in Arabic, since the
+ * server's own sentence is English. A selection over 500 is split, so only a
+ * failing later chunk can leave the earlier ones applied.
+ */
+async function bulkPatch(path: string, ids: Id[], body: object, noun: string): Promise<void> {
+  for (let start = 0; start < ids.length; start += BULK_LIMIT) {
+    try {
+      await api.patch<{ updated: number }>(path, { ids: ids.slice(start, start + BULK_LIMIT), ...body });
+    } catch (err) {
+      const missing = (err instanceof ApiError ? err.detail : null) as { missingIds?: unknown } | null;
+      if (Array.isArray(missing?.missingIds) && missing.missingIds.length) {
+        throw new ApiError(
+          400,
+          `${missing.missingIds.length} ${noun} من المختارة ما موجودة بالسيرفر — ما تغيّر شي، حدّث الصفحة وعاود.`,
+          missing,
+        );
+      }
+      throw err;
+    }
+  }
+}
 
 /**
  * An Arabic name on its way to the API.
@@ -71,18 +101,9 @@ class HttpLeaguesRepository
     return this.update(id, { isActive: active });
   }
 
-  /**
-   * Runs the toggles in sequence rather than in parallel.
-   *
-   * The same reason the fixture switch does: the API rate-limits, and a burst
-   * of parallel PATCHes buys nothing and can trip it. Here it matters more —
-   * hiding a long tail of leagues is a much larger selection than opening an
-   * evening's fixtures.
-   */
-  async bulkSetActive(ids: Id[], active: boolean): Promise<void> {
-    for (const id of ids) {
-      await this.setActive(id, active);
-    }
+  /** Shows or hides the selection in one call; all of it changes or none. */
+  bulkSetActive(ids: Id[], active: boolean): Promise<void> {
+    return bulkPatch('/leagues/bulk', ids, { isActive: active }, 'دوري');
   }
 }
 
@@ -472,15 +493,11 @@ class HttpMatchesCollection extends HttpCrudRepository<
   }
 
   /**
-   * Runs the toggles in sequence rather than in parallel.
-   *
-   * A bulk open is a handful of rows an operator selected by hand, and the API
-   * rate-limits; a burst of parallel PATCHes buys nothing and can trip it.
+   * Opens or closes the selection in one call; all of it changes or none.
+   * Each fixture keeps its own closing time — none is sent.
    */
-  async bulkSetOpenForPrediction(ids: Id[], open: boolean): Promise<void> {
-    for (const id of ids) {
-      await this.setOpenForPrediction(id, open);
-    }
+  bulkSetOpenForPrediction(ids: Id[], open: boolean): Promise<void> {
+    return bulkPatch('/matches/bulk', ids, { isOpenForPrediction: open }, 'مباراة');
   }
 
   setScore(
