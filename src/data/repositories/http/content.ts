@@ -173,10 +173,14 @@ export class HttpContentRepository implements ContentRepository {
     VideoInput
   >('/tutorial-videos', (row) => `${row.title} ${row.titleKu} ${row.subtitle ?? ''}`);
 
-  readonly towers: CrudRepository<Tower, TowerInput, Partial<TowerInput>, { provinceId?: Id }> =
-    new HttpCrudRepository<Tower, TowerInput, Partial<TowerInput>, { provinceId?: Id }>(
-      '/towers',
-      (row) => `${row.name} ${row.nameKu} ${row.province?.name ?? ''}`,
+  readonly towers: CrudRepository<
+    Tower,
+    TowerInput,
+    Partial<TowerInput>,
+    { silversatRegionId?: Id }
+  > = new HttpCrudRepository<Tower, TowerInput, Partial<TowerInput>, { silversatRegionId?: Id }>(
+    '/towers',
+    (row) => `${row.name} ${row.nameKu} ${row.silversatRegion?.name ?? ''}`,
     );
 
   readonly contactLinks: CrudRepository<ContactLink, ContactLinkInput> = new HttpCrudRepository<

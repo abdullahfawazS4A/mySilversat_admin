@@ -619,7 +619,7 @@ export interface TowerInput {
   nameKu: string;
   latitude: number;
   longitude: number;
-  provinceId: Id;
+  silversatRegionId: Id;
 }
 
 export interface ContactLinkInput {
@@ -645,7 +645,7 @@ export interface ContentRepository {
   ads: CrudRepository<Ad, AdInput>;
   faqs: CrudRepository<Faq, FaqInput>;
   videos: CrudRepository<TutorialVideo, VideoInput>;
-  towers: CrudRepository<Tower, TowerInput, Partial<TowerInput>, { provinceId?: Id }>;
+  towers: CrudRepository<Tower, TowerInput, Partial<TowerInput>, { silversatRegionId?: Id }>;
   contactLinks: CrudRepository<ContactLink, ContactLinkInput>;
   /**
    * Prize draws.

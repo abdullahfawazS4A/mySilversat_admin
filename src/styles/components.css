@@ -1507,3 +1507,20 @@
   display: inline-flex;
   gap: 3px;
 }
+
+/* ---------------------------------------------------------- map picker ---- */
+.map-picker {
+  height: 300px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  z-index: 0;
+}
+
+.map-pin {
+  background: var(--brand-primary);
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: var(--shadow-brand);
+  cursor: grab;
+}

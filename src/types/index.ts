@@ -580,8 +580,9 @@ export interface Tower extends Entity {
   nameKu: string;
   latitude: number;
   longitude: number;
-  provinceId: Id;
-  province?: Province;
+  /** The SilverSat server this tower serves. Missing on a row nobody migrated. */
+  silversatRegionId?: Id | null;
+  silversatRegion?: SilversatRegion | null;
 }
 
 /** Channels the app can open from the contact screen. */
