@@ -148,6 +148,8 @@ export interface RegionInput {
   password: string;
   appDeviceId?: string;
   isActive?: boolean;
+  /** Lets app users recharge on this server. The API defaults it to off. */
+  isRechargeActive?: boolean;
   /**
    * The province the API ties this server to.
    *

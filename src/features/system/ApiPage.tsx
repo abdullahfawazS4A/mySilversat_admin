@@ -90,6 +90,24 @@ function RegionsTab() {
   const [checking, setChecking] = useState<Id | 'all' | null>(null);
   const [editing, setEditing] = useState<{ region: SilversatRegion | null } | null>(null);
 
+  // The switch on each card flips straight away and is put back if the save
+  // fails, so it never claims a state the server did not take.
+  const [recharge, setRecharge] = useState<Record<Id, boolean>>({});
+  const [toggling, setToggling] = useState<Id | null>(null);
+  const toggleRecharge = async (region: SilversatRegion, next: boolean) => {
+    setToggling(region.id);
+    setRecharge((current) => ({ ...current, [region.id]: next }));
+    try {
+      await repos.regions.update(region.id, { isRechargeActive: next });
+      toast(next ? `${region.name}: الشحن مسموح` : `${region.name}: الشحن مطفي`);
+    } catch (err) {
+      setRecharge((current) => ({ ...current, [region.id]: !next }));
+      toast(err instanceof Error ? err.message : 'تعذّر الحفظ', 'error');
+    } finally {
+      setToggling(null);
+    }
+  };
+
   const checkOne = async (region: SilversatRegion) => {
     setChecking(region.id);
     try {
@@ -181,6 +199,17 @@ function RegionsTab() {
                       <KeyValue
                         rows={[
                           [
+                            'الشحن من التطبيق',
+                            <Switch
+                              checked={recharge[region.id] ?? region.isRechargeActive ?? false}
+                              disabled={toggling === region.id}
+                              onChange={(next) => void toggleRecharge(region, next)}
+                              label={
+                                (recharge[region.id] ?? region.isRechargeActive) ? 'مسموح' : 'مطفي'
+                              }
+                            />,
+                          ],
+                          [
                             'المحافظة',
                             provinceName(region.provinceId) ?? (
                               <span className="dim">بلا ربط</span>
@@ -259,6 +288,7 @@ function RegionsTab() {
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
+            setRecharge({});
             regions.reload();
           }}
         />
@@ -361,6 +391,7 @@ function RegionDialog({
     password: '',
     appDeviceId: '',
     isActive: region?.isActive ?? true,
+    isRechargeActive: region?.isRechargeActive ?? false,
     provinceId: region?.provinceId ?? null,
   });
   const set = <K extends keyof RegionInput>(key: K, value: RegionInput[K]) =>
@@ -391,6 +422,7 @@ function RegionDialog({
       const patch: Partial<RegionInput> = {
         name: draft.name.trim(),
         isActive: draft.isActive,
+        isRechargeActive: draft.isRechargeActive ?? false,
         provinceId: draft.provinceId ?? null,
       };
       if (draft.baseUrl.trim()) patch.baseUrl = draft.baseUrl.trim();
@@ -471,6 +503,13 @@ function RegionDialog({
             checked={draft.isActive ?? true}
             onChange={(next) => set('isActive', next)}
             label="فعّال"
+          />
+        </Field>
+        <Field label="الشحن من التطبيق" hint="إذا مطفي، مشتركين هذا السيرفر ما يگدرون يشحنون أو يفعّلون كارت من التطبيق">
+          <Switch
+            checked={draft.isRechargeActive ?? false}
+            onChange={(next) => set('isRechargeActive', next)}
+            label="مسموح"
           />
         </Field>
       </div>

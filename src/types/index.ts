@@ -148,6 +148,12 @@ export interface SilversatRegion extends Entity {
   password?: string;
   appDeviceId?: string;
   isActive: boolean;
+  /**
+   * Whether app users may recharge or activate codes on this server. Separate
+   * from `isActive`: a live server can still have recharging switched off, and
+   * the API defaults it to off for a new one.
+   */
+  isRechargeActive?: boolean;
   /** The province this server serves. Null when it is tied to none. */
   provinceId?: Id | null;
   /** Embedded when the server arrives nested under a product or a user. */
