@@ -93,7 +93,10 @@ class HttpLeaguesRepository
   }
 
   update(id: Id, input: Partial<LeagueInput>): Promise<League> {
-    return super.update(id, withNameAr(input));
+    const body = withNameAr(input);
+    // Same rule as `nameAr`: an emptied box clears the logo rather than storing ''.
+    if ('logoUrl' in body) body.logoUrl = body.logoUrl?.trim() || null;
+    return super.update(id, body);
   }
 
   /** Shows a league in the app, or hides it and every fixture under it. */

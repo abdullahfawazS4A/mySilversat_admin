@@ -20,7 +20,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Activity, Copy, Eye, EyeOff, PlugZap, RefreshCw } from 'lucide-react';
+import { Activity, AlertTriangle, Copy, Eye, EyeOff, PlugZap, RefreshCw } from 'lucide-react';
 import { useRepos } from '@/app/RepositoryContext';
 import { useAction, useAsync } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
@@ -175,6 +175,8 @@ function RegionsTab() {
 
         <AsyncBlock state={regions}>
           {(rows) => (
+            <>
+            <UncoveredProvinces regions={rows} provinces={provinces.data} />
             <div className="grid grid-2">
               {rows.map((region) => {
                 const result = health[region.id];
@@ -212,7 +214,7 @@ function RegionsTab() {
                           [
                             'المحافظة',
                             provinceName(region.provinceId) ?? (
-                              <span className="dim">بلا ربط</span>
+                              <Pill tone="danger">بلا محافظة — ما يظهر بالتسجيل</Pill>
                             ),
                           ],
                           [
@@ -277,6 +279,7 @@ function RegionsTab() {
                 );
               })}
             </div>
+            </>
           )}
         </AsyncBlock>
       </div>
@@ -303,6 +306,34 @@ function RegionsTab() {
  * Hidden by default because this screen gets shown and screenshotted; one
  * click reveals it, and copying works either way.
  */
+/**
+ * Governorates no active server serves.
+ *
+ * Registration in the app lists only the servers whose province is the one the
+ * subscriber picked, so a governorate with none shows an empty picker and
+ * nobody there can sign up. Nothing else on the console makes that visible.
+ */
+function UncoveredProvinces({
+  regions,
+  provinces,
+}: {
+  regions: SilversatRegion[];
+  provinces: Province[] | undefined;
+}) {
+  if (!provinces) return null;
+  const covered = new Set(regions.filter((row) => row.isActive && row.provinceId).map((row) => row.provinceId));
+  const uncovered = provinces.filter((row) => !covered.has(row.id));
+  if (uncovered.length === 0) return null;
+  return (
+    <Notice tone="danger" icon={<AlertTriangle size={16} />}>
+      <span className="strong num">{uncovered.length}</span> من{' '}
+      <span className="num">{provinces.length}</span> محافظة ماكو عليها سيرفر فعّال — المشتركين
+      بيها يشوفون قائمة سيرفرات فارغة وما يكدرون يسجلون:{' '}
+      {uncovered.map((row) => row.name).join('، ')}. اربط سيرفر بكل محافظة من زر التعديل.
+    </Notice>
+  );
+}
+
 function Secret({ value, plain = false }: { value: string; plain?: boolean }) {
   const { toast } = useToast();
   const [shown, setShown] = useState(plain);

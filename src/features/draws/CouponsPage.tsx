@@ -23,6 +23,7 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
+  FilterChips,
   Notice,
   Pill,
   SearchInput,
@@ -31,7 +32,8 @@ import {
 import { useRepos } from '@/app/RepositoryContext';
 import { useAction, useAsync, useDebounced } from '@/app/useAsync';
 import { useToast } from '@/app/ToastContext';
-import type { AppUser, Coupon, Id, PrizeDraw } from '@/types';
+import type { AppUser, Coupon, CouponStatus, Id, PrizeDraw } from '@/types';
+import { COUPON_STATUS } from '@/lib/labels';
 import { countdownAr, formatDateTimeAr } from '@/lib/format';
 
 /** A draw with its winner's name, when it has one. */
@@ -244,6 +246,7 @@ function AllCoupons({ draws }: { draws: PrizeDraw[] }) {
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
   const [drawId, setDrawId] = useState<Id | 'all'>('all');
+  const [status, setStatus] = useState<CouponStatus | 'all'>('all');
   const [page, setPage] = useState(1);
 
   const titleOf = useMemo(() => new Map(draws.map((draw) => [draw.id, draw.titleAr])), [draws]);
@@ -252,10 +255,11 @@ function AllCoupons({ draws }: { draws: PrizeDraw[] }) {
       repos.content.coupons.list({
         search: debounced,
         prizeDrawId: drawId === 'all' ? undefined : drawId,
+        status: status === 'all' ? undefined : status,
         page,
         pageSize: 25,
       }),
-    [debounced, drawId, page],
+    [debounced, drawId, status, page],
   );
 
   const columns: Column<Coupon>[] = [
@@ -289,6 +293,19 @@ function AllCoupons({ draws }: { draws: PrizeDraw[] }) {
       render: (row) => titleOf.get(row.prizeDrawId) ?? <span className="dim">سحب محذوف</span>,
     },
     {
+      key: 'status',
+      header: 'النتيجة',
+      width: 120,
+      // The coupon's own outcome, which is what the app shows the subscriber —
+      // not the draw's state, which says nothing about this entry.
+      render: (row) =>
+        COUPON_STATUS[row.status] ? (
+          <Pill tone={COUPON_STATUS[row.status].tone}>{COUPON_STATUS[row.status].label}</Pill>
+        ) : (
+          <span className="dim">—</span>
+        ),
+    },
+    {
       key: 'createdAt',
       header: 'تاريخ الإصدار',
       render: (row) => <span className="fs-small num">{formatDateTimeAr(row.createdAt)}</span>,
@@ -315,6 +332,20 @@ function AllCoupons({ draws }: { draws: PrizeDraw[] }) {
           options={[
             { value: 'all' as const, label: 'كل السحوبات' },
             ...draws.map((draw) => ({ value: draw.id, label: draw.titleAr })),
+          ]}
+        />
+        <FilterChips
+          value={status}
+          onChange={(next) => {
+            setStatus(next);
+            setPage(1);
+          }}
+          items={[
+            { value: 'all' as const, label: 'الكل' },
+            ...(Object.keys(COUPON_STATUS) as CouponStatus[]).map((value) => ({
+              value,
+              label: COUPON_STATUS[value].label,
+            })),
           ]}
         />
       </Toolbar>

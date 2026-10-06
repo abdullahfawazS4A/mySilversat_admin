@@ -11,18 +11,24 @@
  * `provinceId` is the targeting: null shows the banner to everyone, a province
  * shows it only there. The app resolves this per user, so a targeted banner
  * never reaches the wrong province.
+ *
+ * `type` files a banner as an ad or an offer. The app lists offers on a screen
+ * of their own, so the table can be narrowed to either, and the server
+ * filters it rather than the page.
  */
 
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Field, KeyValue, Modal, Pill, Select, Switch, TextInput } from '@/components/ui';
 import { useAsync } from '@/app/useAsync';
 import { useRepos } from '@/app/RepositoryContext';
-import type { Ad, AdAction, Id } from '@/types';
+import type { Ad, AdAction, AdKind, Id } from '@/types';
 import type { AdInput } from '@/data/repositories/types';
-import { AD_ACTION } from '@/lib/labels';
+import { AD_ACTION, AD_KIND } from '@/lib/labels';
+import { APP_SCREENS, screenName } from '@/lib/appScreens';
 import { mediaUrl, mediaCrossOrigin } from '@/lib/media';
 import { CrudScreen } from '../shared/CrudScreen';
-import { ImagePicker } from '../shared/ImagePicker';
+import { ImageFrame, ImagePicker } from '../shared/ImagePicker';
+import { adImageSpec } from '@/lib/imageSpecs';
 
 /** What `actionValue` holds, which depends entirely on `actionType`. */
 const ACTION_HINT: Record<AdAction, string | undefined> = {
@@ -30,35 +36,6 @@ const ACTION_HINT: Record<AdAction, string | undefined> = {
   url: 'الرابط اللي يفتح بالمتصفح — لازم يبدي بـ https://',
   screen: 'الشاشة اللي تنفتح بالتطبيق لما المشترك يضغط السلايد',
 };
-
-/**
- * The screens a banner can open, keyed as the app routes them.
- *
- * This is the app's own list (`AppRoutes.deepLinkable` in the Flutter app),
- * not a suggestion: the app ignores any other value and the tap does nothing,
- * so the target is picked here rather than typed. The labels are the titles
- * the subscriber sees on each screen. A screen added to the app has to be
- * added here too.
- */
-const APP_SCREENS: { value: string; label: string }[] = [
-  { value: 'home', label: 'الرئيسية' },
-  { value: 'renew', label: 'تجديد الاشتراك' },
-  { value: 'offers', label: 'العروض' },
-  { value: 'matches', label: 'المباريات' },
-  { value: 'predict', label: 'توقع واربح' },
-  { value: 'draws', label: 'جدد واربح' },
-  { value: 'account', label: 'حسابي' },
-  { value: 'tower', label: 'اتجاه البرج' },
-  { value: 'videos', label: 'مقاطع فيديو تعليمية' },
-  { value: 'faq', label: 'الأسئلة الشائعة' },
-  { value: 'notifications', label: 'الإشعارات' },
-];
-
-/** The Arabic name of a screen target, or null when the app has no such screen. */
-function screenName(value: string | null | undefined): string | null {
-  const key = (value ?? '').trim().toLowerCase().split('/').find(Boolean) ?? '';
-  return APP_SCREENS.find((screen) => screen.value === key)?.label ?? null;
-}
 
 /** A target as an operator reads it: the screen's name, or the raw value. */
 function targetLabel(ad: Pick<Ad, 'actionType' | 'actionValue'>): string | null {
@@ -75,13 +52,25 @@ export function SlidesPage() {
   // The table thumbnail is too small to judge a banner, so a click opens it
   // full size. Kept here rather than inside the cell so only one is ever open.
   const [preview, setPreview] = useState<Ad | null>(null);
+  const [kind, setKind] = useState<AdKind | ''>('');
 
   return (
-    <CrudScreen<Ad, AdInput>
+    <CrudScreen<Ad, AdInput, { type?: AdKind }>
       title="سلايدر الرئيسية"
       subtitle="الإعلانات المتحركة بأعلى الشاشة الرئيسية — عامة أو موجّهة لمحافظة"
       repo={repos.content.ads}
       searchable
+      filter={kind ? { type: kind } : undefined}
+      filters={
+        <Select<AdKind | ''>
+          value={kind}
+          onChange={setKind}
+          options={[
+            { value: '', label: 'الإعلانات والعروض' },
+            ...(Object.keys(AD_KIND) as AdKind[]).map((value) => ({ value, label: AD_KIND[value] })),
+          ]}
+        />
+      }
       createLabel="إضافة إعلان"
       createTitle="إضافة إعلان"
       editTitle="تعديل الإعلان"
@@ -103,7 +92,8 @@ export function SlidesPage() {
           render: (row) => (
             <button className="thumb-button" title={row.title} onClick={() => setPreview(row)}>
               <img
-                className="thumb"
+                className="thumb thumb-ratio"
+                style={{ '--frame-ratio': adImageSpec(row.type).ratio } as CSSProperties}
                 src={mediaUrl(row.imageUrl)}
                 crossOrigin={mediaCrossOrigin(mediaUrl(row.imageUrl))}
                 alt=""
@@ -120,6 +110,14 @@ export function SlidesPage() {
               <span className="strong">{row.title}</span>
               <span className="fs-small dim">{row.titleKu || '—'}</span>
             </div>
+          ),
+        },
+        {
+          key: 'kind',
+          header: 'النوع',
+          width: 80,
+          render: (row) => (
+            <Pill tone={row.type === 'offers' ? 'gold' : 'neutral'}>{AD_KIND[row.type] ?? AD_KIND.ads}</Pill>
           ),
         },
         {
@@ -157,6 +155,7 @@ export function SlidesPage() {
         titleKu: '',
         image: null,
         imageUrl: '',
+        type: kind || 'ads',
         actionType: 'none',
         actionValue: '',
         order: 0,
@@ -170,6 +169,7 @@ export function SlidesPage() {
         // on the server alone.
         image: null,
         imageUrl: mediaUrl(row.imageUrl),
+        type: row.type ?? 'ads',
         actionType: row.actionType,
         actionValue: row.actionValue ?? '',
         order: row.order,
@@ -179,6 +179,8 @@ export function SlidesPage() {
       validate={(draft) =>
         !draft.title.trim()
           ? 'عنوان الإعلان مطلوب'
+          : !draft.titleKu.trim()
+            ? 'عنوان الإعلان بالكردي مطلوب — بدونه المشترك الكردي يشوف العربي'
           : !draft.image && !draft.imageUrl.trim()
             ? 'صورة السلايد مطلوبة'
             : draft.actionType !== 'none' && !draft.actionValue?.trim()
@@ -198,9 +200,18 @@ export function SlidesPage() {
             <TextInput value={draft.titleKu} onChange={(next) => set('titleKu', next)} />
           </Field>
 
+          <Field label="النوع" hint="العروض تطلع بشاشة العروض بالتطبيق">
+            <Select<AdKind>
+              value={draft.type ?? 'ads'}
+              onChange={(next) => set('type', next)}
+              options={(Object.keys(AD_KIND) as AdKind[]).map((value) => ({ value, label: AD_KIND[value] }))}
+            />
+          </Field>
+
           <ImagePicker
             label="صورة السلايد"
             className="span-2"
+            spec={adImageSpec(draft.type)}
             file={draft.image}
             currentUrl={draft.imageUrl}
             onPick={(next) => set('image', next)}
@@ -272,16 +283,12 @@ export function SlidesPage() {
     >
       {preview ? (
         <Modal title={preview.title} size="lg" onClose={() => setPreview(null)}>
-          <img
-            className="image-preview"
-            src={mediaUrl(preview.imageUrl)}
-            crossOrigin={mediaCrossOrigin(mediaUrl(preview.imageUrl))}
-            alt={preview.title}
-          />
+          <ImageFrame src={mediaUrl(preview.imageUrl)} spec={adImageSpec(preview.type)} />
           <div className="mt-3">
             <KeyValue
               rows={[
                 ['العنوان بالكردي', preview.titleKu || '—'],
+                ['النوع', AD_KIND[preview.type] ?? AD_KIND.ads],
                 ['عند الضغط', AD_ACTION[preview.actionType]],
                 ['الوجهة', targetLabel(preview) ?? '—'],
                 [

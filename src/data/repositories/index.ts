@@ -25,6 +25,7 @@ import { HttpNotificationsRepository } from './http/notifications';
 import { HttpContentRepository } from './http/content';
 import { HttpSilversatRepository } from './http/silversat';
 import { HttpDashboardRepository } from './http/dashboard';
+import { HttpAppConfigRepository } from './http/appConfig';
 
 /** Builds the repository bundle the whole console runs on. */
 export function createRepositories(): Repositories {
@@ -43,6 +44,7 @@ export function createRepositories(): Repositories {
     content: new HttpContentRepository(),
     silversat: new HttpSilversatRepository(),
     dashboard: new HttpDashboardRepository(),
+    appConfig: new HttpAppConfigRepository(),
   };
 }
 

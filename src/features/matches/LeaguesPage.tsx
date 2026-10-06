@@ -24,7 +24,7 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Eye, EyeOff, Pencil } from 'lucide-react';
+import { Eye, EyeOff, Pencil, Trophy } from 'lucide-react';
 import {
   AsyncBlock,
   Button,
@@ -49,7 +49,9 @@ import type { Id, League, Team } from '@/types';
 import type { LeagueInput, TeamInput } from '@/data/repositories/types';
 import { arabicName, leagueLabel, teamName } from '@/lib/labels';
 import { mediaUrl, mediaCrossOrigin } from '@/lib/media';
+import { safeHttpUrl } from '@/lib/utils';
 import { ImagePicker } from '../shared/ImagePicker';
+import { IMAGE_SPECS } from '@/lib/imageSpecs';
 import { CrudScreen } from '../shared/CrudScreen';
 import { MatchesBoard } from './MatchesPage';
 
@@ -280,7 +282,20 @@ function LeaguesTab() {
                   {
                     key: 'name',
                     header: 'الدوري',
-                    render: (row) => <NamePair row={row} />,
+                    render: (row) => (
+                      <div className="row row-gap-2">
+                        {row.logoUrl && safeHttpUrl(row.logoUrl) ? (
+                          <img
+                            className="team-logo"
+                            src={row.logoUrl}
+                            crossOrigin={mediaCrossOrigin(row.logoUrl)}
+                            alt=""
+                            loading="lazy"
+                          />
+                        ) : null}
+                        <NamePair row={row} />
+                      </div>
+                    ),
                   },
                   { key: 'country', header: 'الدولة', render: (row) => row.country?.name ?? '—' },
                   {
@@ -310,7 +325,7 @@ function LeaguesTab() {
                         variant="ghost"
                         size="sm"
                         icon={<Pencil size={14} />}
-                        title="تعديل الاسم العربي والترتيب"
+                        title="تعديل الاسم العربي والشعار والترتيب"
                         onClick={() => setEditing(row)}
                       />
                     ),
@@ -368,13 +383,17 @@ function LeagueDialog({
   const { draft, set } = useDraft<LeagueInput>({
     name: league.name,
     nameAr: league.nameAr ?? '',
+    logoUrl: league.logoUrl ?? '',
     countryId: league.countryId,
     order: league.order,
     isActive: league.isActive,
   });
 
+  const logo = draft.logoUrl?.trim() ?? '';
+  const logoInvalid = !!logo && !safeHttpUrl(logo);
+
   const submit = async () => {
-    if (!draft.name.trim()) return;
+    if (!draft.name.trim() || logoInvalid) return;
     // An emptied box is a cleared override rather than an empty name; the
     // repository is what turns it back into the `null` the API wants.
     const ok = await run(() => repos.matches.leagues.update(league.id, draft));
@@ -397,7 +416,7 @@ function LeagueDialog({
       }
     >
       <div className="grid grid-form">
-        <Field label="اسم الدوري بالعربي" hint="هذا اللي يشوفه المشترك بالتطبيق">
+        <Field label="اسم الدوري بالعربي" hint="يظهر للمشترك باللغتين — إذا فارغ يطلع الاسم الإنكليزي">
           <TextInput
             value={draft.nameAr ?? ''}
             onChange={(next) => set('nameAr', next)}
@@ -420,6 +439,30 @@ function LeagueDialog({
             value={draft.order ?? 0}
             onChange={(next) => set('order', Number(next) || 0)}
           />
+        </Field>
+        <Field
+          label="رابط شعار الدوري"
+          className="span-2"
+          hint="رابط صورة (https://) — يظهر صغير جنب اسم الدوري بشاشة المباريات. فارغ = أيقونة عامة"
+          error={logoInvalid ? 'الرابط لازم يبدي بـ https://' : undefined}
+        >
+          <div className="row row-gap-2">
+            <span className="league-logo-preview">
+              {logo && !logoInvalid ? (
+                <img className="team-logo" src={logo} crossOrigin={mediaCrossOrigin(logo)} alt="" />
+              ) : (
+                <Trophy size={16} />
+              )}
+            </span>
+            <div className="grow">
+              <TextInput
+                type="url"
+                value={draft.logoUrl ?? ''}
+                onChange={(next) => set('logoUrl', next)}
+                placeholder="https://"
+              />
+            </div>
+          </div>
         </Field>
         <Field label="الظهور" hint="الدوري المخفي ما تظهر مبارياته أبداً">
           <Switch
@@ -530,7 +573,7 @@ function TeamsTab() {
       validate={(draft) => (!draft.name.trim() ? 'اسم الفريق مطلوب' : null)}
       form={(draft, set) => (
         <>
-          <Field label="اسم الفريق بالعربي" hint="هذا اللي يشوفه المشترك بالتطبيق">
+          <Field label="اسم الفريق بالعربي" hint="يظهر للمشترك باللغتين — إذا فارغ يطلع الاسم الإنكليزي">
             <TextInput
               value={draft.nameAr ?? ''}
               onChange={(next) => set('nameAr', next)}
@@ -550,6 +593,7 @@ function TeamsTab() {
           <ImagePicker
             label="شعار الفريق"
             className="span-2"
+            spec={IMAGE_SPECS.teamLogo}
             file={draft.logo}
             currentUrl={draft.logoUrl}
             onPick={(next) => set('logo', next)}

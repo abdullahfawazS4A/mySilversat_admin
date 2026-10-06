@@ -354,7 +354,7 @@ function ProvinceDetailDialog({
             ))}
             {overview && overview.unroutedProducts > 0 ? (
               <span className="fs-small">
-                <Pill tone="warning">{overview.unroutedProducts} منتج</Pill> تفعيله مو عبر سلفرسات.
+                <Pill tone="warning">{overview.unroutedProducts} منتج</Pill> بهذي المحافظة يتفعّل عن طريق مزوّد ثاني، مو عبر سيرفر سلفرسات.
               </span>
             ) : null}
           </div>

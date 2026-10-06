@@ -1524,3 +1524,69 @@
   box-shadow: var(--shadow-brand);
   cursor: grab;
 }
+
+/* --------------------------------------------------------- image frames --- */
+
+/**
+ * A preview at the ratio the app draws the picture at, cropped the same way
+ * (the app uses BoxFit.cover), so what the operator sees is what ships.
+ */
+.image-frame {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  aspect-ratio: var(--frame-ratio);
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-chip);
+  background: var(--bg-app);
+}
+
+.image-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-frame.is-round {
+  width: 160px;
+  border-radius: 50%;
+}
+
+/** Text and logos belong inside this; only background art should cross it. */
+.image-safe-area {
+  position: absolute;
+  border: 1.5px dashed color-mix(in srgb, #fff 85%, transparent);
+  outline: 1px dashed color-mix(in srgb, #000 35%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.image-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  font-size: var(--fs-small);
+  color: var(--warning);
+}
+
+/** A table thumbnail at its picture's own ratio, same height as `.thumb`. */
+.thumb.thumb-ratio {
+  width: auto;
+  aspect-ratio: var(--frame-ratio);
+}
+
+/** The live preview beside a league's logo link; a generic icon until it is valid. */
+.league-logo-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--bg-app);
+  color: var(--text-secondary);
+}

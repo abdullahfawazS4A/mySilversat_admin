@@ -36,6 +36,7 @@ import {
 } from '@/components/ui';
 import { formatDateTimeAr, formatNumber } from '@/lib/format';
 import { NOTIFICATION_TARGET } from '@/lib/labels';
+import { APP_SCREENS, screenName } from '@/lib/appScreens';
 import type { AppUser, Id, NotificationRecord, NotificationTarget } from '@/types';
 import type { NotificationInput, NotificationTextInput } from '@/data/repositories/types';
 
@@ -232,6 +233,32 @@ ${row.bodyAr}`}>
  * been sent to. The same rules as composing apply: Arabic is required and a
  * blank Kurdish field falls back to it.
  */
+/** The screen key a notification's `data` names, the way the app looks for it. */
+function routeOf(data: Record<string, unknown> | null | undefined): string | null {
+  return (
+    ['route', 'screen', 'target', 'page']
+      .map((name) => data?.[name])
+      .find((value): value is string => typeof value === 'string' && value.trim() !== '') ?? null
+  );
+}
+
+/**
+ * Where tapping a sent notification takes the subscriber, read the way the app
+ * reads its `data`: a screen key under `route` (or `screen`/`target`/`page`),
+ * else an ad opens the offers screen and a match the matches screen, else the
+ * inbox.
+ */
+function tapTarget(data: Record<string, unknown> | null | undefined): string {
+  const key = routeOf(data);
+  if (key) return screenName(key) ?? `${key} (ما موجودة بالتطبيق)`;
+  if (data?.type === 'ad' && data.adId) return screenName('offers') ?? 'العروض';
+  if (data?.matchId) return screenName('matches') ?? 'المباريات';
+  return 'صندوق الإشعارات (الافتراضي)';
+}
+
+/** The edit form's stand-in for a non-screen target it leaves as it was. */
+const KEEP = '__keep__';
+
 function EditDialog({
   notification,
   onClose,
@@ -251,9 +278,20 @@ function EditDialog({
     bodyAr: notification.bodyAr,
     bodyKu: notification.bodyKu,
   });
-  const set = (key: keyof NotificationTextInput, value: string) =>
+  const set = (key: 'titleAr' | 'titleKu' | 'bodyAr' | 'bodyKu', value: string) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const [invalid, setInvalid] = useState<string | null>(null);
+
+  /*
+   * The tap target. `KEEP` stands for whatever `data` holds now when it is not
+   * a plain screen key — an `adId`, a `matchId` — which this form cannot
+   * rebuild, so it is left untouched unless the operator picks something else.
+   */
+  const existing = notification.dataJson;
+  const existingRoute = routeOf(existing);
+  const hasOther = !existingRoute && !!existing && Object.keys(existing).length > 0;
+  const initialTarget = existingRoute ?? (hasOther ? KEEP : '');
+  const [target, setTarget] = useState(initialTarget);
 
   const save = async () => {
     const found = !draft.titleAr.trim()
@@ -269,6 +307,8 @@ function EditDialog({
         ...draft,
         titleKu: draft.titleKu.trim() || draft.titleAr,
         bodyKu: draft.bodyKu.trim() || draft.bodyAr,
+        // Sent only when changed: an untouched target keeps every key it had.
+        ...(target === initialTarget ? {} : { data: target ? { route: target } : null }),
       }),
     );
     if (!ok) return;
@@ -315,6 +355,26 @@ function EditDialog({
         <Field label="النص بالكردي" className="span-2" hint="إذا تركته فارغ ينحفظ العربي">
           <TextArea rows={3} value={draft.bodyKu} onChange={(next) => set('bodyKu', next)} />
         </Field>
+
+        <Field
+          label="يفتح شاشة"
+          className="span-2"
+          hint="يتغيّر الضغط من صندوق الإشعارات بالتطبيق بس — الإشعار اللي وصل للموبايل يفتح اللي انرسل بيه"
+        >
+          <Select<string>
+            value={target}
+            onChange={setTarget}
+            options={[
+              ...(hasOther ? [{ value: KEEP, label: `${tapTarget(existing)} (الحالي — بدون تغيير)` }] : []),
+              { value: '', label: 'صندوق الإشعارات (الافتراضي)' },
+              // A key the app does not know is shown as what it is, not dropped.
+              ...(existingRoute && !screenName(existingRoute)
+                ? [{ value: existingRoute, label: `${existingRoute} (ما موجودة بالتطبيق)` }]
+                : []),
+              ...APP_SCREENS,
+            ]}
+          />
+        </Field>
       </div>
 
       {invalid ? <div className="field-error mt-2">{invalid}</div> : null}
@@ -350,6 +410,8 @@ function ComposeDialog({ onClose, onSent }: { onClose: () => void; onSent: () =>
   const set = <K extends keyof NotificationInput>(key: K, value: NotificationInput[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
+  /** The app screen a tap opens; empty leaves the app's default, the inbox. */
+  const [route, setRoute] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [invalid, setInvalid] = useState<string | null>(null);
 
@@ -388,6 +450,8 @@ function ComposeDialog({ onClose, onSent }: { onClose: () => void; onSent: () =>
         bodyKu: draft.bodyKu.trim() || draft.bodyAr,
         provinceId: draft.targetType === 'province' ? draft.provinceId : undefined,
         appUserId: draft.targetType === 'user' ? draft.appUserId : undefined,
+        // FCM data values must be strings; the app reads `route` as a screen key.
+        data: route ? { route } : undefined,
       }),
     );
     if (!ok) return;
@@ -426,6 +490,9 @@ function ComposeDialog({ onClose, onSent }: { onClose: () => void; onSent: () =>
           <div className="card card-pad col row-gap-1">
             <span className="fs-body strong">{draft.titleAr}</span>
             <span className="fs-small">{draft.bodyAr}</span>
+            <span className="fs-tiny dim mt-1">
+              عند الضغط: {route ? `يفتح شاشة «${screenName(route)}»` : 'يفتح صندوق الإشعارات'}
+            </span>
           </div>
 
           {action.error ? <Notice tone="danger">{action.error}</Notice> : null}
@@ -463,6 +530,14 @@ function ComposeDialog({ onClose, onSent }: { onClose: () => void; onSent: () =>
         </Field>
         <Field label="النص بالكردي" className="span-2" hint="إذا تركته فارغ ينرسل العربي">
           <TextArea rows={3} value={draft.bodyKu} onChange={(next) => set('bodyKu', next)} />
+        </Field>
+
+        <Field label="يفتح شاشة" hint="الشاشة اللي تنفتح لما المشترك يضغط الإشعار" className="span-2">
+          <Select<string>
+            value={route}
+            onChange={setRoute}
+            options={[{ value: '', label: 'صندوق الإشعارات (الافتراضي)' }, ...APP_SCREENS]}
+          />
         </Field>
 
         <Field label="الجمهور">

@@ -377,6 +377,8 @@ export interface League extends Entity {
   name: string;
   /** Arabic display name, authored here. Null = show `name`. */
   nameAr: string | null;
+  /** A link to the league's logo; the app shows it in each league header. Null = a generic icon. */
+  logoUrl: string | null;
   countryId: Id;
   country?: Country;
   order: number;
@@ -497,10 +499,14 @@ export interface NotificationRecord extends Entity {
 /** What tapping an ad does inside the app. */
 export type AdAction = 'none' | 'url' | 'screen';
 
+/** Whether a banner is a plain ad or an offer; the app lists offers on their own. */
+export type AdKind = 'ads' | 'offers';
+
 /** A banner in the app. Global when `provinceId` is null. */
 export interface Ad extends Entity {
   title: string;
   titleKu: string;
+  type: AdKind;
   actionType: AdAction;
   actionValue: string | null;
   order: number;
@@ -572,8 +578,12 @@ export interface WinnerCoupon {
 }
 
 /** A draw entry, issued to a subscriber on every renewal. */
+/** A draw entry's own outcome — what the app groups a subscriber's coupons by. */
+export type CouponStatus = 'PENDING' | 'WON' | 'LOST';
+
 export interface Coupon extends Entity {
   code: string;
+  status: CouponStatus;
   prizeDrawId: Id;
   appUserId: Id;
   orderId: Id | null;
@@ -673,6 +683,11 @@ export interface DashboardSummary {
   notificationsSent: number;
   activeRegions: number;
   totalRegions: number;
+  /**
+   * Governorates with no active server — nobody there can register in the app.
+   * Null when the server did not say.
+   */
+  uncoveredProvinces: { count: number; names: string[] } | null;
   /** Sold codes per month for the trend chart, oldest first. */
   salesTrend: { label: string; value: number }[];
   revenueTrend: { label: string; value: number }[];
@@ -682,4 +697,26 @@ export interface DashboardSummary {
   salesByCategory: { label: string; value: number }[];
   /** Available stock per category, lowest first — the restock queue. */
   stockByCategory: { label: string; value: number; threshold: number | null }[];
+}
+
+// ------------------------------------------------------ app version gate ---
+
+/** One platform's update thresholds, compared against the app's build number. */
+export interface PlatformVersion {
+  /** Builds below this are blocked until the user updates. */
+  minBuild: number;
+  /** Builds below this are offered an update they may skip. */
+  latestBuild: number;
+  storeUrl: string;
+}
+
+/**
+ * The forced/optional update settings the app reads before sign-in. A single
+ * row on the server; a null message lets the app show its own default text.
+ */
+export interface AppVersionConfig {
+  android: PlatformVersion;
+  ios: PlatformVersion;
+  messageAr: string | null;
+  messageKu: string | null;
 }

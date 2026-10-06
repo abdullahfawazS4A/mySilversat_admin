@@ -12,7 +12,9 @@
 
 import type {
   AdAction,
+  AdKind,
   AdminRole,
+  CouponStatus,
   BatchStatus,
   CodeStatus,
   ContactChannel,
@@ -108,6 +110,18 @@ export const AD_ACTION: Record<AdAction, string> = {
   none: 'بدون إجراء',
   url: 'فتح رابط',
   screen: 'فتح شاشة بالتطبيق',
+};
+
+export const AD_KIND: Record<AdKind, string> = {
+  ads: 'إعلان',
+  offers: 'عرض',
+};
+
+/** Worded the way the app's «جدد واربح» tabs word them. */
+export const COUPON_STATUS: Record<CouponStatus, { label: string; tone: Tone }> = {
+  PENDING: { label: 'بانتظار السحب', tone: 'neutral' },
+  WON: { label: 'فائز', tone: 'gold' },
+  LOST: { label: 'ما ربح', tone: 'muted' },
 };
 
 export const CONTACT_CHANNEL: Record<ContactChannel, string> = {

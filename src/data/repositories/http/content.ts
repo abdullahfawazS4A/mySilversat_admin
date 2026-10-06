@@ -11,7 +11,7 @@
  */
 
 import { api } from '@/data/http/client';
-import type { Ad, ContactLink, Coupon, Faq, Id, PrizeDraw, Tower, TutorialVideo } from '@/types';
+import type { Ad, AdKind, ContactLink, Coupon, CouponStatus, Faq, Id, PrizeDraw, Tower, TutorialVideo } from '@/types';
 import type {
   AdInput,
   ContactLinkInput,
@@ -38,7 +38,7 @@ import { HttpCrudRepository } from './crud';
  *
  * An edit may leave the file out, and the server keeps the picture it has.
  */
-class HttpAdsRepository extends HttpCrudRepository<Ad, AdInput, Partial<AdInput>> {
+class HttpAdsRepository extends HttpCrudRepository<Ad, AdInput, Partial<AdInput>, { type?: AdKind }> {
   constructor() {
     super('/ads', (row) => `${row.title} ${row.titleKu} ${row.province?.name ?? ''}`);
   }
@@ -65,6 +65,7 @@ class HttpAdsRepository extends HttpCrudRepository<Ad, AdInput, Partial<AdInput>
 
     put('title', input.title);
     put('titleKu', input.titleKu);
+    put('type', input.type);
     put('actionType', input.actionType);
     put('actionValue', input.actionValue);
     put('order', input.order);
@@ -122,6 +123,12 @@ class HttpPrizeDrawsRepository
   private static body(input: Partial<PrizeDrawInput>): FormData | Record<string, unknown> {
     // `imageUrl` is the form's copy of the stored picture and has nowhere to go.
     const { image, imageUrl: _shown, ...fields } = input;
+    // The app stopped showing the body on 2026-10-06, so the form leaves it
+    // optional — but `CreatePrizeDrawDto` still requires both halves. An empty
+    // one is filled from its title, which the app does show, rather than
+    // inventing text or tripping the validator.
+    if ('bodyAr' in fields && !fields.bodyAr?.trim()) fields.bodyAr = fields.titleAr ?? '';
+    if ('bodyKu' in fields && !fields.bodyKu?.trim()) fields.bodyKu = fields.titleKu ?? '';
     if (!image) return fields;
 
     const form = new FormData();
@@ -151,7 +158,7 @@ class HttpCouponsRepository extends HttpCrudRepository<
   Coupon,
   never,
   never,
-  { prizeDrawId?: Id; appUserId?: Id }
+  { prizeDrawId?: Id; appUserId?: Id; status?: CouponStatus }
 > {
   protected readonly serverSearch = true;
 
@@ -161,7 +168,7 @@ class HttpCouponsRepository extends HttpCrudRepository<
 }
 
 export class HttpContentRepository implements ContentRepository {
-  readonly ads: CrudRepository<Ad, AdInput> = new HttpAdsRepository();
+  readonly ads: CrudRepository<Ad, AdInput, Partial<AdInput>, { type?: AdKind }> = new HttpAdsRepository();
 
   readonly faqs: CrudRepository<Faq, FaqInput> = new HttpCrudRepository<Faq, FaqInput>(
     '/faqs',

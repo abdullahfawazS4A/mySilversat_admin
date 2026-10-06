@@ -41,6 +41,12 @@ interface SummaryResponse {
   notificationsSent: number;
   activeRegions: number;
   totalRegions: number;
+  /**
+   * Governorates no active server serves, added 2026-10-06. The spec names the
+   * figure but not its key or shape, so `uncoveredFrom` looks for it rather
+   * than trusting a guessed name. TODO: pin the key once read off a live reply.
+   */
+  [key: string]: unknown;
   /** Last six months, oldest first, `month` as `2026-09`. */
   salesByMonth: { month: string; count: number; revenue: number | string }[];
   usersByProvince: { provinceId: string; provinceName: string; count: number }[];
@@ -70,6 +76,35 @@ function categoryLabel(row: { productName: string; name: string }): string {
   return `${row.productName?.trim() ?? ''} — ${row.name?.trim() ?? ''}`;
 }
 
+/**
+ * The governorates with no active server, as names.
+ *
+ * Accepts the key under any of the spellings the backend is likely to have
+ * used (`provincesWithoutActiveRegion`, `provincesWithoutRegion`, …), holding a
+ * list of names, of `{ name }` rows, or only a count. Null when the reply
+ * carries none of them — an older server, or a cached summary from before.
+ */
+function uncoveredFrom(raw: Record<string, unknown>): { count: number; names: string[] } | null {
+  const key = Object.keys(raw).find((name) => /^provinces?without/i.test(name));
+  if (!key) return null;
+  const value = raw[key];
+  if (Array.isArray(value)) {
+    const names = value
+      .map((row) =>
+        typeof row === 'string'
+          ? row
+          : row && typeof row === 'object'
+            ? String((row as { name?: unknown; provinceName?: unknown }).name ??
+                (row as { provinceName?: unknown }).provinceName ?? '')
+            : '',
+      )
+      .filter(Boolean);
+    return { count: value.length, names };
+  }
+  if (typeof value === 'number' || typeof value === 'string') return { count: num(value), names: [] };
+  return null;
+}
+
 function toSummary(raw: SummaryResponse): DashboardSummary {
   const byValueDesc = (a: { value: number }, b: { value: number }) => b.value - a.value;
   const months = raw.salesByMonth ?? [];
@@ -94,6 +129,7 @@ function toSummary(raw: SummaryResponse): DashboardSummary {
     notificationsSent: num(raw.notificationsSent),
     activeRegions: num(raw.activeRegions),
     totalRegions: num(raw.totalRegions),
+    uncoveredProvinces: uncoveredFrom(raw),
 
     salesTrend: months.map((row) => ({ label: monthLabel(row.month), value: num(row.count) })),
     revenueTrend: months.map((row) => ({ label: monthLabel(row.month), value: num(row.revenue) })),

@@ -59,11 +59,20 @@ export function categoryToInput(row: Category): CategoryInput {
  * the app price may not: a tier priced at zero is not a tier that sells for
  * nothing, it is a tier nobody set a price for.
  */
+/**
+ * The lowest app price checkout will take. The backend refuses a Wayl payment
+ * link below this with a 400, so a cheaper category is listed in the app and
+ * cannot be bought.
+ */
+export const MIN_UNIT_PRICE = 1000;
+
 export function validateCategory(draft: CategoryInput): string | null {
   if (!draft.productId) return 'اختر المنتج';
   if (!draft.name.trim()) return 'اسم الفئة بالعربي مطلوب';
   if (!draft.nameKu.trim()) return 'اسم الفئة بالكردي مطلوب';
-  if (draft.unitPrice <= 0) return 'سعر التطبيق لازم يكون أكبر من صفر';
+  if (draft.unitPrice < MIN_UNIT_PRICE) {
+    return `سعر التطبيق لازم يكون ${MIN_UNIT_PRICE.toLocaleString('en-US')} دينار أو أكثر — الدفع من التطبيق يرفض أقل من هيچ`;
+  }
   if (draft.costPrice < 0) return 'سعر الكلفة ما يصير بالسالب';
   if (draft.costPrice > draft.unitPrice) return 'سعر الكلفة ما يصير أكبر من سعر التطبيق';
   return null;
@@ -94,10 +103,13 @@ export function CategoryFields({ draft, set }: { draft: CategoryInput; set: Sett
           onChange={(next) => set('costPrice', Number(next) || 0)}
         />
       </Field>
-      <Field label="سعر التطبيق" hint="السعر اللي يشوفه المشترك">
+      <Field
+        label="سعر التطبيق"
+        hint={`السعر اللي يشوفه المشترك ويدفعه — ${MIN_UNIT_PRICE.toLocaleString('en-US')} دينار على الأقل`}
+      >
         <TextInput
           type="number"
-          min={0}
+          min={MIN_UNIT_PRICE}
           value={draft.unitPrice}
           onChange={(next) => set('unitPrice', Number(next) || 0)}
         />

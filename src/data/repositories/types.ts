@@ -56,6 +56,9 @@ import type {
   Tower,
   TutorialVideo,
   VendorResponse,
+  AppVersionConfig,
+  AdKind,
+  CouponStatus,
 } from '@/types';
 
 // ------------------------------------------------------------- generic -----
@@ -351,6 +354,8 @@ export interface LeagueInput {
   name: string;
   /** Arabic display name. `null` clears the override and shows `name` again. */
   nameAr?: string | null;
+  /** A link, not an upload — `/leagues` takes no file. Empty clears it. */
+  logoUrl?: string | null;
   countryId: Id;
   order?: number;
   isActive?: boolean;
@@ -534,8 +539,13 @@ export interface NotificationInput {
   data?: Record<string, unknown>;
 }
 
-/** The text of a sent notification, the only part that can be edited. */
-export type NotificationTextInput = Pick<NotificationInput, 'titleAr' | 'titleKu' | 'bodyAr' | 'bodyKu'>;
+/**
+ * What can change on a sent notification: its text, and since 2026-10-06 its
+ * `data` — the inbox tap target. Absent leaves `data` alone, null clears it.
+ */
+export type NotificationTextInput = Pick<NotificationInput, 'titleAr' | 'titleKu' | 'bodyAr' | 'bodyKu'> & {
+  data?: Record<string, string> | null;
+};
 
 /** The API has no drafts — sending is what creates the record. */
 export interface NotificationsRepository {
@@ -572,6 +582,8 @@ export interface AdInput {
    * validator are only ever handed the draft.
    */
   imageUrl: string;
+  /** Ad or offer. The server defaults a create without one to `ads`. */
+  type?: AdKind;
   actionType?: 'none' | 'url' | 'screen';
   actionValue?: string | null;
   order?: number;
@@ -644,7 +656,7 @@ export interface PrizeDrawsRepository extends CrudRepository<PrizeDraw, PrizeDra
 }
 
 export interface ContentRepository {
-  ads: CrudRepository<Ad, AdInput>;
+  ads: CrudRepository<Ad, AdInput, Partial<AdInput>, { type?: AdKind }>;
   faqs: CrudRepository<Faq, FaqInput>;
   videos: CrudRepository<TutorialVideo, VideoInput>;
   towers: CrudRepository<Tower, TowerInput, Partial<TowerInput>, { silversatRegionId?: Id }>;
@@ -659,7 +671,7 @@ export interface ContentRepository {
   prizeDraws: PrizeDrawsRepository;
   /** Every draw entry. `search` matches the code and the subscriber's phone. */
   coupons: {
-    list(query?: ListQuery & { prizeDrawId?: Id; appUserId?: Id }): Promise<Page<Coupon>>;
+    list(query?: ListQuery & { prizeDrawId?: Id; appUserId?: Id; status?: CouponStatus }): Promise<Page<Coupon>>;
   };
 }
 
@@ -685,6 +697,18 @@ export interface SilversatRepository {
    * to the app user who owns the receiver.
    */
   recharge(deviceNumber: string, code: string, type: RechargeType): Promise<VendorResponse>;
+}
+
+// ------------------------------------------------------- app config -------
+
+export interface AppConfigRepository {
+  /** The forced/optional update thresholds the app checks before sign-in. */
+  version(): Promise<AppVersionConfig>;
+  /**
+   * Replaces the whole row. The server refuses a platform whose `minBuild` is
+   * above its `latestBuild`.
+   */
+  updateVersion(config: AppVersionConfig): Promise<AppVersionConfig>;
 }
 
 // --------------------------------------------------------- dashboard -------
@@ -713,4 +737,5 @@ export interface Repositories {
   content: ContentRepository;
   silversat: SilversatRepository;
   dashboard: DashboardRepository;
+  appConfig: AppConfigRepository;
 }

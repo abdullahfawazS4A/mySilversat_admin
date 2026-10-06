@@ -118,10 +118,24 @@ const SERVER_MESSAGES: Record<string, string> = {
   'database query failed': 'السيرفر رفض الحفظ — راجع القيم المدخلة، وخاصة الأسعار.',
 };
 
-/** Looks a server sentence up in the table above, ignoring case and dots. */
+/**
+ * Field errors worded by the validation pipe, matched by the field they name
+ * rather than the exact sentence, which varies with the rule that failed.
+ */
+const FIELD_MESSAGES: [RegExp, string][] = [
+  // `unitPrice` carries two rules since 2026-10-06: at least 1000 IQD (checkout
+  // refuses less) and not below `costPrice`.
+  [/^unitPrice/i, 'سعر التطبيق لازم يكون 1,000 دينار أو أكثر، وما يقل عن سعر الكلفة.'],
+];
+
+/** Looks a server sentence up in the tables above, ignoring case and dots. */
 function translate(message: string): string {
   const key = message.trim().replace(/\.$/, '').toLowerCase();
-  return SERVER_MESSAGES[key] ?? message;
+  return (
+    SERVER_MESSAGES[key] ??
+    FIELD_MESSAGES.find(([pattern]) => pattern.test(message.trim()))?.[1] ??
+    message
+  );
 }
 
 /**

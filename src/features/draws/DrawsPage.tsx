@@ -24,6 +24,7 @@ import { countdownAr, formatDateTimeAr, fromLocalInput, toLocalInput } from '@/l
 import { mediaCrossOrigin, mediaUrl } from '@/lib/media';
 import { CrudScreen } from '../shared/CrudScreen';
 import { ImagePicker } from '../shared/ImagePicker';
+import { IMAGE_SPECS } from '@/lib/imageSpecs';
 
 /** Whether the announced date is behind us. */
 function isOver(draw: PrizeDraw): boolean {
@@ -131,13 +132,9 @@ export function DrawsPage() {
           ? 'عنوان السحب بالعربي مطلوب'
           : !draft.titleKu.trim()
             ? 'عنوان السحب بالكردي مطلوب — التطبيق يعرض اللغتين'
-            : !draft.bodyAr.trim()
-              ? 'شرح السحب بالعربي مطلوب'
-              : !draft.bodyKu.trim()
-                ? 'شرح السحب بالكردي مطلوب'
-                : !draft.drawAt
-                  ? 'موعد السحب مطلوب'
-                  : null
+            : !draft.drawAt
+              ? 'موعد السحب مطلوب'
+              : null
       }
       form={(draft, set) => (
         <>
@@ -151,7 +148,11 @@ export function DrawsPage() {
           <Field label="العنوان بالكردي" className="span-2">
             <TextInput value={draft.titleKu} onChange={(next) => set('titleKu', next)} />
           </Field>
-          <Field label="الشرح بالعربي" className="span-2" hint="النص اللي يوضّح شلون يدخل السحب">
+          <Field
+            label="الشرح بالعربي (اختياري)"
+            className="span-2"
+            hint="لا يظهر في التطبيق حالياً — التطبيق يعرض الصورة والعنوان والموعد بس"
+          >
             <TextArea
               rows={3}
               value={draft.bodyAr}
@@ -159,12 +160,13 @@ export function DrawsPage() {
               placeholder="كل تجديد عبر التطبيق يمنحك كوبون يدخل السحب"
             />
           </Field>
-          <Field label="الشرح بالكردي" className="span-2">
+          <Field label="الشرح بالكردي (اختياري)" className="span-2" hint="لا يظهر في التطبيق حالياً">
             <TextArea rows={3} value={draft.bodyKu} onChange={(next) => set('bodyKu', next)} />
           </Field>
           <ImagePicker
             label="صورة السحب (اختياري)"
             className="span-2"
+            spec={IMAGE_SPECS.draw}
             file={draft.image}
             currentUrl={draft.imageUrl}
             onPick={(next) => set('image', next)}

@@ -61,8 +61,11 @@ function Summary({ data }: { data: DashboardSummary }) {
   const [trend, setTrend] = useState<'sales' | 'revenue'>('sales');
 
   const regionsDown = data.totalRegions - data.activeRegions;
+  // Empty is its own alarm, threshold or not: checkout in the app refuses a
+  // category with no codes left ("No codes available"), so it cannot be sold.
+  const outOfStock = data.stockByCategory.filter((row) => row.value === 0);
   const lowStock = data.stockByCategory.filter(
-    (row) => row.threshold !== null && row.value <= row.threshold,
+    (row) => row.value > 0 && row.threshold !== null && row.value <= row.threshold,
   );
 
   return (
@@ -72,6 +75,31 @@ function Summary({ data }: { data: DashboardSummary }) {
           <span className="strong num">{regionsDown}</span> من{' '}
           <span className="num">{data.totalRegions}</span> سيرفر سلفرسات متوقف — تفعيل الكارتات
           للمنتجات المربوطة بيه ما راح يشتغل. <Link to="/api">افحص السيرفرات</Link>.
+        </Notice>
+      ) : null}
+
+      {data.uncoveredProvinces && data.uncoveredProvinces.count > 0 ? (
+        <Notice tone="danger" icon={<AlertTriangle size={16} />}>
+          <span className="strong num">{data.uncoveredProvinces.count}</span> محافظة ماكو عليها سيرفر
+          سلفرسات فعّال — المشتركين بيها ما يكدرون يسجلون بالتطبيق
+          {data.uncoveredProvinces.names.length > 0
+            ? `: ${data.uncoveredProvinces.names.slice(0, 5).join('، ')}${
+                data.uncoveredProvinces.names.length > 5 ? ' وغيرها' : ''
+              }`
+            : ''}
+          . <Link to="/api">اربط سيرفر بكل محافظة</Link>.
+        </Notice>
+      ) : null}
+
+      {outOfStock.length > 0 ? (
+        <Notice tone="danger" icon={<AlertTriangle size={16} />}>
+          <span className="strong num">{outOfStock.length}</span> فئة خلصت كارتاتها — الشراء منها
+          بالتطبيق يفشل لحد ما تنضاف كارتات:{' '}
+          {outOfStock
+            .slice(0, 3)
+            .map((row) => row.label)
+            .join('، ')}
+          {outOfStock.length > 3 ? ' وغيرها' : ''}. <Link to="/stock">افتح المخزن</Link>.
         </Notice>
       ) : null}
 
@@ -104,7 +132,7 @@ function Summary({ data }: { data: DashboardSummary }) {
           label="كارتات متاحة"
           value={formatNumber(data.codesAvailable)}
           icon={<Boxes size={15} />}
-          tone={lowStock.length > 0 ? 'warning' : undefined}
+          tone={lowStock.length + outOfStock.length > 0 ? 'warning' : undefined}
           hint={`${formatNumber(data.codesSold)} مباع`}
         />
         <StatTile
@@ -238,7 +266,9 @@ function Summary({ data }: { data: DashboardSummary }) {
                   <span className="fs-small truncate">{row.label}</span>
                   <span className="row row-gap-2">
                     <span className="num strong">{formatNumber(row.value)}</span>
-                    {row.threshold !== null && row.value <= row.threshold ? (
+                    {row.value === 0 ? (
+                      <Pill tone="danger">خلص</Pill>
+                    ) : row.threshold !== null && row.value <= row.threshold ? (
                       <Pill tone="danger">تحت الحد</Pill>
                     ) : null}
                   </span>

@@ -110,7 +110,9 @@ export function VideosPage() {
           ? 'عنوان الفيديو مطلوب'
           : !draft.videoUrl.trim()
             ? 'رابط الفيديو مطلوب'
-            : null
+            : !/^https?:\/\//i.test(draft.videoUrl.trim())
+              ? 'رابط الفيديو لازم يبدي بـ https:// — يوتيوب أو أي رابط كامل'
+              : null
       }
       form={(draft, set) => (
         <>

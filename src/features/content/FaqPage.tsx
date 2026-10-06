@@ -79,9 +79,13 @@ export function FaqPage() {
       validate={(draft) =>
         !draft.question.trim()
           ? 'السؤال بالعربي مطلوب'
-          : !draft.answer.trim()
-            ? 'الجواب بالعربي مطلوب'
-            : null
+          : !draft.questionKu.trim()
+            ? 'السؤال بالكردي مطلوب — بدونه المشترك الكردي يشوف العربي'
+            : !draft.answer.trim()
+              ? 'الجواب بالعربي مطلوب'
+              : !draft.answerKu.trim()
+                ? 'الجواب بالكردي مطلوب — بدونه المشترك الكردي يشوف العربي'
+                : null
       }
       form={(draft, set) => (
         <>

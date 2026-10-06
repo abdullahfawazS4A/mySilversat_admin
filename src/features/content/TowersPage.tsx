@@ -112,7 +112,9 @@ export function TowersPage() {
             ? 'اختر السيرفر'
             : !draft.latitude || !draft.longitude
               ? 'خط الطول وخط العرض مطلوبين'
-              : null
+              : Math.abs(draft.latitude) > 90 || Math.abs(draft.longitude) > 180
+                ? 'الإحداثيات خارج المدى — العرض بين ‎-90 و 90 والطول بين ‎-180 و 180'
+                : null
       }
       form={(draft, set) => (
         <>

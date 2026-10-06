@@ -23,6 +23,7 @@ import {
   Boxes,
   Plug,
   Signal,
+  Smartphone,
   Video,
   HelpCircle,
   Phone,
@@ -192,10 +193,10 @@ export const NAV_GROUPS: NavGroup[] = [
         hint: 'سيرفرات سلفرسات ومزوّد المباريات',
       },
       {
-        path: '/audit',
-        label: 'سجل العمليات',
-        icon: ClipboardList,
-        hint: 'غير مربوطة بالـ API — ماكو سجل عمليات',
+        path: '/app-version',
+        label: 'تحديث التطبيق',
+        icon: Smartphone,
+        hint: 'التحديث الإجباري والاختياري لأندرويد و iOS',
       },
       {
         path: '/settings',

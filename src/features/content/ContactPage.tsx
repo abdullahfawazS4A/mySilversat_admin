@@ -15,13 +15,23 @@ import { CONTACT_CHANNEL } from '@/lib/labels';
 import { CrudScreen } from '../shared/CrudScreen';
 
 /** What `value` has to contain for each channel. */
+/**
+ * What the value has to look like. The app opens it exactly as stored, so it
+ * must carry its scheme — `07701234567` or `wa.me/…` on their own leave the row
+ * untappable, while `tel:` and `https://` both open.
+ */
 const VALUE_HINT: Record<ContactChannel, string> = {
-  phone: 'رقم الهاتف اللي ينطلب مباشرة',
-  whatsapp: 'رقم الواتساب بصيغة دولية، مثل 9647XXXXXXXX',
-  facebook: 'رابط الصفحة',
-  instagram: 'رابط الحساب أو المعرّف',
-  telegram: 'رابط القناة أو المعرّف',
+  phone: 'بصيغة tel: — مثل tel:07701234567',
+  whatsapp: 'رابط كامل — مثل https://wa.me/9647XXXXXXXXX',
+  facebook: 'رابط كامل — مثل https://facebook.com/…',
+  instagram: 'رابط كامل — مثل https://instagram.com/…',
+  telegram: 'رابط كامل — مثل https://t.me/…',
 };
+
+/** Has a URI scheme (`https:`, `tel:`, `whatsapp:` …) the phone can open. */
+function hasScheme(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/i.test(value.trim());
+}
 
 const CHANNEL_TONE: Record<ContactChannel, 'neutral' | 'success' | 'muted'> = {
   phone: 'neutral',
@@ -115,7 +125,9 @@ export function ContactPage() {
           ? 'الاسم المعروض مطلوب'
           : !draft.value.trim()
             ? 'قيمة القناة مطلوبة'
-            : null
+            : !hasScheme(draft.value)
+              ? 'القيمة لازم تبدي بـ https:// أو tel: — التطبيق يفتحها مثل ما هي، وبدونها ما تنضغط'
+              : null
       }
       form={(draft, set) => (
         <>

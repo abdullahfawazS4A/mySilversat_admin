@@ -48,7 +48,7 @@ const ContactPage = page(() => import('@/features/content/ContactPage'), 'Contac
 const NotificationsPage = page(() => import('@/features/notifications/NotificationsPage'), 'NotificationsPage');
 const ProvincesPage = page(() => import('@/features/system/ProvincesPage'), 'ProvincesPage');
 const ApiPage = page(() => import('@/features/system/ApiPage'), 'ApiPage');
-const AuditPage = page(() => import('@/features/system/AuditPage'), 'AuditPage');
+const AppVersionPage = page(() => import('@/features/system/AppVersionPage'), 'AppVersionPage');
 const SettingsPage = page(() => import('@/features/system/SettingsPage'), 'SettingsPage');
 
 export function AppRouter() {
@@ -86,7 +86,7 @@ export function AppRouter() {
 
           <Route path="provinces" element={<ProvincesPage />} />
           <Route path="api" element={<ApiPage />} />
-          <Route path="audit" element={<AuditPage />} />
+          <Route path="app-version" element={<AppVersionPage />} />
           <Route path="settings" element={<SettingsPage />} />
 
           {/* Screens that were renamed when the API wiring landed. */}

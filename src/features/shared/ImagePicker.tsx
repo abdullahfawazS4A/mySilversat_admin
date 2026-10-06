@@ -17,12 +17,19 @@
  * The preview comes from a local object URL the moment a file is picked,
  * because the question an operator has at that instant is "is this the right
  * picture" and nothing on the network is needed to answer it.
+ *
+ * Given a `spec`, the preview is framed at the ratio the app draws the picture
+ * at, cropped the way the app crops it, with the safe area dashed over it. A
+ * picked file whose ratio or size is off gets a warning, never a refusal: the
+ * operator may know the crop is fine, and the save stays theirs to make.
  */
 
-import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { ImagePlus, Undo2, Upload } from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react';
+import { ImagePlus, TriangleAlert, Undo2, Upload } from 'lucide-react';
 import { Button, Field } from '@/components/ui';
 import { mediaCrossOrigin } from '@/lib/media';
+import { cx } from '@/lib/utils';
+import { RATIO_TOLERANCE, SAFE_AREA_INSET, SUGGESTED_BYTES, type ImageSpec } from '@/lib/imageSpecs';
 
 /** What the API will accept, and what the picker filters the file dialog to. */
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -51,12 +58,70 @@ function checkFile(file: File): string | null {
   return null;
 }
 
+/** «المقاس المطلوب: 1320×600 (2.2:1)» plus what the spec asks of the artwork. */
+function specHint(spec: ImageSpec): string {
+  const size = `المقاس المطلوب: ${spec.width}×${spec.height} (${spec.ratioLabel})`;
+  return spec.round
+    ? `${size} — PNG بخلفية شفافة`
+    : `${size} — اترك الكتابة بعيدة عن الحواف، ويفضّل أقل من ${describeSize(SUGGESTED_BYTES)}`;
+}
+
+/** Soft warnings for a picked image of the given natural size. */
+function specWarnings(spec: ImageSpec, width: number, height: number, file: File): string[] {
+  const out: string[] = [];
+  if (Math.abs(width / height / spec.ratio - 1) > RATIO_TOLERANCE) {
+    out.push(
+      `نسبة الصورة (${width}×${height}) لا تطابق ${spec.ratioLabel} — قد يُقص جزء منها في التطبيق.`,
+    );
+  }
+  if (width < spec.minWidth || height < spec.minHeight) {
+    out.push(`الصورة أصغر من الحد الأدنى ${spec.minWidth}×${spec.minHeight} — قد تظهر مشوشة.`);
+  }
+  if (spec.round && file.type !== 'image/png') out.push('الشعار يفضّل يكون PNG بخلفية شفافة.');
+  return out;
+}
+
+/**
+ * A picture framed and cropped the way the app shows it.
+ *
+ * Exported for the screens' own previews, so a banner opened from the table
+ * looks the same as it did in the form.
+ */
+export function ImageFrame({
+  src,
+  spec,
+  onLoad,
+  className,
+}: {
+  src: string;
+  spec: ImageSpec;
+  onLoad?: (image: HTMLImageElement) => void;
+  className?: string;
+}) {
+  const inset = `${SAFE_AREA_INSET * 100}%`;
+  return (
+    <div
+      className={cx('image-frame', spec.round && 'is-round', className)}
+      style={{ '--frame-ratio': spec.ratio } as CSSProperties}
+    >
+      <img
+        src={src}
+        crossOrigin={mediaCrossOrigin(src)}
+        alt=""
+        onLoad={(event) => onLoad?.(event.currentTarget)}
+      />
+      {spec.safeArea ? <span className="image-safe-area" style={{ inset }} aria-hidden="true" /> : null}
+    </div>
+  );
+}
+
 export function ImagePicker({
   file,
   currentUrl = '',
   onPick,
   label = 'الصورة',
   className,
+  spec,
 }: {
   /** A picture chosen now and not saved yet. */
   file: File | null;
@@ -65,6 +130,8 @@ export function ImagePicker({
   onPick: (file: File | null) => void;
   label?: string;
   className?: string;
+  /** The size the app shows this picture at; frames the preview and the hint. */
+  spec?: ImageSpec;
 }) {
   const fileInput = useRef<HTMLInputElement | null>(null);
 
@@ -101,7 +168,20 @@ export function ImagePicker({
     onPick(picked);
   };
 
+  /*
+   * The natural size of the picked file, read off the preview once it loads.
+   * Tagged with its URL so a measurement can never be applied to a newer pick.
+   */
+  const [measured, setMeasured] = useState<{ src: string; width: number; height: number } | null>(null);
+
   const shown = preview ?? (currentUrl.trim() || null);
+
+  // Only a pick not yet saved is judged: the stored picture is already live,
+  // and nagging about it on every edit would teach operators to ignore this.
+  const warnings =
+    spec && file && preview && measured?.src === preview
+      ? specWarnings(spec, measured.width, measured.height, file)
+      : [];
 
   return (
     <Field label={label} className={className} error={error ?? undefined}>
@@ -120,7 +200,17 @@ export function ImagePicker({
 
       {shown ? (
         <div className="image-picked">
-          <img className="image-preview" src={shown} crossOrigin={mediaCrossOrigin(shown)} alt="" />
+          {spec ? (
+            <ImageFrame
+              src={shown}
+              spec={spec}
+              onLoad={(image) =>
+                setMeasured({ src: shown, width: image.naturalWidth, height: image.naturalHeight })
+              }
+            />
+          ) : (
+            <img className="image-preview" src={shown} crossOrigin={mediaCrossOrigin(shown)} alt="" />
+          )}
           <div className="row row-gap-2 mt-2">
             <Button size="sm" icon={<Upload size={14} />} onClick={() => fileInput.current?.click()}>
               تغيير الصورة
@@ -146,6 +236,12 @@ export function ImagePicker({
             ) : null}
           </div>
           {file ? <span className="fs-tiny dim mt-2">تنرفع مع الحفظ</span> : null}
+          {warnings.map((warning) => (
+            <span key={warning} className="image-warning mt-2">
+              <TriangleAlert size={14} />
+              {warning}
+            </span>
+          ))}
         </div>
       ) : (
         <div
@@ -168,6 +264,8 @@ export function ImagePicker({
           <span className="fs-tiny dim">JPG أو PNG أو WEBP أو GIF — حد أقصى {describeSize(MAX_BYTES)}</span>
         </div>
       )}
+
+      {spec ? <span className="field-hint">{specHint(spec)}</span> : null}
     </Field>
   );
 }

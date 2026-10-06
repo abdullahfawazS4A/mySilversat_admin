@@ -2,7 +2,7 @@
  * Command palette — Ctrl/⌘ + K.
  *
  * The console has twenty-four screens across seven groups. Reaching a rarely
- * used one (the audit log, the tower list) means scanning a sidebar that is
+ * used one (the app-version gate, the tower list) means scanning a sidebar that is
  * mostly things you did not want. This is the shortcut: type two letters of
  * what you want and press Enter.
  *
